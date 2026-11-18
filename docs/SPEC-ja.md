@@ -36,6 +36,7 @@
 - 戻り値の listener / stream は標準が返すのと同じ型。標準の代わりに置き換えるだけで使える
 - `_ex` は bind の側だけ。bind したソケットのファイルの realpath と `(st_dev, st_ino)` を覚え、`discard()` で listener を閉じ、そのパスの `(st_dev, st_ino)` が同じ時だけファイルを消す
   - 覚えるのは bind が通った直後 (経路の中で、listener を返す前)。覚えられなければ listener を閉じ、ファイルは消さずにエラーを返す (消せない `discard()` を成功に見せない)
+  - 引数のパスは入口で一度だけ文字列にし、覚える・bind する・返すのすべてにその値を使う (呼ぶたびに違う値を返しうるパスの型で、覚えた物と bind した物を食い違わせない)
   - `discard()` は、ファイルが既に無い時と別のファイルに置き換わっていて消さない時も成功を返す。失敗を返すのは消そうとして失敗した時だけ
   - 確かめてから消すまでと、bind してから覚えるまでの間に、ソケットのディレクトリに書ける者がファイルをすり替えるのは防げない (inode を指定して消す手段が POSIX に無い)
 - `connect_any` 系は、他の経路が全部使えない時に fork してでも connect する。pid は返さない。`forked` は fork の経路を通った時だけ真
@@ -123,6 +124,7 @@
 | /proc 版 | `/proc` を使える Linux / Android | スレッドを使わず `/proc/self/fd/<Dfd>/R/<ファイル名>` で bind / connect | `/proc/self/fd/<Dfd>` を引けない、綴りが sockaddr に入らない (ファイル名およそ 79 バイトまで、fd の桁で変わる) |
 | (無い) | NetBSD / OpenBSD / illumos | 手が無い (bind は fork へ) | |
 
+- 呼び出し元は使い捨てのスレッドが終わるまで待ってから R と D を片付け、fd を閉じる。待つのが割り込まれても (Python の `KeyboardInterrupt` 等)、スレッドが終わるまでは片付けない (先に閉じた fd の番号が使い回されると、スレッドが無関係なディレクトリに移って bind する)
 - スレッドは sockat が作った使い捨てで、使い終わったら捨てる。呼び出し元のスレッドの cwd には触らない (`pthread_fchdir_np(-1)` で戻すと、呼び出し元がスレッドに付けた cwd を消しうる)
 - Linux で seccomp の filter が掛かっている時は `unshare` を呼ばない。filter がプロセスの kill (SIGSYS) で断る環境 (systemd の `SystemCallFilter=` の既定) がある
 - `unshare` の後の `fchdir` の失敗 (`EACCES` 等) は本当の失敗として返す

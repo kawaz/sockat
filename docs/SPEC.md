@@ -36,6 +36,7 @@ How sockat behaves, independent of the language. Every implementation follows it
 - The listener / stream returned is of the same type the standard returns, so it is a drop-in replacement for the standard
 - `_ex` exists for bind only. It remembers the realpath and `(st_dev, st_ino)` of the bound socket file; `discard()` closes the listener and removes the file only when that path still has the same `(st_dev, st_ino)`
   - It remembers them right after the bind succeeds (inside the route, before returning the listener). If they cannot be remembered, it closes the listener, leaves the file, and returns an error (it does not hand back a `discard()` that cannot remove anything as a success)
+  - The path argument is turned into a string once at the entry, and that value is used for remembering, binding and returning alike (so that a path type that can return a different value on each call never makes the remembered file differ from the bound one)
   - `discard()` succeeds when the file is already gone and when it has been replaced by another file and is left alone. It fails only when the removal itself fails
   - Someone who can write to the socket's directory swapping the file between the check and the removal, or between the bind and the remembering, cannot be prevented (POSIX has no way to remove by inode)
 - The `connect_any` variants connect even by forking when no other route can be used. No pid is returned. `forked` is true only when the fork route was taken
@@ -123,6 +124,7 @@ A path over the standard length is tried in the order below and bound / connecte
 | /proc form | Linux / Android with `/proc` usable | without a thread, bind / connect by `/proc/self/fd/<Dfd>/R/<file name>` | `/proc/self/fd/<Dfd>` cannot be resolved, the spelling does not fit the sockaddr (a file name up to about 79 bytes; it varies with the fd's digits) |
 | (none) | NetBSD / OpenBSD / illumos | no means (a bind goes on to fork) | |
 
+- The caller waits until the throwaway thread finishes before cleaning up R and D and closing the fd. Even if the wait is interrupted (Python's `KeyboardInterrupt` and the like), nothing is cleaned up until the thread finishes (if an fd closed early has its number reused, the thread moves into an unrelated directory and binds there)
 - The thread is a throwaway one sockat creates, discarded after use. The caller's thread's cwd is never touched (restoring with `pthread_fchdir_np(-1)` could drop a per-thread cwd the caller set)
 - On Linux, `unshare` is not called while a seccomp filter is in place. Some filters refuse it by killing the process (SIGSYS) (systemd's `SystemCallFilter=` by default)
 - A failing `fchdir` after `unshare` (`EACCES` etc.) is a real failure and is returned
