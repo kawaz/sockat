@@ -26,7 +26,7 @@
 2. D を fd で開き (Linux は `O_PATH | O_DIRECTORY | O_NOFOLLOW`、Apple の OS は `O_SEARCH | O_DIRECTORY | O_NOFOLLOW`、他は `O_RDONLY | O_DIRECTORY | O_NOFOLLOW`)、`fstat` で「ディレクトリ・持ち主が実効 uid・group と other に権限が無い」を確かめ、0700 にそろえる (`O_PATH` の fd は `chmod("/proc/self/fd/<fd>")`、`/proc` が無ければ名前で `O_RDONLY` で開き直して `(st_dev, st_ino)` を照合して `fchmod`。他は `fchmod`。`O_PATH` の fd の `fchmod` は `EBADF`、sockat-py が実測)。確認が通った後にそろえられなければ D を片付けて次へ (確認より前に読み取り権限を要すると、umask が持ち主の読み取りを削った時に D が残る。sockat-go が実測)
 3. D の中に、ソケットのディレクトリの realpath を指す乱数の名前 (62 種 10 文字) の symlink R を `symlinkat` で作る。D の中に他のディレクトリは挟まない
 4. D の fd を基準に `R/<ファイル名>` で bind / connect する
-5. R は自分が作れた時だけ消す。D は手順 2 の確認が通り、名前の `(st_dev, st_ino)` が fd と一致する時だけ消す。成功でも失敗でも片付ける
+5. R は自分が作れた時だけ消す。D は手順 2 の確認が通り、名前の `(st_dev, st_ino)` が fd と一致する時だけ消す。成功でも失敗でも片付ける。作った直後の D を開けない時 (umask が持ち主の権限を削った時) は、名前で `fstatat(AT_SYMLINK_NOFOLLOW)` して手順 2 と同じ条件なら `unlinkat(AT_REMOVEDIR)` で消す (空のディレクトリしか消えないので、すり替えられても最悪は他人の空のディレクトリが 1 つ消えるだけ。残すと呼ぶたびに積もる。kawaz 裁定 2026-11-19)
 
 | D の fd を基準にする手段 | OS |
 |---|---|
@@ -118,4 +118,4 @@
 
 - [docs/SPEC-ja.md](../SPEC-ja.md) の「長いパスの経路と試す順番」「どこから届かなくなるか」「長いパスで標準と違う点」「実装が確かめる試験の観点」
 - 裁定: kawaz (2026-11-19)
-- [DR-0007](DR-0007-connect-any-is-opt-in.md)、[DR-0010](DR-0010-fork-bind-listen-by-parent.md)
+- [DR-0013](DR-0013-any-means-reach-at-any-cost.md)、[DR-0010](DR-0010-fork-bind-listen-by-parent.md)

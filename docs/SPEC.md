@@ -27,20 +27,22 @@ How sockat behaves, independent of the language. Every implementation follows it
 |---|---|---|---|---|---|---|
 | bind | `bind` | `bind` | `Listen` | tried | (does not wait) | a listening standard listener |
 | bind with cleanup | `bind_ex` | `bind_ex` | `ListenEx` | tried | (does not wait) | a standard listener and `discard()` |
+| bind that reaches even by losing something | `bind_any` | `bind_any` | `ListenAny` | tried | (does not wait) | a standard listener, the level of what was lost, and the route name |
 | connect | `connect` | `connect` | `Dial` | never tried | yes | a standard stream |
 | non-blocking connect | `connect_nonblocking` | `connect_nonblocking` | none | never tried | no | a non-blocking standard stream |
-| connect that reaches even by forking | `connect_any` | none | none | tried | yes | `AnyConnection { stream, forked }` |
+| connect that reaches even by losing something | `connect_any` | none | none | tried | yes | a standard stream, the level of what was lost, and the route name |
 | the same, non-blocking | `connect_any_nonblocking` | none | none | tried | no | as above (the stream is non-blocking) |
 
 - The names are provisional. Other languages follow their own naming conventions. The behavior follows the table above
 - The listener / stream returned is of the same type the standard returns, so it is a drop-in replacement for the standard
-- `_ex` exists for bind only. It remembers the realpath and `(st_dev, st_ino)` of the bound socket file; `discard()` closes the listener and removes the file only when that path still has the same `(st_dev, st_ino)`
+- `_ex` exists for bind only. It remembers the realpath and `(st_dev, st_ino)` of the bound socket file; `discard()` removes the file only when that path still has the same `(st_dev, st_ino)`. `discard()` does not close the listener (the user does) ([DR-0014](decisions/DR-0014-discard-removes-only.md), Japanese)
   - It remembers them right after the bind succeeds (inside the route, before returning the listener). If they cannot be remembered, it closes the listener, leaves the file, and returns an error (it does not hand back a `discard()` that cannot remove anything as a success)
   - The path argument is turned into a string once at the entry, and that value is used for remembering, binding and returning alike (so that a path type that can return a different value on each call never makes the remembered file differ from the bound one)
   - `discard()` succeeds when the file is already gone and when it has been replaced by another file and is left alone. It fails when the check cannot be made (`lstat` fails with something other than `ENOENT` / `ENOTDIR`) and when the removal itself fails (it does not report success when it cannot tell whether anything was removed)
   - Someone who can write to the socket's directory swapping the file between the check and the removal, or between the bind and the remembering, cannot be prevented (POSIX has no way to remove by inode)
-- The `connect_any` variants connect even by forking when no other route can be used. No pid is returned. `forked` is true only when [fork-direct](#fork-direct) was taken
-- The `connect_any` variants are not in the default API; they sit behind a mechanism the user opts into (an `any` feature in Rust) ([DR-0007](decisions/DR-0007-connect-any-is-opt-in.md), Japanese). A language that cannot build the fork route does not provide them; its README says "no fork route" in the table ([DR-0002](decisions/DR-0002-no-connect-any-without-fork.md), Japanese)
+- The any family (`bind_any`, the `connect_any` variants) reaches even by losing something when none of the default routes can be used ([DR-0013](decisions/DR-0013-any-means-reach-at-any-cost.md), Japanese). `bind_any` tries the base's [symlink](#symlink) last, the `connect_any` variants [fork-direct](#fork-direct) last. No pid is returned
+- The any family returns the level of what was lost on the route taken (exactly one of the 4 in "[Levels of what is lost](#levels-of-what-is-lost)") and the route name. The route name is for diagnostics and promises nothing about its content (routes are added and changed). Branch on the level. Levels may be added in future (the documentation says an unknown value may arrive). The names of the level values and of the return type follow each language's conventions
+- The any family is not in the default API; it sits behind a mechanism the user opts into (an `any` feature in Rust). The `connect_any` variants are no different from the default connect in a language that cannot build the fork route, so such a language does not provide them; its README says "no fork route" in the table ([DR-0002](decisions/DR-0002-no-connect-any-without-fork.md), Japanese). `bind_any` is provided whether or not fork exists
 - A language whose standard connect never blocks (Node.js etc.) provides one connect in the standard's own form ([DR-0003](decisions/DR-0003-single-connect-when-standard-never-blocks.md), Japanese)
 - `connect` / `connect_nonblocking` return `ENAMETOOLONG` when they reach [fork-direct](#fork-direct)
 - A non-blocking connect makes the socket non-blocking before connecting and returns it that way. When the peer's backlog is full it fails without waiting. `EINPROGRESS` is returned as an error and the socket is closed
@@ -88,9 +90,10 @@ bind:
 | [at-sockdir](#at-sockdir) | at in the form without D | FreeBSD | respelled |
 | [proc-sockdir](#proc-sockdir) | proc in the form without D | Linux / Android with `/proc` usable | respelled |
 | [fork-sockdir](#fork-sockdir) | fork in the form without D | all | fork |
-| [symlink](#symlink) | a symlink in a base. bind_any (awaiting a decision, D12-Q3 in [docs/QUESTIONS.md](QUESTIONS.md)) | (awaiting a decision) | shared symlink |
+| [symlink](#symlink) | create in a base a symlink to the socket's directory and use `<base>/sockat.XXXXXXXXXX/<file name>` (`bind_any` only) | all | respelled (a base only the owner can write to)<br>shared symlink (a shared base) |
 
 - The four `-sockdir` routes are tried, in the same order, only when D can be created nowhere ([the form without D](#the-form-without-d))
+- Only `bind_any` tries symlink, where the default bind gives `ENAMETOOLONG`
 
 connect:
 
@@ -135,7 +138,7 @@ What taking the route lost compared to the standard. One call takes one route, s
 | 5 | `ENAMETOOLONG` | `ENAMETOOLONG` | [fork-direct](#fork-direct) |
 
 - A bind's fork is tried when thread-cwd and proc cannot use the thread cwd / `/proc`, or the proc spelling does not fit. When D can be created nowhere, steps 2 to 4 are tried in the form without D ([thread-cwd-sockdir](#thread-cwd-sockdir) ([at-sockdir](#at-sockdir) on FreeBSD) → [proc-sockdir](#proc-sockdir) → [fork-sockdir](#fork-sockdir)). When the spelling does not fit the sockaddr, it is not tried and the result is `ENAMETOOLONG`
-- A bind never uses [proc-direct](#proc-direct), [relative](#relative), [widened](#widened), or the [symlink](#symlink) in a base (the spelling would hit an unrelated file later, the address would be cut short and break whoever reads it, or the routes through D suffice). bind_any's symlink awaits a decision (D12-Q3 in [docs/QUESTIONS.md](QUESTIONS.md))
+- A bind never uses [proc-direct](#proc-direct), [relative](#relative), [widened](#widened), or the [symlink](#symlink) in a base (the spelling would hit an unrelated file later, the address would be cut short and break whoever reads it, or the routes through D suffice). Only `bind_any` tries the [symlink](#symlink) last, to reach even by losing something ([DR-0013](decisions/DR-0013-any-means-reach-at-any-cost.md))
 - A connect's spelling is left nowhere on the peer (the connecting socket is not bound), so the fallback routes put no random part in it
 - thread-cwd and proc have no side effects (the peer pid stays the caller's, no fd is copied, and other threads' cwd is unchanged). So `connect` / `connect_nonblocking` try them too
 
@@ -263,7 +266,11 @@ Numbers are in bytes.
 
 #### symlink
 
-- bind: bind_any (awaiting a decision, D12-Q3 in [docs/QUESTIONS.md](QUESTIONS.md)). The level is shared symlink
+- How, for a bind: `bind_any` only. Create in a base a symlink to the realpath of the socket's directory, bind by `<base>/sockat.XXXXXXXXXX/<file name>`, and remove it at once ([symlink base and name](#symlink-base-and-name))
+- Usable when, for a bind: none of the default bind's routes can be used (where it would give `ENAMETOOLONG`)
+- Not usable when, for a bind: for every candidate, the spelling does not fit the sockaddr, the base does not meet the conditions, or the symlink cannot be created. Then `ENAMETOOLONG`
+- Reach, for a bind: the file name up to the length that fits the sockaddr − (the length of the base's spelling + 19)
+- Level, for a bind: respelled for a base only the owner can write to (only oneself can recreate the spelling), shared symlink for a shared base (other users can recreate the spelling, and if a higher layer or user unlinks by the spelling, it can make them remove a same-named file in a directory the other side chose)
 - How, for a connect: create a symlink to the socket file in a safe base, connect by `<base>/sockat.XXXXXXXXXX`, and remove it at once ([symlink base and name](#symlink-base-and-name))
 - Usable when, for a connect: a fallback of the connect variants. All but FreeBSD
 - Not usable when, for a connect: for every candidate, the spelling does not fit the sockaddr, the base is unsafe, or the symlink cannot be created
@@ -303,6 +310,7 @@ Used by the routes through D ([thread-cwd](#thread-cwd), [at](#at), [proc](#proc
 - The spelling `R/<file name>` is 11 bytes + the file name
 - After cleanup R exists nowhere, so the spelling the kernel reports, resolved later in another context such as the process's cwd, hits no unrelated file
 - A D that failed the check is someone else's; it and its contents are left alone
+- When D just created cannot be opened (the umask removed the owner's permission; on OSes that open with `O_SEARCH` / `O_RDONLY`), if `fstatat(base fd, D's name, AT_SYMLINK_NOFOLLOW)` meets the same conditions as step 2 (a directory, owned by the effective uid, no permission for group and other), remove it with `unlinkat(base fd, D's name, AT_REMOVEDIR)` and go to the next base as "cannot create". Even if it is swapped between the check by name and the removal, `AT_REMOVEDIR` removes only an empty directory ([DR-0012](decisions/DR-0012-own-directory-and-thread-cwd.md), Japanese)
 - The length, and whether a way can be used (as far as can be told), are checked before D is created. If not usable, nothing is created and the next is tried
 - The caller creates the socket and holds D's fd. For a non-blocking connect it makes the socket non-blocking first. The listen after a bind is done by the caller
 
@@ -326,6 +334,7 @@ Used by a bind when D can be created nowhere. [thread-cwd-sockdir](#thread-cwd-s
 - Create an R in the socket's directory (named `.sockat.XXXXXXXXXX`, pointing to the socket's directory's realpath) and, resolving against the socket's directory fd instead of D's, bind by `.sockat.XXXXXXXXXX/<file name>`
 - The means are tried in the same order as with D (thread-cwd-sockdir (at-sockdir on FreeBSD) → proc-sockdir → fork-sockdir)
 - The spelling is 19 bytes + the file name
+- Cleanup: `unlinkat(<socket's directory fd>, R)` only if this call created R. On success and on failure. A failure to remove is ignored (as in step 5 of [D and R](#d-and-r))
 - If the socket's directory cannot be opened or R cannot be created either, `ENAMETOOLONG`
 
 ### The throwaway thread
@@ -374,15 +383,19 @@ Used by [relative](#relative).
 
 ### symlink base and name
 
-Used by a connect's [symlink](#symlink).
+Used by [symlink](#symlink).
 
 | Item | Specification |
 |---|---|
-| base candidates | `TMPDIR` (when a non-empty absolute path), then `/tmp`. Tried once when `TMPDIR` is spelled the same as `/tmp` |
-| safe base | stat'ed following symlinks; a directory, and one of<br>sticky bit set, owned by root or the effective uid<br>owned by the effective uid, with `mode & 0o022 == 0` |
+| base candidates | connect: `TMPDIR` (when a non-empty absolute path), then `/tmp`<br>bind (`bind_any`): `XDG_RUNTIME_DIR` (when a non-empty absolute path), `TMPDIR` (same), then `/tmp`<br>A candidate with the same spelling is tried once |
+| base only the owner can write to | stat'ed following symlinks; a directory, owned by the effective uid, with `mode & 0o022 == 0` |
+| shared base | stat'ed following symlinks; a directory, sticky bit set, owned by root or the effective uid |
+| safe base | a base only the owner can write to, or a shared base. A connect uses either, candidates in order |
+| how a bind tries | among the candidates, the bases only the owner can write to in order; if none, the shared bases in order |
+| symlink target | connect: the socket file<br>bind: the realpath of the socket's directory |
 | name | `sockat.` + 10 characters from 62 alphanumerics, taken from the OS's secure random source |
 | collision | on `EEXIST` draw a new name. Give up after 16 attempts and treat the candidate as not usable |
-| cleanup | removed whether the connect succeeds or fails. A failure to remove is ignored |
+| cleanup | removed whether the bind / connect succeeds or fails. A failure to remove is ignored |
 
 - For each candidate, check the spelling's length and the base's safety before creating anything. A candidate that does not fit, is unsafe, or where nothing can be created gets nothing and the next is tried
 
@@ -415,6 +428,7 @@ When a path over the standard length becomes `ENAMETOOLONG` (the directory exist
 | illumos | file name > 96 | relative > 107, and no symlink | file name > 107, and no symlink |
 
 - On Linux without thread-cwd, a bind uses [proc](#proc) for a file name up to about 79 bytes, and [fork](#fork) beyond that up to 96
+- `bind_any` reaches even where the bind's routes give `ENAMETOOLONG`, as long as the [symlink](#symlink) spelling (`<base>/sockat.XXXXXXXXXX/<file name>`) fits the sockaddr
 - When D can be created nowhere, a bind reaches a file name of 88 (84 on Apple OSes / BSD, about 72 with [proc-sockdir](#proc-sockdir) alone) through the `-sockdir` routes (when R can be created in the socket's directory). The connect variants reach as far as the fallback routes do (proc-held is not usable)
 - Full paths are passed when looking up the directory and so on, so a path over PATH_MAX (1024 on macOS, 4096 on Linux) is `ENAMETOOLONG`. That is outside sockat's responsibility
 
@@ -431,11 +445,11 @@ When a path over the standard length becomes `ENAMETOOLONG` (the directory exist
 
 | Point | Detail |
 |---|---|
-| address the kernel reports | the bound side's `getsockname` and the connecting side's `getpeername` return `R/<file name>` (`/proc/self/fd/<fd>/R/<file name>` for [proc](#proc)). R no longer exists, so it hits nothing wherever it is resolved later. In a language where the address accessors of the standard types can be replaced (Python), they return the original path (Python's asyncio `stat`s / unlinks the listener's `getsockname` spelling). Where they cannot be replaced, the caller keeps the original path |
+| address the kernel reports | the bound side's `getsockname` and the connecting side's `getpeername` return `R/<file name>` (`/proc/self/fd/<fd>/R/<file name>` for [proc](#proc)). R no longer exists, so it hits nothing wherever it is resolved later. The [symlink](#symlink) of `bind_any` returns `<base>/sockat.XXXXXXXXXX/<file name>`, which in a shared base other users can recreate. In a language where the address accessors of the standard types can be replaced (Python), they return the original path (Python's asyncio `stat`s / unlinks the listener's `getsockname` spelling). Where they cannot be replaced, the caller keeps the original path |
 | directory looked up first | the routes that use R (those through D and the form without D) resolve the socket's directory with realpath when they create R. [proc-direct](#proc-direct), [relative](#relative), [at-direct](#at-direct) and [fork-direct](#fork-direct) look up the directory, then pass the file name. A rename or symlink swap in between is not reflected. [widened](#widened) and [symlink](#symlink) behave as the standard |
 | another thread's chdir | relative returns a generic error if the cwd stayed changed in between. A change and change back is not seen |
 | a socket's directory others can write to | in a socket's directory that is not sticky and that others can write to, the R of the form without D can be replaced between its creation and the bind, so the bind may land in another directory (if that name already exists there, `EADDRINUSE`; nothing is overwritten). The R inside D cannot be replaced, since D is 0700 |
-| leftovers | if the process dies before removing D, R or a base's symlink, `sockat.XXXXXXXXXX` is left in the base, and `.sockat.XXXXXXXXXX` (D, or the R of the form without D) in the socket's directory. On OSes that open D with `O_RDONLY` (other than Linux and Apple OSes), D cannot be opened when the umask removed the owner's read permission; it cannot be checked, so it is left untouched |
+| leftovers | if the process dies before removing D, R or a base's symlink, `sockat.XXXXXXXXXX` is left in the base, and `.sockat.XXXXXXXXXX` (D, or the R of the form without D) in the socket's directory. |
 
 - NUL anywhere but at the start is an invalid argument even in a short path. A language whose standard silently truncates at NUL (Go etc.) says so under "differs from the standard" in its README
 
@@ -477,14 +491,16 @@ When a path over the standard length becomes `ENAMETOOLONG` (the directory exist
 | ways not usable | with thread-cwd made unusable, Linux with `/proc` goes on to proc. When that is not usable either, a bind goes on to fork (the peer is the parent) and the connect variants to the fallback routes |
 | fallback routes | with each forced, the socket is reached and nothing remains in the base. For symlink, an unsafe base is skipped, a too deep `TMPDIR` falls back to `/tmp`, colliding names are skipped and the attempts stop at 16 |
 | no retry on failure | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` are returned and nothing is created on later routes or bases |
-| connect and fork | the `connect` variants return `ENAMETOOLONG` when only fork-direct reaches; the `connect_any` variants reach with `forked` true |
+| connect and fork | the `connect` variants return `ENAMETOOLONG` when only fork-direct reaches; the `connect_any` variants reach and the level is fork |
+| `bind_any` | where the default bind gives `ENAMETOOLONG` it reaches through symlink. With a base only the owner can write to, that base is used and the level is respelled; with only a shared base, the level is shared symlink. Nothing remains in the base. Where a default route reaches, the level is that route's |
+| D that cannot be opened | when the umask removed the owner's permission and D just created cannot be opened, nothing remains in the base |
 | relative and cwd | a cwd change during relative is a generic error |
 | fork | a client connected to a server bound through fork or fork-sockdir sees the parent as the peer (before and after any send); the peer pid behavior of fork-direct; reading the result with `SIGCHLD` set to `SIG_IGN` |
 | macOS | a 253-byte path goes through widened for the connect variants. A bind never uses widened |
 | non-blocking connect | a full backlog fails without waiting |
 | path not ending with a name, NUL anywhere but at the start | invalid argument, nothing created. NUL even for a short path. A leading NUL (abstract) goes to the standard |
 | address the kernel reports | reading it does not fail for a long path. Where the accessors can be replaced, the listener, accepted and connected sockets return the original path, and the language's usual higher layers (Python's asyncio `start_unix_server(sock=...)` etc.) behave as for a short path without extra arguments |
-| `_ex` | `discard()` closes and the file is removed. If another file has replaced it in between, it is not removed |
+| `_ex` | `discard()` removes the file and does not close the listener. If another file has replaced it in between, it is not removed |
 
 - The routes differ per OS, so run at least on macOS and Linux. Other Unixes run in CI VMs
 - Tests that change process-wide settings such as the cwd or signal handling run inside a child process

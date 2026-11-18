@@ -1,6 +1,6 @@
 # DR-0007: connect_any 系は既定の API に出さず、使う人が選んで有効にする
 
-- Status: Active
+- Status: Superseded by DR-0013
 - Date: 2026-11-18
 
 ## Context
@@ -42,4 +42,4 @@
 ## 関連
 
 - 裁定: kawaz (2026-11-18)。feature 名と戻り値の型も kawaz (2026-11-18)
-- [DR-0002](DR-0002-no-connect-any-without-fork.md)、[DR-0012](DR-0012-own-directory-and-thread-cwd.md)
+- [DR-0002](../DR-0002-no-connect-any-without-fork.md)、[DR-0012](../DR-0012-own-directory-and-thread-cwd.md)
