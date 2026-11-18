@@ -36,6 +36,7 @@
 - 戻り値の listener / stream は標準が返すのと同じ型。標準の代わりに置き換えるだけで使える
 - `_ex` は bind の側だけ。bind したソケットのファイルの realpath と `(st_dev, st_ino)` を覚え、`discard()` で listener を閉じ、そのパスの `(st_dev, st_ino)` が同じ時だけファイルを消す
   - 覚えるのは bind が通った直後 (経路の中で、listener を返す前)。覚えられなければ listener を閉じ、ファイルは消さずにエラーを返す (消せない `discard()` を成功に見せない)
+  - `discard()` は、ファイルが既に無い時と別のファイルに置き換わっていて消さない時も成功を返す。失敗を返すのは消そうとして失敗した時だけ
   - 確かめてから消すまでと、bind してから覚えるまでの間に、ソケットのディレクトリに書ける者がファイルをすり替えるのは防げない (inode を指定して消す手段が POSIX に無い)
 - `connect_any` 系は、他の経路が全部使えない時に fork してでも connect する。pid は返さない。`forked` は fork の経路を通った時だけ真
 - `connect_any` 系は既定の API に出さず、使う人が選んで有効にする仕組みの後ろに置く (Rust は feature `any`) ([DR-0007](decisions/DR-0007-connect-any-is-opt-in.md))。fork の経路を作れない言語は出さず、README の表に「fork の経路なし」と書く ([DR-0002](decisions/DR-0002-no-connect-any-without-fork.md))
@@ -65,7 +66,7 @@
 標準に渡す長さを超えるパスは、次の順に試し、最初に使えた経路で bind / connect する ([DR-0012](decisions/DR-0012-own-directory-and-thread-cwd.md))。
 
 - 最後がファイル名でないパス (`dir/`、`dir/.`、`dir/..`、`..`) は、何も作らずに引数の誤り
-- 最初にソケットのディレクトリを `stat` で引く。無ければ `ENOENT` (長さの判定や D を作るより前)。ソケットのディレクトリの fd が要る経路 (/proc、connectat、fork、D 無しの fork の R) だけがそれを開き、開けなければその経路は使えない (他の OS の `O_RDONLY` は読み取り権限の無いディレクトリを開けない)
+- 最初にソケットのディレクトリを `stat` で引き、realpath を取る。無ければ `ENOENT`、ディレクトリでなければ `ENOTDIR`、realpath を引けなければそのエラー (どれも長さの判定や D を作るより前)。ソケットのディレクトリの fd が要る経路 (/proc、connectat、fork、D 無しの fork の R) だけがそれを開き、開けなければその経路は使えない (他の OS の `O_RDONLY` は読み取り権限の無いディレクトリを開けない)
 - どの経路も、呼び出し元のプロセスの cwd も呼び出し元のスレッドの cwd も変えない
 - ディレクトリの開き方 (置き場、ソケットのディレクトリ): Apple の OS は `O_SEARCH` (カーネルが `EISDIR` / `EINVAL` を返したら `O_RDONLY`)、Linux は `O_PATH | O_DIRECTORY`、他は `O_RDONLY | O_DIRECTORY`
 
@@ -108,7 +109,7 @@
 | 3 | ソケットのディレクトリ | 2 でも作れない時だけ。名前は `.sockat.XXXXXXXXXX` (利用者のディレクトリなので、残っても sockat の物と分かり目立たない)。bind ではここに書けるはず。connect では書けるとは限らない |
 
 - 「作れない」は、置き場を開けない、D を作れない、名前を使い切った、乱数が取れない、手順 2 の確認が通らない、R を作れない
-- どこにも作れない時、bind は D 無しの fork に進む。子がソケットのディレクトリの fd に `fchdir` し、そこに作った R (名前は `.sockat.XXXXXXXXXX`、ソケットのディレクトリを指す) を通して `.sockat.XXXXXXXXXX/<ファイル名>` で bind する。綴りは 19 バイト + ファイル名 (ファイル名は Linux / illumos 88、Apple の OS / BSD 84 まで)。R も作れなければ `ENAMETOOLONG`
+- どこにも作れない時、bind は D 無しの fork に進む。子がソケットのディレクトリの fd に `fchdir` し、そこに作った R (名前は `.sockat.XXXXXXXXXX`、ソケットのディレクトリの realpath を指す) を通して `.sockat.XXXXXXXXXX/<ファイル名>` で bind する。綴りは 19 バイト + ファイル名 (ファイル名は Linux / illumos 88、Apple の OS / BSD 84 まで)。R も作れなければ `ENAMETOOLONG`
 - どこにも作れない時、connect 系は予備の経路に進む
 - 置き場の安全 (sticky 等) と長さは問わない。D を fd で掴み、綴りに置き場が出ない
 
@@ -246,6 +247,7 @@
 | 状況 | エラー |
 |---|---|
 | ディレクトリが無い / connect 先が無い | `ENOENT` |
+| ディレクトリの位置にディレクトリでない物がある | `ENOTDIR` |
 | bind 先に既にファイルがある | `EADDRINUSE` |
 | 誰も listen していないソケットファイル | `ECONNREFUSED` |
 | backlog が満杯 | Linux はブロックしない connect で `EAGAIN` (ブロックする connect は待つ)、macOS は `ECONNREFUSED` |

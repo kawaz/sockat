@@ -36,6 +36,7 @@ How sockat behaves, independent of the language. Every implementation follows it
 - The listener / stream returned is of the same type the standard returns, so it is a drop-in replacement for the standard
 - `_ex` exists for bind only. It remembers the realpath and `(st_dev, st_ino)` of the bound socket file; `discard()` closes the listener and removes the file only when that path still has the same `(st_dev, st_ino)`
   - It remembers them right after the bind succeeds (inside the route, before returning the listener). If they cannot be remembered, it closes the listener, leaves the file, and returns an error (it does not hand back a `discard()` that cannot remove anything as a success)
+  - `discard()` succeeds when the file is already gone and when it has been replaced by another file and is left alone. It fails only when the removal itself fails
   - Someone who can write to the socket's directory swapping the file between the check and the removal, or between the bind and the remembering, cannot be prevented (POSIX has no way to remove by inode)
 - The `connect_any` variants connect even by forking when no other route can be used. No pid is returned. `forked` is true only when the fork route was taken
 - The `connect_any` variants are not in the default API; they sit behind a mechanism the user opts into (an `any` feature in Rust) ([DR-0007](decisions/DR-0007-connect-any-is-opt-in.md), Japanese). A language that cannot build the fork route does not provide them; its README says "no fork route" in the table ([DR-0002](decisions/DR-0002-no-connect-any-without-fork.md), Japanese)
@@ -65,7 +66,7 @@ A path up to the standard length is handed to the standard unchanged. Nothing is
 A path over the standard length is tried in the order below and bound / connected on the first route that can be used ([DR-0012](decisions/DR-0012-own-directory-and-thread-cwd.md), Japanese).
 
 - A path whose last component is not a file name (`dir/`, `dir/.`, `dir/..`, `..`) is an invalid-argument error, and nothing is created
-- The socket's directory is looked up first with `stat`. When it is missing, `ENOENT` (before the length is judged or D is created). Only the routes that need an fd of the socket's directory (/proc, connectat, fork, the R of the fork without D) open it, and when it cannot be opened that route is unusable (`O_RDONLY` on other OSes cannot open a directory without read permission)
+- The socket's directory is looked up first with `stat`, and its realpath is taken. When it is missing, `ENOENT`; when it is not a directory, `ENOTDIR`; when the realpath cannot be taken, that error (all before the length is judged or D is created). Only the routes that need an fd of the socket's directory (/proc, connectat, fork, the R of the fork without D) open it, and when it cannot be opened that route is unusable (`O_RDONLY` on other OSes cannot open a directory without read permission)
 - No route changes the calling process's cwd or the calling thread's cwd
 - How a directory is opened (the base, the socket's directory): `O_SEARCH` on Apple OSes (`O_RDONLY` if the kernel answers `EISDIR` / `EINVAL`), `O_PATH | O_DIRECTORY` on Linux, `O_RDONLY | O_DIRECTORY` elsewhere
 
@@ -108,7 +109,7 @@ A path over the standard length is tried in the order below and bound / connecte
 | 3 | the socket's directory | only when 2 fails too. The name is `.sockat.XXXXXXXXXX` (it is the user's directory, so a leftover is recognizable as sockat's and stays inconspicuous). A bind should be able to write there; a connect not necessarily |
 
 - "Fails" means: the base cannot be opened, D cannot be created, names are exhausted, no random bytes, the check in step 2 fails, or R cannot be created
-- When D can be created nowhere, a bind goes on to the fork without D. The child `fchdir`s into the socket's directory fd and binds by `.sockat.XXXXXXXXXX/<file name>` through an R created there (named `.sockat.XXXXXXXXXX`, pointing to the socket's directory). The spelling is 19 bytes + the file name (a file name up to 88 on Linux / illumos, 84 on Apple OSes / BSD). If R cannot be created either, `ENAMETOOLONG`
+- When D can be created nowhere, a bind goes on to the fork without D. The child `fchdir`s into the socket's directory fd and binds by `.sockat.XXXXXXXXXX/<file name>` through an R created there (named `.sockat.XXXXXXXXXX`, pointing to the socket's directory's realpath). The spelling is 19 bytes + the file name (a file name up to 88 on Linux / illumos, 84 on Apple OSes / BSD). If R cannot be created either, `ENAMETOOLONG`
 - When D can be created nowhere, the connect variants go on to the fallback routes
 - Neither the base's safety (sticky etc.) nor its length matters. D is held by fd, and the base does not appear in the spelling
 
@@ -246,6 +247,7 @@ When a path over the standard length becomes `ENAMETOOLONG` (the directory exist
 | Situation | Error |
 |---|---|
 | no directory / nothing to connect to | `ENOENT` |
+| something other than a directory where the directory should be | `ENOTDIR` |
 | a file already exists where bind would create the socket | `EADDRINUSE` |
 | a socket file nobody listens on | `ECONNREFUSED` |
 | backlog full | Linux: `EAGAIN` for a non-blocking connect (a blocking one waits); macOS: `ECONNREFUSED` |
