@@ -15,7 +15,7 @@
 | 言語 | リポ | パッケージ | 状態 |
 |---|---|---|---|
 | Rust | [kawaz/sockat-rs](https://github.com/kawaz/sockat-rs) | crates.io の [`sockat`](https://crates.io/crates/sockat) | 公開済み |
-| Python | kawaz/sockat-py | PyPI | 予定 |
+| Python | [kawaz/sockat-py](https://github.com/kawaz/sockat-py) | PyPI の [`sockat`](https://pypi.org/project/sockat/) | 公開済み (fork の経路と `connect_any` 系なし) |
 | Go | kawaz/sockat-go | `github.com/kawaz/sockat-go` | 予定 |
 | JavaScript / TypeScript | kawaz/sockat-ts | npm | 予定 |
 | Ruby | kawaz/sockat-rb | RubyGems | 予定 |
