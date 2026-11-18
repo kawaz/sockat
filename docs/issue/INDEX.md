@@ -2,4 +2,4 @@
 
 | date | category | status | issue | title | blocked_by |
 |---|---|---|---|---|---|
-| 2026-11-18 | feature | open | [datagram-and-seqpacket](./2026-11-18-datagram-and-seqpacket.md) | SOCK_DGRAM と SOCK_SEQPACKET も長いパスで使えるようにする |  |
+| 2026-11-18 | task | open | [datagram-and-seqpacket](./2026-11-18-datagram-and-seqpacket.md) | SOCK_DGRAM と SOCK_SEQPACKET も長いパスで使えるようにする |  |
