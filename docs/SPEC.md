@@ -35,6 +35,7 @@ How sockat behaves, independent of the language. Every implementation follows it
 - A language whose standard connect never blocks (Node.js etc.) provides one connect in the standard's own form, with no separate `_nonblocking` ([DR-0003](decisions/DR-0003-single-connect-when-standard-never-blocks.md), Japanese)
 - `connect` / `connect_nonblocking` return `ENAMETOOLONG` when they reach the fork route
 - The `connect_any` variants connect even by forking when no other route can be used. The bool is `true` only when the fork route was taken. No pid is returned
+- The `connect_any` variants are not in the default API. They sit behind a mechanism the user opts into in that language (a `connect-any` feature in Rust, a separate module in Python, etc.) ([DR-0007](decisions/DR-0007-connect-any-is-opt-in.md), Japanese)
 - The two non-blocking variants make the socket non-blocking before connecting and return it that way. When the peer's backlog is full they fail without waiting
 - A non-blocking connect is expected to finish within the call. On `EINPROGRESS` that error is returned and the socket is closed (a stream that is not connected is never returned)
 - A socket the implementation creates itself gets the same settings as one the language's standard creates (close-on-exec, `SO_NOSIGPIPE`, the listen backlog, etc.)

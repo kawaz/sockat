@@ -35,6 +35,7 @@
 - 標準の connect が元から待たない言語 (Node.js 等) では、標準と同じ形の connect を 1 つだけ出し、`_nonblocking` を分けない ([DR-0003](decisions/DR-0003-single-connect-when-standard-never-blocks.md))
 - `connect` / `connect_nonblocking` は fork の経路に来た所で `ENAMETOOLONG` を返す
 - `connect_any` 系は、他の経路が全部使えない時に fork してでも connect する。fork の経路を通った時だけ `true`。pid は返さない
+- `connect_any` 系は既定の API に出さない。使う人が自分で選んで有効にする、その言語の仕組みの後ろに置く (Rust は feature `connect-any`、Python は別のモジュール等) ([DR-0007](decisions/DR-0007-connect-any-is-opt-in.md))
 - ブロックしない 2 つは、connect の前にソケットを非ブロッキングにし、そのまま返す。相手の backlog が満杯なら待たずに失敗する
 - ブロックしない connect は呼び出しの中で結果が出る前提。`EINPROGRESS` が返ったらそれをエラーとして返し、ソケットを閉じる (つながっていない stream を返さない)
 - 自前で作るソケットは、その言語の標準が作るソケットと同じ設定にする (close-on-exec、`SO_NOSIGPIPE`、listen の backlog 等)
