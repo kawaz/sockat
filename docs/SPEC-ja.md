@@ -84,7 +84,10 @@
 ### 中心の経路
 
 1. 置き場 (「D の置き場」) を開いて fd で掴み、その中に `mkdirat` で mode 0700 の D を作る。名前は `sockat.` (ソケットのディレクトリでは `.sockat.`) + 英数 62 種から 10 文字 (OS の安全な乱数)。`EEXIST` で引き直し、16 回で打ち切る
-2. D を開く (`/proc` を使える Linux は `O_PATH | O_DIRECTORY | O_NOFOLLOW`、Apple の OS は `O_SEARCH | O_DIRECTORY | O_NOFOLLOW` (カーネルが `EISDIR` / `EINVAL` を返したら `O_RDONLY`)、`/proc` を使えない Linux と他の OS は `O_RDONLY | O_DIRECTORY | O_NOFOLLOW`。`O_PATH` と `O_SEARCH` は umask が持ち主の読み取りを削っても開ける)。`fstat` で「ディレクトリ・持ち主が実効 uid・group と other に権限が無い」を確かめ、0700 にそろえる (`O_PATH` の fd は `chmod("/proc/self/fd/<fd>", 0700)`、他は `fchmod`。`O_PATH` の fd に `fchmod` は `EBADF` になる)
+2. D を開く (Linux は `O_PATH | O_DIRECTORY | O_NOFOLLOW`、Apple の OS は `O_SEARCH | O_DIRECTORY | O_NOFOLLOW` (カーネルが `EISDIR` / `EINVAL` を返したら `O_RDONLY`)、他の OS は `O_RDONLY | O_DIRECTORY | O_NOFOLLOW`。`O_PATH` と `O_SEARCH` は umask が持ち主の読み取りを削っても開ける)。`fstat` で「ディレクトリ・持ち主が実効 uid・group と other に権限が無い」を確かめ、0700 にそろえる
+   - `O_PATH` の fd: `/proc` を使えれば `chmod("/proc/self/fd/<fd>", 0700)`。使えなければ D を名前で `O_RDONLY | O_DIRECTORY | O_NOFOLLOW` で開き直し、`(st_dev, st_ino)` が最初の fd と同じことを確かめて `fchmod` (`O_PATH` の fd に `fchmod` は `EBADF`)
+   - 他の fd: `fchmod`
+   - 確認が通った後に開き直せない・そろえられない時は「作れない」とし、手順 5 で D を片付ける
 3. D の中に R を作る: `symlinkat(<ソケットのディレクトリの realpath>, Dfd, R)`。R の名前は英数 62 種から 10 文字 (`sockat.` を付けない)。`EEXIST` で引き直し、16 回で打ち切る
 4. D の fd を基準に `R/<ファイル名>` で bind / connect する (「D の fd を基準にする手段」)
 5. 片付け: R は自分が作れた時だけ `unlinkat(Dfd, R)`。D は手順 2 の確認が通り、`fstatat(置き場の fd, D の名前, AT_SYMLINK_NOFOLLOW)` の `(st_dev, st_ino)` が fd と一致する時だけ `unlinkat(置き場の fd, D の名前, AT_REMOVEDIR)`。fd を閉じる。成功でも失敗でもする。消す失敗は無視する
@@ -232,7 +235,7 @@
 | カーネルが返すアドレス | bind した側の `getsockname` と、そこへ connect した側の `getpeername` は `R/<ファイル名>` (/proc 版は `/proc/self/fd/<fd>/R/<ファイル名>`) を返す。R はもう無いので、後でどこで解決しても何にも当たらない。標準の型でアドレスを返す口を差し替えられる言語 (Python) は元のパスを返す (Python の asyncio は listener の `getsockname` の綴りを `stat` / unlink する)。差し替えられない言語は元のパスを呼び出し元が持つ |
 | ディレクトリを先に引く | 中心の経路は R を作る時にソケットのディレクトリを realpath で引く。予備の経路の /proc・相対パス・connectat と `connect_any` 系の fork はディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない。広げた sockaddr と symlink は標準と同じ |
 | 他のスレッドの chdir | 相対パスの経路は、間に cwd が変わったままなら一般のエラー。変えて戻した場合は見えない |
-| 残骸 | D・R・置き場の symlink を消す前にプロセスが死ぬと、`sockat.XXXXXXXXXX` が置き場に、`.sockat.XXXXXXXXXX` (D か D 無しの fork の R) がソケットのディレクトリに残る |
+| 残骸 | D・R・置き場の symlink を消す前にプロセスが死ぬと、`sockat.XXXXXXXXXX` が置き場に、`.sockat.XXXXXXXXXX` (D か D 無しの fork の R) がソケットのディレクトリに残る。D を `O_RDONLY` で開く OS (Linux と Apple の OS 以外) では、umask が持ち主の読み取りを削っていると D を開けず、確かめられないので触らずに残す |
 
 - 先頭以外の NUL は短いパスでも引数の誤り。標準が NUL で黙って切り詰める言語 (Go 等) では、README の「標準と違う点」に書く
 
