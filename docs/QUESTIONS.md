@@ -17,27 +17,4 @@
 
 ## 裁定待ち
 
-### HB-Q4 fork の手前に「スレッドだけ cwd を移す」経路を足すか
-
-sockat-go が実測で見つけた手 (2026-11-18)。bind / connect するスレッドだけ cwd をディレクトリに移し、ファイル名で bind / connect する。プロセスの cwd は変わらない。
-
-| OS | やり方 |
-|---|---|
-| Linux | そのスレッドで `unshare(CLONE_FS)` → `fchdir`。スレッドは使い終わったら捨てる |
-| macOS | `pthread_fchdir_np` (libSystem の非公開 API、中身は `__pthread_fchdir` syscall) |
-| NetBSD / OpenBSD / illumos | 無い (fork が最後の手のまま) |
-
-fork と違い、副作用が無い (実測: peer の pid は呼び出し元のまま、fd の複製も無い。並行する getcwd は変わらない)。なので `connect` も試せる。
-
-- [ ] a: 足す。Linux と macOS は fork の手前にこの経路を置き、`connect` も試す。fork は他の Unix の最後の手としてだけ残す (統括推し。`connect` が fork なしで届く範囲が Linux と macOS で最後まで広がる)
-- [ ] b: Linux の `unshare` だけ足し、macOS の非公開 API は使わない (公開 API だけで保つ。macOS は今のまま symlink が最後の fork なしの手)
-- [ ] c: 足さない
-
-a / b の悪い面: docker の既定の seccomp は `unshare` を断る (その時は使えないとみなして次へ)。macOS の非公開 API は将来の OS で消えうる (消えたら使えないとみなして次へ)。Rust 版と Python 版も同じ経路を足すことになる。
-
-### HB-Q5 NUL を含む短いパスを、標準に渡さずエラーにするか
-
-Go の標準は NUL で黙って切り詰め、別のパスに bind する (`a\0b` → `a` ができる。sockat-go が実測)。SPEC の「短いパスは標準にそのまま渡す」に従うと、この振る舞いも引き継ぐ。
-
-- [ ] a: 長さによらず NUL を含むパスは引数の誤りにする (統括推し。黙って別の場所に作るのは標準の不具合で、引き継ぐ価値が無い。標準と違う点として README に書く)
-- [ ] b: 短いパスは標準のまま (黙って切り詰める)
+(なし)
