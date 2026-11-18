@@ -119,7 +119,7 @@
 | その他 | 無い |
 
 - どの OS も sockat が作った使い捨てのスレッドで行い、使い終わったら捨てる。呼び出し元のスレッドの cwd には触らない (`pthread_fchdir_np(-1)` で戻す形は、呼び出し元がスレッドに付けた cwd を消しうるので使わない)
-- Linux: seccomp の filter が掛かっている時 (`prctl(PR_GET_SECCOMP)` が 0 でない) は使えないとみなし、`unshare` を呼ばない。filter が `unshare` をエラーでなくプロセスの kill (SIGSYS) で断る環境 (systemd の `SystemCallFilter=` の既定の動作等) があり、呼ぶとプロセスが死ぬ
+- Linux: seccomp の filter が掛かっている時と確かめられない時 (`prctl(PR_GET_SECCOMP)` が 0 以外を返すか失敗する。emulate された環境や seccomp 無しのカーネルは `EINVAL`) は使えないとみなし、`unshare` を呼ばない。filter が `unshare` をエラーでなくプロセスの kill (SIGSYS) で断る環境 (systemd の `SystemCallFilter=` の既定の動作等) があり、呼ぶとプロセスが死ぬ
 - `unshare` の後の `fchdir` の失敗 (`EACCES` 等) は、使えないのでなく本当の失敗として返す (fork の経路と同じ)
 - 呼び出し元がソケットを作り、ディレクトリを開いた fd を持つ。ブロックしない connect ではその前にソケットを非ブロッキングにする。bind の後の listen は呼び出し元がする
 - ディレクトリの開き方は fork の経路と同じ

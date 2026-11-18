@@ -119,7 +119,7 @@ The process's cwd is not changed ([DR-0005](decisions/DR-0005-thread-cwd-route.m
 | others | not available |
 
 - On every OS it runs on a throwaway thread sockat creates, discarded after use. The caller's thread's cwd is never touched (restoring with `pthread_fchdir_np(-1)` is not used: it could drop a per-thread cwd the caller set)
-- Linux: when a seccomp filter is in place (`prctl(PR_GET_SECCOMP)` is not 0) the route is not usable and `unshare` is not called. Some filters refuse `unshare` by killing the process (SIGSYS) rather than with an error (systemd's `SystemCallFilter=` by default, etc.)
+- Linux: when a seccomp filter is in place or this cannot be told (`prctl(PR_GET_SECCOMP)` returns non-zero or fails; emulated environments and kernels without seccomp give `EINVAL`) the route is not usable and `unshare` is not called. Some filters refuse `unshare` by killing the process (SIGSYS) rather than with an error (systemd's `SystemCallFilter=` by default, etc.)
 - A failing `fchdir` after `unshare` (`EACCES` etc.) is a real failure and is returned, as on the fork route
 - The caller creates the socket and holds the directory fd. For a non-blocking connect it makes the socket non-blocking first. The listen after a bind is done by the caller
 - The directory is opened as for the fork route
