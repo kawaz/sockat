@@ -10,7 +10,7 @@
 |---|---|
 | 標準 | その言語の標準ライブラリの Unix domain socket の bind / connect |
 | 標準に渡す長さ | その言語の標準が受け付けるパスの最長。これ以下は標準にそのまま渡す。多くは `sun_path` − 1、Java は `sun_path` − 2 ([DR-0004](decisions/DR-0004-standard-length-per-language.md)) |
-| sockaddr に入る長さ | `sun_path` の長さ − 1 バイト (NUL の分を除く)。広げていない sockaddr に入る綴りの最長。/proc・相対パス・symlink・fork の経路の綴りの条件 |
+| sockaddr に入る長さ | `sun_path` の長さ − 1 バイト (NUL の分を除く)。広げていない sockaddr に入る綴りの最長。/proc・相対パス・symlink・スレッド cwd・fork の経路の綴りの条件 |
 | ディレクトリ / ファイル名 | パスの最後の要素の前と、最後の要素 |
 | 綴り | カーネルに渡すパスの文字列。同じ場所を指す別の綴りを作るのが経路 |
 
@@ -44,6 +44,7 @@
 
 標準に渡す長さ以下のパスは、標準にそのまま渡す。何も足さず、環境変数も読まない。それを超えたら経路に回す ([DR-0004](decisions/DR-0004-standard-length-per-language.md))。
 
+- NUL を含むパスは、長さによらず標準に渡さず引数の誤りにする ([DR-0006](decisions/DR-0006-nul-is-invalid-at-any-length.md))
 - 標準にブロックしない connect が無い言語では、ブロックしない connect に限り、標準と同じアドレスで自前のソケットを connect する
 - 経路の綴りを標準が受け付けない時 (標準に渡す長さが sockaddr に入る長さより短い言語) も、標準と同じアドレスで自前のソケットを使う
 
@@ -59,9 +60,9 @@
 | OS | 試す順番 |
 |---|---|
 | Linux / Android (`/proc` を使える) | /proc |
-| Linux / Android (`/proc` を使えない) | 相対パス → symlink → fork |
+| Linux / Android (`/proc` を使えない) | 相対パス → symlink → スレッド cwd → fork |
 | FreeBSD | bindat |
-| macOS / iOS 等 Apple の OS | 相対パス → 広げた sockaddr → symlink → fork |
+| macOS / iOS 等 Apple の OS | 相対パス → 広げた sockaddr → symlink → スレッド cwd → fork |
 | NetBSD / OpenBSD / illumos / その他の Unix | 相対パス → symlink → fork |
 
 - 標準に渡す長さを超えるパスで、最後がファイル名でないもの (`dir/`、`dir/.`、`dir/..`、`..`) は、何も作らずに引数の誤りを返す
@@ -76,6 +77,7 @@
 | 相対パス | cwd からの相対パスを標準に渡す。文字列を書き直すだけで `chdir` しない | 元のパスが絶対パスで、相対パスが sockaddr に入る長さ以内。相対パスのディレクトリと元のディレクトリの `(st_dev, st_ino)` が一致し、綴りを作る間に cwd が変わっていない |
 | 広げた sockaddr | `sun_len` とアドレス長を `2 + パスの長さ` にした sockaddr で、元のパス、無理なら相対パスを渡す | Apple の OS。パスが 253 バイト以内。カーネルが `EINVAL` / `ENAMETOOLONG` を返したら使えないとみなす |
 | symlink | 置き場に短い symlink を作り、それを通した綴りを渡して、すぐ消す | 綴りが sockaddr に入る長さ以内 (*) で、安全で symlink を作れる置き場がある |
+| スレッド cwd | bind / connect するスレッドだけ cwd をディレクトリに移し、ファイル名で bind / connect する | Linux / Apple の OS。ファイル名が sockaddr に入る長さ以内 (*)。その言語でスレッドを作って固定できる |
 | fork | ディレクトリの fd に `fchdir` した子を fork し、子がファイル名で bind / connect する | `bind` と `connect_any` 系だけ。ファイル名が sockaddr に入る長さ以内 (*) |
 
 (*) Apple の OS でカーネルが広げた sockaddr を受け付ける時は 253 バイト以内。断った時は sockaddr に入る長さで判定する。
@@ -103,6 +105,21 @@
 - 候補ごとに、何かを作る前に綴りの長さと置き場の安全を確かめる。満たさない候補には何も作らず次へ進む
 - symlink を作れない時 (置き場が無い・書けない、名前を使い切った、乱数が取れない) も次の候補へ進む
 
+### スレッド cwd の経路
+
+プロセスの cwd は変えない ([DR-0005](decisions/DR-0005-thread-cwd-route.md))。
+
+| OS | やり方 |
+|---|---|
+| Linux / Android | 使い捨てのスレッドで `unshare(CLONE_FS)` → `fchdir(dirfd)` → ファイル名で bind / connect。スレッドは使い終わったら捨てる |
+| Apple の OS | `pthread_fchdir_np(dirfd)` → ファイル名で bind / connect → `pthread_fchdir_np(-1)` で戻すか、スレッドを捨てる |
+| その他 | 無い |
+
+- 呼び出し元がソケットを作り、ディレクトリを開いた fd を持つ。ブロックしない connect ではその前にソケットを非ブロッキングにする。bind の後の listen は呼び出し元がする
+- ディレクトリの開き方は fork の経路と同じ
+- `pthread_fchdir_np` は libSystem の非公開 API (中身は `__pthread_fchdir` syscall)。実行時に引き、無ければ使えない
+- 副作用は無い。peer の pid は呼び出し元のまま、fd の複製も無く、他のスレッドの cwd は変わらない。そのため `connect` / `connect_nonblocking` も試す
+
 ### fork の経路
 
 1. 親がソケットを作り、ディレクトリを開いた fd を持ち、sockaddr を組み立ててから fork する。ブロックしない connect では fork の前にソケットを非ブロッキングにする
@@ -122,6 +139,7 @@
   - カーネルが広げた sockaddr を受け付けない
   - 置き場が安全でない・symlink を作れない
   - 相対パスの経路で、作った綴りのディレクトリが元と `(st_dev, st_ino)` で一致しない、または cwd が既に変わっている
+  - スレッド cwd の経路で、`unshare` が断られた (docker の既定の seccomp は `EPERM`)、`pthread_fchdir_np` が無い・失敗した、スレッドを作れない・固定できない
 - ディレクトリが無い時はどの OS でも `ENOENT`。ディレクトリを先に開くので、ファイル名の長さの判定より前に決まる
 - `connect` / `connect_nonblocking` はディレクトリを開いてから fork の手前で `ENAMETOOLONG` を返す
 
@@ -131,13 +149,14 @@
 
 | OS | `bind` | `connect` 系 | `connect_any` 系 |
 |---|---|---|---|
-| Linux (`/proc` あり) | ファイル名 > 107 | ファイル名が `/proc` の綴りに収まらず、相対パス > 107、symlink も使えない | ファイル名 > 107、symlink も使えない |
-| Linux (`/proc` 無し) | ファイル名 > 107 | 相対パス > 107、symlink も使えない | ファイル名 > 107、symlink も使えない |
+| Linux (`/proc` あり) | ファイル名 > 107 | ファイル名 > 107、symlink も使えない<br>スレッド cwd が使えない時: ファイル名が `/proc` の綴りに収まらず、相対パス > 107、symlink も使えない | ファイル名 > 107、symlink も使えない |
+| Linux (`/proc` 無し) | ファイル名 > 107 | ファイル名 > 107、symlink も使えない<br>スレッド cwd が使えない時: 相対パス > 107、symlink も使えない | ファイル名 > 107、symlink も使えない |
 | FreeBSD | ファイル名 > 103 | ファイル名 > 103 | ファイル名 > 103 |
-| macOS / iOS 等 Apple の OS | ファイル名 > 253 | 元のパスも相対パスも > 253、symlink も使えない | ファイル名 > 253、symlink も使えない |
+| macOS / iOS 等 Apple の OS | ファイル名 > 253 | ファイル名 > 253、symlink も使えない<br>スレッド cwd が使えない時: 元のパスも相対パスも > 253、symlink も使えない | ファイル名 > 253、symlink も使えない |
 | NetBSD / OpenBSD / その他の BSD | ファイル名 > 103 | 相対パス > 103、symlink も使えない | ファイル名 > 103、symlink も使えない |
 | illumos | ファイル名 > 107 | 相対パス > 107、symlink も使えない | ファイル名 > 107、symlink も使えない |
 
+- スレッド cwd の経路を使える Linux / Apple の OS では、`connect` 系も `connect_any` 系と同じ所まで届く
 - `/tmp` で symlink の経路を使えれば、connect はディレクトリの深さにもファイル名の長さにもよらず届く
 - `/tmp` を通した bind はファイル名が 84 バイト (`sun_path` が 104 の OS は 80、macOS は 230) まで
 
@@ -155,9 +174,11 @@ bind は子が bind するだけで listen は親なので、相手から見え�
 | 点 | 内容 |
 |---|---|
 | カーネルが返すアドレス | `getsockname` / `getpeername` は bind に使った綴りを返す (相対パス、`/proc/self/fd/...`、もう無い symlink、ファイル名だけ、途中で切れたパス)。元のパスは呼び出し元が持つ |
-| ディレクトリを先に引く | /proc・相対パス・bindat・fork は、ディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない。広げた sockaddr と symlink は標準と同じ |
+| ディレクトリを先に引く | /proc・相対パス・bindat・スレッド cwd・fork は、ディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない。広げた sockaddr と symlink は標準と同じ |
 | 他のスレッドの chdir | 相対パスの経路は、間に cwd が変わったままなら一般のエラー。変えて戻した場合は見えない |
 | symlink の残骸 | symlink を消す前にプロセスが死ぬと `sockat.XXXXXXXXXX` が置き場に残る |
+
+- NUL を含むパスは短いパスでも引数の誤り。標準が NUL で黙って切り詰める言語 (Go 等) では、README の「標準と違う点」に書く
 
 ## エラー
 
@@ -169,7 +190,7 @@ bind は子が bind するだけで listen は親なので、相手から見え�
 | backlog が満杯 | Linux はブロックしない connect で `EAGAIN` (ブロックする connect は待つ)、macOS は `ECONNREFUSED` |
 | どの経路にも収まらない。`connect` 系では fork の経路でしか届かない時も | `ENAMETOOLONG` |
 | 標準に渡す長さを超えるパスで、名前で終わらない | 引数の誤り |
-| NUL を含むパス | 引数の誤り |
+| NUL を含むパス (長さによらない) | 引数の誤り |
 | 相対パスの経路の途中で cwd が変わった | 一般のエラー |
 | fork した子が正常に終了しなかった。または status を刈り取られ、bind / connect されていなかった | 一般のエラー |
 
@@ -180,7 +201,7 @@ bind は子が bind するだけで listen は親なので、相手から見え�
 
 - 上の経路と順番に従う。その言語で作れない経路は飛ばし (使えない経路として次へ進む)、README に OS × 経路の表で明示する
 - 経路は公開 API に出さない。試験はパッケージの中から各経路を直接呼んで強制する
-- 環境を読む部分 (symlink の置き場の候補、`/proc/self/fd` の場所、Apple の OS で広げた sockaddr を受け付けるか) は試験から差し替えられるようにする
+- 環境を読む部分 (symlink の置き場の候補、`/proc/self/fd` の場所、Apple の OS で広げた sockaddr を受け付けるか、スレッド cwd の経路を使えるか) は試験から差し替えられるようにする
 - README とマニュアルにこの仕様へのリンクを置く。仕様と食い違う振る舞いを入れる時は、先にこの仕様を直す
 
 ## 実装が確かめる試験の観点
@@ -192,14 +213,15 @@ bind は子が bind するだけで listen は親なので、相手から見え�
 | 送受信 | 各経路で bind した listener と connect した stream で実際に送受信できる |
 | 標準の型 | 戻り値が標準の型として使える (非同期ランタイムに渡せる言語では渡して使う) |
 | 失敗をやり直さない | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` を返し、後の経路・置き場に何も作らない (後の候補のディレクトリの mtime が変わらない) |
-| /proc が無い Linux | `/proc/self/fd` の場所を空のディレクトリ等に差し替えて、相対パス → symlink → fork に進む |
+| /proc が無い Linux | `/proc/self/fd` の場所を空のディレクトリ等に差し替えて、相対パス → symlink → スレッド cwd → fork に進む |
 | symlink の置き場 | 安全でない置き場を飛ばす、深すぎる `TMPDIR` で `/tmp` に回る、名前の衝突を飛ばし 16 回で打ち切る、成功でも失敗でも symlink を消す |
 | connect と fork | `connect` 系は fork でしか届かない時に `ENAMETOOLONG`、`connect_any` 系は届いて `true` |
 | cwd | どの経路の後も cwd が変わっていない。相対パスの経路の途中で cwd が変わったら一般のエラー |
+| スレッド cwd | 経路を強制して、プロセスの cwd が変わらない、peer の pid が呼び出し元、ソケットが元のパスにできる。使えない時は次の経路へ進む |
 | fork | peer の pid の振る舞い、`SIGCHLD` を `SIG_IGN` にした時の結果の読み取り |
 | macOS | 253 バイトのパスが広げた sockaddr で通る |
 | ブロックしない connect | backlog が満杯で待たずに失敗する |
-| 名前で終わらないパス、NUL | 何も作らずに引数の誤り |
+| 名前で終わらないパス、NUL | 何も作らずに引数の誤り。NUL は短いパスでも |
 | カーネルが返すアドレス | 長いパスでも取得で落ちない |
 
 - 経路は OS で違うので、少なくとも macOS と Linux で回す。他の Unix は CI の VM で回す
