@@ -35,6 +35,8 @@
 - 名前は仮。他の言語はその言語の命名の慣習に合わせる。振る舞いは上の表に従う
 - 戻り値の listener / stream は標準が返すのと同じ型。標準の代わりに置き換えるだけで使える
 - `_ex` は bind の側だけ。bind したソケットのファイルの realpath と `(st_dev, st_ino)` を覚え、`discard()` で listener を閉じ、そのパスの `(st_dev, st_ino)` が同じ時だけファイルを消す
+  - 覚えるのは bind が通った直後 (経路の中で、listener を返す前)。覚えられなければ listener を閉じ、ファイルは消さずにエラーを返す (消せない `discard()` を成功に見せない)
+  - 確かめてから消すまでと、bind してから覚えるまでの間に、ソケットのディレクトリに書ける者がファイルをすり替えるのは防げない (inode を指定して消す手段が POSIX に無い)
 - `connect_any` 系は、他の経路が全部使えない時に fork してでも connect する。pid は返さない。`forked` は fork の経路を通った時だけ真
 - `connect_any` 系は既定の API に出さず、使う人が選んで有効にする仕組みの後ろに置く (Rust は feature `any`) ([DR-0007](decisions/DR-0007-connect-any-is-opt-in.md))。fork の経路を作れない言語は出さず、README の表に「fork の経路なし」と書く ([DR-0002](decisions/DR-0002-no-connect-any-without-fork.md))
 - 標準の connect が元から待たない言語 (Node.js 等) は、標準と同じ形の connect を 1 つだけ出す ([DR-0003](decisions/DR-0003-single-connect-when-standard-never-blocks.md))
