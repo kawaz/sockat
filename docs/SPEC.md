@@ -100,6 +100,8 @@ A path over the standard length is tried in the order below and bound / connecte
 - After cleanup R exists nowhere, so the spelling the kernel reports, resolved later in another context such as the process's cwd, hits no unrelated file
 - A D that failed the check is someone else's; it and its contents are left alone
 - The length, and whether a way can be used (as far as can be told), are checked before D is created. If not usable, nothing is created and the next is tried
+- The length of the /proc variant's spelling depends on D's fd number, which is unknown until D is opened. Before creating D it is estimated, and it is checked again once D is open (if it does not fit, D is cleaned up and the next is tried)
+- Checking whether `/proc` is usable does not need an fd of the socket's directory (use the fd of `/` or of D)
 
 ### Where D is created
 
