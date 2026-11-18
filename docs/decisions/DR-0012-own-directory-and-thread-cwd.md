@@ -48,9 +48,9 @@
 | 3 | ソケットのディレクトリ (2 でも作れない時だけ。名前は `.sockat.XXXXXXXXXX`) |
 
 - 置き場の安全と長さは問わない
-- どこにも作れない時、bind は D 無しの fork (子がソケットのディレクトリの fd に `fchdir` し、そこに作った R `.sockat.XXXXXXXXXX` を通して `.sockat.XXXXXXXXXX/<ファイル名>`。R も作れなければ `ENAMETOOLONG`)、connect 系は予備の経路へ。スレッド cwd と /proc 版は D 無しの形を試さない
-- ソケットのディレクトリに作る物 (D と D 無しの fork の R) は名前の先頭にドットを付ける。利用者のディレクトリなので、残っても sockat の物と分かり目立たない (kawaz 裁定)
-- 置き場の 3 番目と、どこにも作れない時の扱いは kawaz 承認 (2026-11-19)
+- どこにも作れない時、bind は D 無しの形 (ソケットのディレクトリに R `.sockat.XXXXXXXXXX` を作り、ソケットのディレクトリの fd を基準に `.sockat.XXXXXXXXXX/<ファイル名>`) で、D と同じく「スレッド cwd (FreeBSD は bindat) → /proc 版 → fork」の順に試す。R も作れなければ `ENAMETOOLONG`。connect 系は予備の経路へ
+- ソケットのディレクトリに作る物 (D と D 無しの形の R) は名前の先頭にドットを付ける。利用者のディレクトリなので、残っても sockat の物と分かり目立たない (kawaz 裁定)
+- 置き場の 3 番目と、どこにも作れない時に D 無しの形で fork の前にスレッド cwd と /proc 版を試すことは kawaz 裁定 (2026-11-19。fork は最終手段)
 
 ### 試す順番
 
@@ -84,7 +84,7 @@
 
 悪い面:
 
-- ファイル名の上限が `R/` の 11 バイト分短い (Linux / illumos 96、Apple の OS / BSD 92。/proc 版はおよそ 79、D 無しの fork は 88 / 84)
+- ファイル名の上限が `R/` の 11 バイト分短い (Linux / illumos 96、Apple の OS / BSD 92。/proc 版はおよそ 79、D 無しの形は 88 / 84 で /proc 版はおよそ 72)
 - 長いパスの bind / connect のたびに D と R を作って消す
 - 途中でプロセスが死ぬと D や R が残る (置き場に `sockat.XXXXXXXXXX`、ソケットのディレクトリに `.sockat.XXXXXXXXXX`)
 - R はソケットのディレクトリの realpath を指すので、R を作った後のディレクトリの rename や symlink の張り替えは反映されない
@@ -109,11 +109,10 @@
 - 試験 (中心の経路を強制して): プロセスの cwd が変わらない、元のパスにソケットができ届く、返る綴りを unlink / stat しても無関係なファイルに当たらない、片付けの後に置き場に何も残らない、差し替えたディレクトリを使わず中身も消さない、`TMPDIR` に作れない時は `/tmp`、それも作れない時はソケットのディレクトリ、スレッド cwd が使えない時は /proc 版、それも使えない時は bind は fork・connect は予備の経路
 - 各言語の実装は経路を作り直す (bind の /proc・symlink・相対パスの経路を外し、中心の経路を足す)
 
-## 未確定
+### connect の fork と FreeBSD の connect の予備は D を通さない
 
-kawaz 未確認。SPEC はこの形で書く。
-
-- `connect_any` 系の fork と FreeBSD の connect の予備の経路は D を通さない (ソケットのディレクトリの fd とファイル名。connect の綴りは相手に残らないので今の経路のまま)
+- `connect_any` 系の fork と FreeBSD の connect の予備の経路 (connectat) は、ソケットのディレクトリの fd とファイル名で connect する (kawaz 裁定 2026-11-19)
+- connect した側のソケットは bind されないので、connect の綴りはどこにも残らない。R を挟む理由が無く、挟むと届くファイル名が 11 バイト短くなるだけ
 
 ## 関連
 

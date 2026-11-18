@@ -17,32 +17,15 @@
 
 ## 裁定待ち
 
-### D12-Q1: D をどこにも作れない時の bind で、fork の前にスレッド cwd と /proc 版を試すか
-
-[DR-0012](decisions/DR-0012-own-directory-and-thread-cwd.md) の「D の置き場」は、D をどこにも作れない時の bind を D 無しの fork (ソケットのディレクトリに R `.sockat.XXXXXXXXXX` を作り、子がそこへ `fchdir`) にし、「スレッド cwd と /proc 版は D 無しの形を試さない」と書いている。
-
-- 承認の時の想定は「ソケットのディレクトリにも R を作れない」場面だった
-- 実際には、D を作れない (確認に落ちる、名前を使い切る等) が R は作れる場面がある。その R は fork の子でなくてもスレッド cwd (`fchdir(ソケットのディレクトリの fd)` → `.sockat.XXXXXXXXXX/<ファイル名>`) と /proc 版 (`/proc/self/fd/<fd>/.sockat.XXXXXXXXXX/<ファイル名>`) で同じように使える
-- 綴りは R を通すので、片付けの後は何にも当たらない (中心の経路と同じ安全)
-
-統括推し: a。fork は最終手段なので、副作用の無い手段で届くなら先に使う。悪い面は D 無しの形の分だけ試験の組み合わせが増えること。
-
-- [ ] a: 試す。D 無しでも「スレッド cwd → /proc 版 → fork」の順にする
-- [ ] b: 試さない。今の DR-0012 のまま (D 無しは fork だけ)
-
-### D12-Q2: `connect_any` 系の fork と FreeBSD の connect の予備の経路は D を通さなくてよいか
-
-[DR-0012](decisions/DR-0012-own-directory-and-thread-cwd.md) の「未確定」。どちらもソケットのディレクトリの fd とファイル名で connect する (fork の子は `fchdir(ソケットのディレクトリの fd)` → `connect(<ファイル名>)`、FreeBSD は `connectat(fd, <ファイル名>)`)。
-
-- connect した側のソケットは bind されないので、connect に渡した綴りはどこにも残らない (サーバの `getpeername` は空、クライアントの `getpeername` はサーバが bind した綴り)
-- そのため綴りにランダムな部品 (R) を挟む理由が無い。D を通すと綴りが 11 バイト伸び、届くファイル名が短くなるだけ
-
-統括推し: a。
-
-- [ ] a: D を通さない (SPEC の今の書き方で確定し、「未確定」から外す)
-- [ ] b: D を通す (中心の経路と同じ `R/<ファイル名>`)
-
 ### D12-Q3: fork を作れない言語 (Python、Go) の bind で、中心の経路が使えない時に何をするか
+
+既定の bind は a で確定 (kawaz 2026-11-19)。kawaz の案「b を any に入れる (何が何でも bind したい人向け。失うものは any の説明に列挙。any は fork の意味でなく『何が何でも』の意図)」を議論中。決めること:
+
+- β: `bind_any` の置き場の symlink をどこに作るか (b の共有の置き場まで / c の持ち主だけが書ける置き場だけ / c → b の順)
+- γ: 何を失ったかを戻り値で知らせるか (`connect_any` の `forked` と同じ形)
+- δ: fork のある Rust にも `bind_any` を置くか (届く範囲はほぼ増えない)
+
+以下は元の問い。
 
 DR-0012 の bind は「スレッド cwd → /proc 版 → fork → `ENAMETOOLONG`」で、相対パスと置き場の symlink を外した。Python と Go は fork が無いので、次の所で長いパスの bind が `ENAMETOOLONG` になる (今の版は相対パス / symlink で届いている。sockat-py と sockat-go が指摘)。
 

@@ -14,7 +14,7 @@
 | ディレクトリ / ファイル名 | パスの最後の要素の前と、最後の要素 |
 | 綴り | カーネルに渡すパスの文字列。同じ場所を指す別の綴りを作るのが経路 |
 | D | sockat が bind / connect のたびに作る自分専用のディレクトリ (「中心の経路」) |
-| R | ソケットのディレクトリを指す乱数の名前の symlink。D の中 (D 無しの fork ではソケットのディレクトリの中) に作る |
+| R | ソケットのディレクトリを指す乱数の名前の symlink。D の中 (D 無しの形ではソケットのディレクトリの中) に作る |
 
 ## 対象
 
@@ -67,7 +67,7 @@
 標準に渡す長さを超えるパスは、次の順に試し、最初に使えた経路で bind / connect する ([DR-0012](decisions/DR-0012-own-directory-and-thread-cwd.md))。
 
 - 最後がファイル名でないパス (`dir/`、`dir/.`、`dir/..`、`..`) は、何も作らずに引数の誤り
-- 最初にソケットのディレクトリを `stat` で引き、realpath を取る。無ければ `ENOENT`、ディレクトリでなければ `ENOTDIR`、realpath を引けなければそのエラー (どれも長さの判定や D を作るより前)。ソケットのディレクトリの fd が要る経路 (/proc、connectat、fork、D 無しの fork の R) だけがそれを開き、開けなければその経路は使えない (他の OS の `O_RDONLY` は読み取り権限の無いディレクトリを開けない)
+- 最初にソケットのディレクトリを `stat` で引き、realpath を取る。無ければ `ENOENT`、ディレクトリでなければ `ENOTDIR`、realpath を引けなければそのエラー (どれも長さの判定や D を作るより前)。ソケットのディレクトリの fd が要る経路 (/proc、connectat、fork、D 無しの形) だけがそれを開き、開けなければその経路は使えない (他の OS の `O_RDONLY` は読み取り権限の無いディレクトリを開けない)
 - どの経路も、呼び出し元のプロセスの cwd も呼び出し元のスレッドの cwd も変えない
 - ディレクトリの開き方 (置き場、ソケットのディレクトリ): Apple の OS は `O_SEARCH` (カーネルが `EISDIR` / `EINVAL` を返したら `O_RDONLY`)、Linux は `O_PATH | O_DIRECTORY`、他は `O_RDONLY | O_DIRECTORY`
 
@@ -81,7 +81,7 @@
 | 4 | 中心の経路を fork で | 予備の経路 | 予備の経路 |
 | 5 | `ENAMETOOLONG` | `ENAMETOOLONG` | fork の経路 |
 
-- bind の 4 は、2・3 がスレッド cwd / `/proc` を使えない、または `/proc` の綴りに収まらない時に試す。D をどこにも作れない時は D 無しの形で試す (「D の置き場」)。綴りが sockaddr に入らない時は試さず `ENAMETOOLONG`
+- bind の 4 は、2・3 がスレッド cwd / `/proc` を使えない、または `/proc` の綴りに収まらない時に試す。D をどこにも作れない時は、2〜4 を D 無しの形で試す (「D の置き場」)。綴りが sockaddr に入らない時は試さず `ENAMETOOLONG`
 - bind は /proc (D を通さない形)・相対パス・広げた sockaddr・置き場の symlink の経路を使わない (綴りが後で無関係なファイルに当たるか、アドレスが途中で切れて読む側を壊すか、中心の経路で足りる)
 - connect の綴りは相手に残らない (connect した側のソケットは bind されない) ので、予備の経路は綴りにランダムな部品を挟まない
 
@@ -112,7 +112,7 @@
 | 3 | ソケットのディレクトリ | 2 でも作れない時だけ。名前は `.sockat.XXXXXXXXXX` (利用者のディレクトリなので、残っても sockat の物と分かり目立たない)。bind ではここに書けるはず。connect では書けるとは限らない |
 
 - 「作れない」は、置き場を開けない、D を作れない、名前を使い切った、乱数が取れない、手順 2 の確認が通らない、R を作れない
-- どこにも作れない時、bind は D 無しの fork に進む。子がソケットのディレクトリの fd に `fchdir` し、そこに作った R (名前は `.sockat.XXXXXXXXXX`、ソケットのディレクトリの realpath を指す) を通して `.sockat.XXXXXXXXXX/<ファイル名>` で bind する。綴りは 19 バイト + ファイル名 (ファイル名は Linux / illumos 88、Apple の OS / BSD 84 まで)。R も作れなければ `ENAMETOOLONG`
+- どこにも作れない時、bind は D 無しの形に進む。ソケットのディレクトリに R (名前は `.sockat.XXXXXXXXXX`、ソケットのディレクトリの realpath を指す) を作り、D の fd の代わりにソケットのディレクトリの fd を基準にして、`.sockat.XXXXXXXXXX/<ファイル名>` で bind する。手段は D と同じ順 (スレッド cwd (FreeBSD は bindat) → /proc 版 `/proc/self/fd/<fd>/.sockat.XXXXXXXXXX/<ファイル名>` → fork)。綴りは 19 バイト + ファイル名 (ファイル名は Linux / illumos 88、Apple の OS / BSD 84 まで。/proc 版はおよそ 72)。ソケットのディレクトリを開けない、R も作れない時は `ENAMETOOLONG`
 - どこにも作れない時、connect 系は予備の経路に進む
 - 置き場の安全 (sticky 等) と長さは問わない。D を fd で掴み、綴りに置き場が出ない
 
@@ -223,7 +223,7 @@
 | illumos | ファイル名 > 96 | 相対パス > 107、symlink も使えない | ファイル名 > 107、symlink も使えない |
 
 - Linux でスレッド cwd が使えない時、bind はファイル名およそ 79 バイトまで /proc 版、その先 96 までは fork
-- D をどこにも作れない時、bind は D 無しの fork でファイル名 88 (Apple の OS / BSD 84) まで届く (ソケットのディレクトリに R を作れる時)。connect 系は予備の経路の分だけ届く (fd で掴む形は使えない)
+- D をどこにも作れない時、bind は D 無しの形でファイル名 88 (Apple の OS / BSD 84、/proc 版だけならおよそ 72) まで届く (ソケットのディレクトリに R を作れる時)。connect 系は予備の経路の分だけ届く (fd で掴む形は使えない)
 - ディレクトリを引く等でフルパスを渡すので、PATH_MAX (macOS 1024、Linux 4096) を超えるパスは `ENAMETOOLONG`。sockat の責務外
 
 ## fork の副作用
@@ -242,7 +242,7 @@
 | カーネルが返すアドレス | bind した側の `getsockname` と、そこへ connect した側の `getpeername` は `R/<ファイル名>` (/proc 版は `/proc/self/fd/<fd>/R/<ファイル名>`) を返す。R はもう無いので、後でどこで解決しても何にも当たらない。標準の型でアドレスを返す口を差し替えられる言語 (Python) は元のパスを返す (Python の asyncio は listener の `getsockname` の綴りを `stat` / unlink する)。差し替えられない言語は元のパスを呼び出し元が持つ |
 | ディレクトリを先に引く | 中心の経路は R を作る時にソケットのディレクトリを realpath で引く。予備の経路の /proc・相対パス・connectat と `connect_any` 系の fork はディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない。広げた sockaddr と symlink は標準と同じ |
 | 他のスレッドの chdir | 相対パスの経路は、間に cwd が変わったままなら一般のエラー。変えて戻した場合は見えない |
-| 残骸 | D・R・置き場の symlink を消す前にプロセスが死ぬと、`sockat.XXXXXXXXXX` が置き場に、`.sockat.XXXXXXXXXX` (D か D 無しの fork の R) がソケットのディレクトリに残る。D を `O_RDONLY` で開く OS (Linux と Apple の OS 以外) では、umask が持ち主の読み取りを削っていると D を開けず、確かめられないので触らずに残す |
+| 残骸 | D・R・置き場の symlink を消す前にプロセスが死ぬと、`sockat.XXXXXXXXXX` が置き場に、`.sockat.XXXXXXXXXX` (D か D 無しの形の R) がソケットのディレクトリに残る。D を `O_RDONLY` で開く OS (Linux と Apple の OS 以外) では、umask が持ち主の読み取りを削っていると D を開けず、確かめられないので触らずに残す |
 
 - 先頭以外の NUL は短いパスでも引数の誤り。標準が NUL で黙って切り詰める言語 (Go 等) では、README の「標準と違う点」に書く
 
@@ -280,7 +280,7 @@
 | 中心の経路 | 強制して、プロセスの cwd も呼び出し元のスレッドの cwd も変わらない、ソケットが元のパスにでき送受信できる、peer の pid が呼び出し元、片付けの後に置き場に何も残らない |
 | 返る綴り | bind した後、返る綴り (`getsockname`) をそのまま unlink / stat しても無関係なファイル (cwd の同名ファイル、fd の番号を使い回させた別のディレクトリの同名ファイル) に当たらない |
 | 差し替えたディレクトリ | D を作ってから開くまでに差し替えたディレクトリ (持ち主が違うか group / other に権限が付いた) を使わず、その中身も消さない |
-| D の置き場 | `TMPDIR` に作れない時は `/tmp`、それも作れない時はソケットのディレクトリに `.sockat.` の名前で作る。相対パスや深い `TMPDIR` でも使える。どこにも作れない時、bind は D 無しの fork、connect 系は予備の経路 |
+| D の置き場 | `TMPDIR` に作れない時は `/tmp`、それも作れない時はソケットのディレクトリに `.sockat.` の名前で作る。相対パスや深い `TMPDIR` でも使える。どこにも作れない時、bind は D 無しの形 (スレッド cwd → /proc 版 → fork の順)、connect 系は予備の経路 |
 | 手段が使えない時 | スレッド cwd を使えなくして、`/proc` を使える Linux は /proc 版に進む。それも使えない時、bind は fork (peer は親)、connect 系は予備の経路に進む |
 | 予備の経路 | 各経路を強制して、ソケットに届き、置き場に何も残らない。symlink は安全でない置き場を飛ばす、深すぎる `TMPDIR` で `/tmp` に回る、名前の衝突を飛ばし 16 回で打ち切る |
 | 失敗をやり直さない | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` を返し、後の経路・置き場に何も作らない |
@@ -302,4 +302,3 @@
 - Android と macOS 以外の Apple の OS は全体が未確認
 - NetBSD・OpenBSD・illumos は peer の資格情報が未確認
 - ブロックしない connect が `EINPROGRESS` を返さないことは Linux と macOS でだけ確認済み
-- `connect_any` 系の fork と FreeBSD の connect の予備の経路は D を通さない (ソケットのディレクトリの fd とファイル名)。kawaz 未確認 ([DR-0012](decisions/DR-0012-own-directory-and-thread-cwd.md) の「未確定」)
