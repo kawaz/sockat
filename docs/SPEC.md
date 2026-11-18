@@ -116,7 +116,7 @@ On Linux / Android with `/proc` usable, an unsafe base candidate gets a director
 
 0. Before creating anything, check that `/proc` is usable (`/proc/self/fd/<fd>` resolves for an fd of the base). If not, create nothing and go on
 1. Create a directory with mode 0700 in the base. Name and collisions as for the symlink (`sockat.` + 10 characters, a new name on `EEXIST`, give up after 16)
-2. Open it `O_DIRECTORY | O_NOFOLLOW` and hold the fd; `fstat` that it is a directory, owned by the effective uid, with no permission for group or other. Otherwise not usable. Then `fchmod(fd, 0700)` to settle the owner's bits (so a umask that strips owner bits does not fail the check every time and pile up leftovers)
+2. Open it `O_PATH | O_DIRECTORY | O_NOFOLLOW` and hold the fd (works without read permission); `fstat` that it is a directory, owned by the effective uid, with no permission for group or other. Otherwise not usable. Then `chmod("/proc/self/fd/<fd>", 0700)` to settle the owner's bits (an `O_PATH` fd cannot be `fchmod`ed; the /proc spelling acts on what the fd refers to, so nothing can be swapped in by name). A umask that strips owner bits then neither fails the check nor leaves leftovers
 3. Create the symlink `s` in the fd with `symlinkat`, pointing to the socket file (the original path)
 4. Hand the spelling `/proc/self/fd/<fd>/s`
 5. Cleanup: `unlinkat(fd, "s")`. `rmdir` the directory only when `lstat` of its name gives the same `(st_dev, st_ino)` as the fd. Close the fd

@@ -19,7 +19,7 @@
 | 安全でない (それ以外) | 何も作らず次の候補へ |
 
 - 試す順: `TMPDIR` が安全なら symlink → 安全でなければ fd で掴む形 → `/tmp` が安全なら symlink → 安全でなければ fd で掴む形 → スレッド cwd → fork (bind と `connect_any` 系だけ)。`TMPDIR` が `/tmp` と同じなら 1 回だけ
-- fd で掴む形: 何かを作る前に `/proc` を使えるか確かめる → 0700 のディレクトリ (`sockat.` + 乱数 10 文字) を作る → `O_DIRECTORY | O_NOFOLLOW` で開き `fstat` で「ディレクトリ・持ち主が実効 uid・group と other に権限が無い」を確かめ、`fchmod(fd, 0700)` する (umask が持ち主のビットを削る環境で残骸が溜まらないため。統括の裁定 2026-11-18、sockat-go の指摘) → fd の中に `symlinkat` でソケットのファイルを指す `s` を作る → `/proc/self/fd/<fd>/s` を渡す
+- fd で掴む形: 何かを作る前に `/proc` を使えるか確かめる → 0700 のディレクトリ (`sockat.` + 乱数 10 文字) を作る → `O_PATH | O_DIRECTORY | O_NOFOLLOW` で開き `fstat` で「ディレクトリ・持ち主が実効 uid・group と other に権限が無い」を確かめ、`chmod("/proc/self/fd/<fd>", 0700)` する (umask が持ち主のビットを削る環境でも開けて残骸が溜まらないため。統括の裁定 2026-11-18、sockat-go と sockat-rs の指摘) → fd の中に `symlinkat` でソケットのファイルを指す `s` を作る → `/proc/self/fd/<fd>/s` を渡す
 - connect 系だけが使う。bind の綴り (`/proc/self/fd/<fd>/s/<ファイル名>`) は /proc の経路より長く、収まるなら /proc の経路が先に通るので、bind には効かない (統括の裁定 2026-11-18、worker の指摘)
 - 片付け: `unlinkat(fd, "s")`。ディレクトリは名前の `(st_dev, st_ino)` が fd と一致する時だけ `rmdir`。fd を閉じる
 - 使えないとみなして次の候補へ: `/proc` を使えない、ディレクトリを作れない、`fstat` の確認が通らない、`symlinkat` が失敗した
