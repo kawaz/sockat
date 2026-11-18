@@ -19,7 +19,9 @@
 
 - 順番: 相対パス → (Apple) 広げた sockaddr → symlink → スレッド cwd → fork (bind と `connect_any` 系だけ)
 - `bind` / `connect` / `connect_nonblocking` / `connect_any` 系のどれも試す
-- 使えないとみなして次へ: `unshare` が断られた、`pthread_fchdir_np` が無い・失敗した、その言語でスレッドを作れない・固定できない
+- sockat が作った使い捨てのスレッドで行い、捨てる。呼び出し元のスレッドの cwd には触らない
+- 使えないとみなして次へ: seccomp の filter が掛かっている (Linux、`prctl(PR_GET_SECCOMP)` が 0 でない)、`unshare` が断られた、`pthread_fchdir_np` が無い・失敗した、その言語でスレッドを作れない・固定できない
+- `unshare` の後の `fchdir` の失敗は本当の失敗として返す
 
 理由:
 
@@ -29,7 +31,7 @@
 
 悪い面:
 
-- seccomp で `unshare` を断る環境がある (docker の既定は `EPERM`)。その時は次へ進む
+- seccomp で `unshare` を断る環境がある (docker の既定は `EPERM`)。filter がプロセスの kill (SIGSYS) で断る環境 (systemd の `SystemCallFilter=` の既定) もあり、呼ぶとプロセスが死ぬ。なので filter が掛かっていれば `unshare` を呼ばずに次へ進む (統括の裁定 2026-11-18、sockat-rs の指摘)
 - `pthread_fchdir_np` は libSystem の非公開 API で、将来消えうる。消えたら次へ進む
 
 ## Alternatives Considered

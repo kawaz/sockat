@@ -47,6 +47,7 @@
 
 - 先頭以外に NUL を含むパスは、長さによらず標準に渡さず引数の誤りにする ([DR-0006](decisions/DR-0006-nul-is-invalid-at-any-length.md))
 - Linux / Android で先頭が NUL のパス (abstract namespace。ファイルではない) は sockat の対象外で、長さによらず標準にそのまま渡す。言語固有の abstract の書き方 (Go の `@` 等) も同じ
+- abstract namespace の無い OS (Linux / Android 以外) では、先頭が NUL のパスも、長さによらず引数の誤り
 - 標準にブロックしない connect が無い言語では、ブロックしない connect に限り、標準と同じアドレスで自前のソケットを connect する
 - 経路の綴りを標準が受け付けない時 (標準に渡す長さが sockaddr に入る長さより短い言語) も、標準と同じアドレスで自前のソケットを使う
 
@@ -113,10 +114,13 @@
 
 | OS | やり方 |
 |---|---|
-| Linux / Android | 使い捨てのスレッドで `unshare(CLONE_FS)` → `fchdir(dirfd)` → ファイル名で bind / connect。スレッドは使い終わったら捨てる |
-| Apple の OS | `pthread_fchdir_np(dirfd)` → ファイル名で bind / connect → `pthread_fchdir_np(-1)` で戻すか、スレッドを捨てる |
+| Linux / Android | 使い捨てのスレッドで `unshare(CLONE_FS)` → `fchdir(dirfd)` → ファイル名で bind / connect |
+| Apple の OS | 使い捨てのスレッドで `pthread_fchdir_np(dirfd)` → ファイル名で bind / connect |
 | その他 | 無い |
 
+- どの OS も sockat が作った使い捨てのスレッドで行い、使い終わったら捨てる。呼び出し元のスレッドの cwd には触らない (`pthread_fchdir_np(-1)` で戻す形は、呼び出し元がスレッドに付けた cwd を消しうるので使わない)
+- Linux: seccomp の filter が掛かっている時 (`prctl(PR_GET_SECCOMP)` が 0 でない) は使えないとみなし、`unshare` を呼ばない。filter が `unshare` をエラーでなくプロセスの kill (SIGSYS) で断る環境 (systemd の `SystemCallFilter=` の既定の動作等) があり、呼ぶとプロセスが死ぬ
+- `unshare` の後の `fchdir` の失敗 (`EACCES` 等) は、使えないのでなく本当の失敗として返す (fork の経路と同じ)
 - 呼び出し元がソケットを作り、ディレクトリを開いた fd を持つ。ブロックしない connect ではその前にソケットを非ブロッキングにする。bind の後の listen は呼び出し元がする
 - ディレクトリの開き方は fork の経路と同じ
 - `pthread_fchdir_np` は libSystem の非公開 API (中身は `__pthread_fchdir` syscall)。実行時に引き、無ければ使えない
@@ -141,7 +145,7 @@
   - カーネルが広げた sockaddr を受け付けない
   - 置き場が安全でない・symlink を作れない
   - 相対パスの経路で、作った綴りのディレクトリが元と `(st_dev, st_ino)` で一致しない、または cwd が既に変わっている
-  - スレッド cwd の経路で、`unshare` が断られた (docker の既定の seccomp は `EPERM`)、`pthread_fchdir_np` が無い・失敗した、スレッドを作れない・固定できない
+  - スレッド cwd の経路で、seccomp の filter が掛かっている (Linux)、`unshare` が断られた、`pthread_fchdir_np` が無い・失敗した、スレッドを作れない・固定できない
 - ディレクトリが無い時はどの OS でも `ENOENT`。ディレクトリを先に開くので、ファイル名の長さの判定より前に決まる
 - `connect` / `connect_nonblocking` はディレクトリを開いてから fork の手前で `ENAMETOOLONG` を返す
 

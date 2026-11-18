@@ -47,6 +47,7 @@ A path up to the standard length is handed to the standard unchanged. Nothing is
 
 - A path containing NUL anywhere but at the start is never handed to the standard, whatever its length; it is an invalid-argument error ([DR-0006](decisions/DR-0006-nul-is-invalid-at-any-length.md), Japanese)
 - On Linux / Android a path starting with NUL (abstract namespace, not a file) is out of sockat's scope and is handed to the standard unchanged, whatever its length. A language's own abstract notation (Go's `@` etc.) likewise
+- On OSes without an abstract namespace (other than Linux / Android), a path starting with NUL is an invalid argument too, whatever its length
 - In a language whose standard has no non-blocking connect, a non-blocking connect alone uses the implementation's own socket, connected to the same address as the standard would
 - When the standard does not accept a route's spelling (a language whose standard length is shorter than the sockaddr length), the implementation's own socket is used with the same address too
 
@@ -113,10 +114,13 @@ The process's cwd is not changed ([DR-0005](decisions/DR-0005-thread-cwd-route.m
 
 | OS | How |
 |---|---|
-| Linux / Android | on a throwaway thread, `unshare(CLONE_FS)` → `fchdir(dirfd)` → bind / connect by the file name. The thread is discarded after use |
-| Apple OSes | `pthread_fchdir_np(dirfd)` → bind / connect by the file name → restore with `pthread_fchdir_np(-1)`, or discard the thread |
+| Linux / Android | on a throwaway thread, `unshare(CLONE_FS)` → `fchdir(dirfd)` → bind / connect by the file name |
+| Apple OSes | on a throwaway thread, `pthread_fchdir_np(dirfd)` → bind / connect by the file name |
 | others | not available |
 
+- On every OS it runs on a throwaway thread sockat creates, discarded after use. The caller's thread's cwd is never touched (restoring with `pthread_fchdir_np(-1)` is not used: it could drop a per-thread cwd the caller set)
+- Linux: when a seccomp filter is in place (`prctl(PR_GET_SECCOMP)` is not 0) the route is not usable and `unshare` is not called. Some filters refuse `unshare` by killing the process (SIGSYS) rather than with an error (systemd's `SystemCallFilter=` by default, etc.)
+- A failing `fchdir` after `unshare` (`EACCES` etc.) is a real failure and is returned, as on the fork route
 - The caller creates the socket and holds the directory fd. For a non-blocking connect it makes the socket non-blocking first. The listen after a bind is done by the caller
 - The directory is opened as for the fork route
 - `pthread_fchdir_np` is a private libSystem API (a wrapper of the `__pthread_fchdir` syscall). It is looked up at run time; when absent the route is not usable
@@ -141,7 +145,7 @@ The process's cwd is not changed ([DR-0005](decisions/DR-0005-thread-cwd-route.m
   - the kernel refuses the widened sockaddr
   - the base is unsafe or the symlink cannot be created
   - on the relative route, the directory of the spelling built does not match the original by `(st_dev, st_ino)`, or the cwd has already changed
-  - on the thread cwd route, `unshare` is refused (`EPERM` under docker's default seccomp), `pthread_fchdir_np` is absent or fails, or a thread cannot be created or pinned
+  - on the thread cwd route, a seccomp filter is in place (Linux), `unshare` is refused, `pthread_fchdir_np` is absent or fails, or a thread cannot be created or pinned
 - A missing directory is `ENOENT` on every OS. The directory is opened first, so this is settled before the file name's length is judged
 - `connect` / `connect_nonblocking` open the directory and then return `ENAMETOOLONG` just before the fork route
 
