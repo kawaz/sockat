@@ -40,7 +40,7 @@
 - ブロックしない 2 つは、connect の前にソケットを非ブロッキングにし、そのまま返す。相手の backlog が満杯なら待たずに失敗する
 - ブロックしない connect は呼び出しの中で結果が出る前提。`EINPROGRESS` が返ったらそれをエラーとして返し、ソケットを閉じる (つながっていない stream を返さない)
 - 自前で作るソケットは、その言語の標準が作るソケットと同じ設定にする (close-on-exec、`SO_NOSIGPIPE`、listen の backlog 等)
-- listener を閉じた時のソケットファイルは、短いパスでは標準と同じ (Go の標準は消す)。長いパスでは、標準が消す言語でも消さない (カーネルが覚えている綴りは元のパスでなく、綴りで消すと別のファイルを消しうる)。消す言語では README の「標準と違う点」に書く
+- listener を閉じた時のソケットファイルは、短いパスでは標準と同じ (Go の標準は消す)。長いパスでは、標準が消す言語でも消さない (カーネルが覚えている綴りは元のパスでない)。消す言語では README の「標準と違う点」に書く
 
 ## 短いパス
 
@@ -63,15 +63,19 @@
 
 | OS | 試す順番 |
 |---|---|
-| Linux / Android (`/proc` を使える) | /proc → 相対パス → symlink → スレッド cwd → fork |
-| Linux / Android (`/proc` を使えない) | 相対パス → symlink → スレッド cwd → fork |
+| Linux / Android (`/proc` を使える) の bind | /proc → symlink → スレッド cwd → fork |
+| Linux / Android (`/proc` を使える) の connect 系 | /proc → 相対パス → symlink → スレッド cwd → fork |
+| Linux / Android (`/proc` を使えない) の bind | symlink → スレッド cwd → fork |
+| Linux / Android (`/proc` を使えない) の connect 系 | 相対パス → symlink → スレッド cwd → fork |
 | FreeBSD | bindat |
-| macOS / iOS 等 Apple の OS の bind | 相対パス → symlink → スレッド cwd → fork |
+| macOS / iOS 等 Apple の OS の bind | symlink → スレッド cwd → fork |
 | macOS / iOS 等 Apple の OS の connect 系 | 相対パス → 広げた sockaddr → symlink → スレッド cwd → fork |
-| NetBSD / OpenBSD / illumos / その他の Unix | 相対パス → symlink → fork |
+| NetBSD / OpenBSD / illumos / その他の Unix の bind | symlink → fork |
+| NetBSD / OpenBSD / illumos / その他の Unix の connect 系 | 相対パス → symlink → fork |
 
 - 標準に渡す長さを超えるパスで、最後がファイル名でないもの (`dir/`、`dir/.`、`dir/..`、`..`) は、何も作らずに引数の誤りを返す
 - どの経路も呼び出し元のプロセスの cwd を変えない
+- bind は安全な綴り (「bind の綴りに挟むランダムな部品」) の経路だけを、綴りの短くなる順に試す。/proc の綴りに長さが足りなければ symlink、その次にスレッド cwd / fork ([DR-0011](decisions/DR-0011-bind-spelling-with-random-part.md))
 - Apple の OS の bind は広げた sockaddr を使わない。そのソケットのアドレスは途中で切れて `sun_path` に入らず、読む側を壊す (CPython の `getsockname` が後ろに無関係なバイトを付ける、Go の `net.FileConn` で相手の `RemoteAddr` が nil になる) ([DR-0009](decisions/DR-0009-apple-bind-without-widened-sockaddr.md))
 - symlink の経路は、置き場の候補ごとに、安全なら置き場に直接 symlink を作り、安全でなければ fd で掴む形 (`/proc` を使える Linux / Android だけ) で試す。`TMPDIR` を `/tmp` より先に使い切る
 
@@ -79,13 +83,13 @@
 
 | 経路 | やり方 | 使える条件 |
 |---|---|---|
-| /proc | ディレクトリを `O_PATH \| O_DIRECTORY` で開き、`/proc/self/fd/<fd>/<ファイル名>` を標準に渡す | `/proc/self/fd/<fd>` を stat で引け、綴り全体が sockaddr に入る長さ以内 (ファイル名はおよそ 90 バイトまで) |
+| /proc | ディレクトリを `O_PATH \| O_DIRECTORY` で開き、`/proc/self/fd/<fd>/<ファイル名>` を標準に渡す。bind は `/proc/self/fd/<fd>/<乱数>/<ファイル名>` (「bind の綴りに挟むランダムな部品」) | `/proc/self/fd/<fd>` を stat で引け、綴り全体が sockaddr に入る長さ以内 (ファイル名は connect 系がおよそ 90 バイト、bind がおよそ 79 バイトまで。fd の桁で変わる) |
 | bindat | ディレクトリを `O_RDONLY` で開き、`bindat(2)` / `connectat(2)` でファイル名を渡す | FreeBSD。ファイル名が 103 バイトを超えたら `ENAMETOOLONG` |
-| 相対パス | cwd からの相対パスを標準に渡す。文字列を書き直すだけで `chdir` しない | 元のパスが絶対パスで、相対パスが sockaddr に入る長さ以内。相対パスのディレクトリと元のディレクトリの `(st_dev, st_ino)` が一致し、綴りを作る間に cwd が変わっていない |
+| 相対パス | cwd からの相対パスを標準に渡す。文字列を書き直すだけで `chdir` しない | connect 系だけ。元のパスが絶対パスで、相対パスが sockaddr に入る長さ以内。相対パスのディレクトリと元のディレクトリの `(st_dev, st_ino)` が一致し、綴りを作る間に cwd が変わっていない |
 | 広げた sockaddr | `sun_len` とアドレス長を `2 + パスの長さ` にした sockaddr で、元のパス、無理なら相対パスを渡す | Apple の OS の connect 系だけ。パスが 253 バイト以内。カーネルが `EINVAL` / `ENAMETOOLONG` を返したら使えないとみなす |
 | symlink | 置き場に短い symlink を作り、それを通した綴りを渡して、すぐ消す | 綴りが sockaddr に入る長さ以内 (*) で、symlink を作れる置き場がある。置き場が安全でない時は fd で掴む形で、`/proc` を使える Linux / Android の connect 系だけ |
-| スレッド cwd | bind / connect するスレッドだけ cwd をディレクトリに移し、ファイル名で bind / connect する | Linux / Apple の OS。ファイル名が sockaddr に入る長さ以内 (*)。その言語でスレッドを作って固定できる |
-| fork | ディレクトリの fd に `fchdir` した子を fork し、子がファイル名で bind / connect する | `bind` と `connect_any` 系だけ。ファイル名が sockaddr に入る長さ以内 (*) |
+| スレッド cwd | bind / connect するスレッドだけ cwd をディレクトリに移し、ファイル名で bind / connect する。bind は自分専用のディレクトリに移り `<乱数>/<ファイル名>` で bind する | Linux / Apple の OS。綴り (bind は `<乱数>/` の 11 バイトを足す) が sockaddr に入る長さ以内 (*)。その言語でスレッドを作って固定できる |
+| fork | ディレクトリの fd に `fchdir` した子を fork し、子がファイル名で bind / connect する。bind は自分専用のディレクトリに `fchdir` し `<乱数>/<ファイル名>` で bind する | `bind` と `connect_any` 系だけ。綴り (bind は `<乱数>/` の 11 バイトを足す) が sockaddr に入る長さ以内 (*) |
 
 (*) Apple の OS の connect 系でカーネルが広げた sockaddr を受け付ける時は 253 バイト以内。bind と、カーネルが断った時は sockaddr に入る長さで判定する。
 
@@ -124,10 +128,30 @@
 4. 綴り `/proc/self/fd/<fd>/s` を渡す
 5. 片付け: `s` は自分が `symlinkat` に成功した時だけ `unlinkat(fd, "s")` で消す。ディレクトリは、手順 2 の確認が通っていて、かつその名前を `lstat` した `(st_dev, st_ino)` が fd と一致する時だけ `rmdir` する (確認に落ちたディレクトリは他人の物とみなし、中身も含めて触らない)。fd を閉じる
 
-- connect 系だけが使う。bind の綴り (`/proc/self/fd/<fd>/s/<ファイル名>`) は /proc の経路の綴りより長く、これが収まるなら /proc の経路が先に通っているので、bind には効かない
+- connect 系だけが使う。bind は /proc の経路が同じ作りのディレクトリを使う (「bind の綴りに挟むランダムな部品」)
 - 使えない: ディレクトリを作れない、`fstat` の確認が通らない、`symlinkat` が失敗した
 - 使えないと分かった時は、作った物を片付けてから次の候補へ進む
 - 片付けは bind / connect が成功しても失敗してもする。消す失敗は無視する
+
+### bind の綴りに挟むランダムな部品
+
+bind に渡す綴りは、後で別の文脈 (閉じた fd の番号の使い回し、別の cwd) で解決されても何にも当たらない形にする。カーネルはこの綴りを覚えて `getsockname` / `getpeername` で返し、上のライブラリや利用者はそれで unlink / stat する ([DR-0011](decisions/DR-0011-bind-spelling-with-random-part.md))。
+
+| 経路 | bind の綴り |
+|---|---|
+| /proc | `/proc/self/fd/<fd>/<乱数>/<ファイル名>`。`<fd>` は自分専用のディレクトリ |
+| スレッド cwd / fork | `<乱数>/<ファイル名>`。スレッド / 子は自分専用のディレクトリに `fchdir` する |
+| symlink | `<置き場>/sockat.XXXXXXXXXX/<ファイル名>` (置き場に直接置いた symlink を消すので何にも当たらない) |
+| 相対パス | bind では試さない (扱いは未確定、下の「未確定」) |
+| bindat | ファイル名だけ (未確定、下の「未確定」) |
+
+- 自分専用のディレクトリは、fd で掴む形の手順 1・2・5 で作り・確かめ・片付ける。置き場の候補と順 (`TMPDIR` → `/tmp`) も同じで、置き場が安全かは問わない
+- `/proc` を使えない時は、手順 2 で `O_PATH` の代わりにディレクトリの開き方 (fork の経路) に `O_DIRECTORY \| O_NOFOLLOW` を足して開き、`chmod` の代わりに `fchmod(fd, 0700)` する
+- その中に `symlinkat` で、ソケットのディレクトリを指す symlink `<乱数>` を作る。名前は `sockat.` の名前と同じ 62 種 10 文字、`EEXIST` で引き直し 16 回で打ち切る。先は bind の symlink と同じ
+- 片付け: `unlinkat(fd, <乱数>)` → 手順 5 の条件で `rmdir` → fd を閉じる。bind が成功しても失敗してもする。片付けた後は `<乱数>` がどこにも無い
+- 自分専用のディレクトリか `<乱数>` を作れない置き場は飛ばす。どの置き場でも作れない時の扱いは未確定 (下の「未確定」)
+- connect 系の綴りは相手に残らない (connect した側のソケットは bind されない) ので変えない
+- 上のライブラリが元のパスのソケットのファイルを自動で消すことは、どの綴りでも効かない
 
 ### スレッド cwd の経路
 
@@ -150,7 +174,7 @@
 ### fork の経路
 
 1. 親がソケットを作り、ディレクトリを開いた fd を持ち、sockaddr を組み立ててから fork する。ブロックしない connect では fork の前にソケットを非ブロッキングにする
-2. 子は `fchdir(dirfd)` → ファイル名で `bind` / `connect` → `_exit(結果)` (0 が成功、1〜255 が errno)
+2. 子は `fchdir(dirfd)` → ファイル名で `bind` / `connect` → `_exit(結果)` (0 が成功、1〜255 が errno)。bind は自分専用のディレクトリの fd に `fchdir` し、`<乱数>/<ファイル名>` で bind する
 3. 親はその pid だけを `waitpid` する。bind の後の listen は必ず親がする。子が listen すると、クライアントに見えるサーバの peer 情報が子になる ([DR-0010](decisions/DR-0010-fork-bind-listen-by-parent.md))
 
 - 子の区間は async-signal-safe な呼び出しだけ (allocation・lock・言語の後始末を通さない)
@@ -166,6 +190,7 @@
   - カーネルが広げた sockaddr を受け付けない
   - 置き場が安全でない・symlink を作れない
   - fd で掴む形 (connect 系だけ) で、ディレクトリを作れない、`fstat` の確認が通らない、`symlinkat` が失敗した
+  - bind の /proc・スレッド cwd・fork の経路で、その置き場に自分専用のディレクトリか `<乱数>` の symlink を作れない
   - 相対パスの経路で、作った綴りのディレクトリが元と `(st_dev, st_ino)` で一致しない、または cwd が既に変わっている
   - スレッド cwd の経路で、seccomp の filter が掛かっている (Linux)、`unshare` が断られた、`pthread_fchdir_np` が無い・失敗した、スレッドを作れない・固定できない
 - ディレクトリが無い時はどの OS でも `ENOENT`。ディレクトリを先に開くので、ファイル名の長さの判定より前に決まる
@@ -173,21 +198,22 @@
 
 ## どこから届かなくなるか
 
-標準に渡す長さを超えるパスが `ENAMETOOLONG` になる時 (ディレクトリがある前提。数字はバイト)。
+標準に渡す長さを超えるパスが `ENAMETOOLONG` になる時 (ディレクトリがあり、bind は置き場に自分専用のディレクトリを作れる前提。数字はバイト)。
 
 | OS | `bind` | `connect` 系 | `connect_any` 系 |
 |---|---|---|---|
-| Linux (`/proc` あり) | ファイル名 > 107 | ファイル名 > 107、symlink も使えない (置き場の安全は問わない)<br>スレッド cwd が使えない時: ファイル名が `/proc` の綴りに収まらず、相対パス > 107、symlink も使えない (置き場の安全は問わない) | ファイル名 > 107、symlink も使えない (置き場の安全は問わない) |
-| Linux (`/proc` 無し) | ファイル名 > 107 | ファイル名 > 107、symlink も使えない<br>スレッド cwd が使えない時: 相対パス > 107、symlink も使えない | ファイル名 > 107、symlink も使えない |
+| Linux (`/proc` あり) | ファイル名 > 96 | ファイル名 > 107、symlink も使えない (置き場の安全は問わない)<br>スレッド cwd が使えない時: ファイル名が `/proc` の綴りに収まらず、相対パス > 107、symlink も使えない (置き場の安全は問わない) | ファイル名 > 107、symlink も使えない (置き場の安全は問わない) |
+| Linux (`/proc` 無し) | ファイル名 > 96 | ファイル名 > 107、symlink も使えない<br>スレッド cwd が使えない時: 相対パス > 107、symlink も使えない | ファイル名 > 107、symlink も使えない |
 | FreeBSD | ファイル名 > 103 | ファイル名 > 103 | ファイル名 > 103 |
-| macOS / iOS 等 Apple の OS | ファイル名 > 103 | ファイル名 > 253、symlink も使えない<br>スレッド cwd が使えない時: 元のパスも相対パスも > 253、symlink も使えない | ファイル名 > 253、symlink も使えない |
-| NetBSD / OpenBSD / その他の BSD | ファイル名 > 103 | 相対パス > 103、symlink も使えない | ファイル名 > 103、symlink も使えない |
-| illumos | ファイル名 > 107 | 相対パス > 107、symlink も使えない | ファイル名 > 107、symlink も使えない |
+| macOS / iOS 等 Apple の OS | ファイル名 > 92 | ファイル名 > 253、symlink も使えない<br>スレッド cwd が使えない時: 元のパスも相対パスも > 253、symlink も使えない | ファイル名 > 253、symlink も使えない |
+| NetBSD / OpenBSD / その他の BSD | ファイル名 > 92 | 相対パス > 103、symlink も使えない | ファイル名 > 103、symlink も使えない |
+| illumos | ファイル名 > 96 | 相対パス > 107、symlink も使えない | ファイル名 > 107、symlink も使えない |
 
 - スレッド cwd の経路を使える Linux / Apple の OS では、`connect` 系も `connect_any` 系と同じ所まで届く
 - `/tmp` で symlink の経路を使えれば、connect はディレクトリの深さにもファイル名の長さにもよらず届く
 - `/proc` を使える Linux では、置き場が安全でなくても、そこにディレクトリを作れれば connect は同じく届く (fd で掴む形)
 - `/tmp` を通した bind はファイル名が 84 バイト (`sun_path` が 104 の OS は 80) まで
+- bind の上限は `<乱数>/` の 11 バイトの分だけ sockaddr に入る長さより短い。/proc の経路の bind はファイル名およそ 79 バイトまで (fd の桁で変わる)
 - ディレクトリを開く等でフルパスを渡すので、PATH_MAX (macOS 1024、Linux 4096) を超えるパスは `ENAMETOOLONG`。sockat の責務外
 
 ## fork の副作用
@@ -203,10 +229,10 @@
 
 | 点 | 内容 |
 |---|---|
-| カーネルが返すアドレス | カーネルの `getsockname` / `getpeername` は bind に使った綴り (相対パス、`/proc/self/fd/...`、もう無い symlink、ファイル名だけ) を返す。標準の型でアドレスを返す口を sockat が差し替えられる言語では、元のパスを返す (上のライブラリがアドレスの綴りで後始末をする。Python の asyncio は listener の `getsockname` の綴りを `stat` / unlink する)。差し替えられない言語は元のパスを呼び出し元が持つ |
-| ディレクトリを先に引く | /proc・相対パス・bindat・スレッド cwd・fork は、ディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない。広げた sockaddr と symlink は標準と同じ |
+| カーネルが返すアドレス | カーネルの `getsockname` / `getpeername` は bind に使った綴り (`/proc/self/fd/<fd>/<乱数>/<ファイル名>`、`<乱数>/<ファイル名>`、もう無い symlink、FreeBSD はファイル名だけ) を返す。FreeBSD 以外は後でどこで解決しても何にも当たらない。標準の型でアドレスを返す口を sockat が差し替えられる言語では、元のパスを返す (上のライブラリがアドレスの綴りで後始末をする。Python の asyncio は listener の `getsockname` の綴りを `stat` / unlink する)。差し替えられない言語は元のパスを呼び出し元が持つ |
+| ディレクトリを先に引く | connect 系の /proc・相対パス・スレッド cwd・fork と bindat は、ディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない。bind の /proc・スレッド cwd・fork (symlink `<乱数>` を通す)、広げた sockaddr、symlink は標準と同じ |
 | 他のスレッドの chdir | 相対パスの経路は、間に cwd が変わったままなら一般のエラー。変えて戻した場合は見えない |
-| symlink の残骸 | symlink や fd で掴む形のディレクトリを消す前にプロセスが死ぬと `sockat.XXXXXXXXXX` が置き場に残る |
+| symlink の残骸 | symlink や自分専用のディレクトリ (fd で掴む形、bind の綴りのランダムな部品) を消す前にプロセスが死ぬと `sockat.XXXXXXXXXX` が置き場に残る |
 
 - 先頭以外の NUL は短いパスでも引数の誤り。標準が NUL で黙って切り詰める言語 (Go 等) では、README の「標準と違う点」に書く
 
@@ -244,9 +270,10 @@
 | 送受信 | 各経路で bind した listener と connect した stream で実際に送受信できる |
 | 標準の型 | 戻り値が標準の型として使える (非同期ランタイムに渡せる言語では渡して使う) |
 | 失敗をやり直さない | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` を返し、後の経路・置き場に何も作らない (後の候補のディレクトリの mtime が変わらない) |
-| /proc が無い Linux | `/proc/self/fd` の場所を空のディレクトリ等に差し替えて、相対パス → symlink → スレッド cwd → fork に進む |
+| /proc が無い Linux | `/proc/self/fd` の場所を空のディレクトリ等に差し替えて、bind は symlink → スレッド cwd → fork、connect 系は相対パス → symlink → スレッド cwd → fork に進む |
 | symlink の置き場 | 安全でない置き場を飛ばす、深すぎる `TMPDIR` で `/tmp` に回る、名前の衝突を飛ばし 16 回で打ち切る、成功でも失敗でも symlink を消す |
 | fd で掴む形 | 安全でない置き場で、ソケットが元のパスにでき届く、終わった後に置き場に何も残らない、作ってから開くまでに差し替えたディレクトリ (持ち主が違うか group / other に権限が付いた) を使わず、その中身も消さない、`TMPDIR` を `/tmp` より先に使う、`/proc` を使えない時は安全でない置き場を飛ばす |
+| bind の綴り | 各経路で bind した後、返る綴り (`getsockname`) をそのまま unlink / stat しても、無関係なファイル (fd の番号を使い回させた別のディレクトリの同名ファイル、cwd の同名ファイル) に当たらない。終わった後に置き場に何も残らない |
 | connect と fork | `connect` 系は fork でしか届かない時に `ENAMETOOLONG`、`connect_any` 系は届いて `forked` が真 |
 | cwd | どの経路の後も cwd が変わっていない。相対パスの経路の途中で cwd が変わったら一般のエラー |
 | スレッド cwd | 経路を強制して、プロセスの cwd が変わらない、peer の pid が呼び出し元、ソケットが元のパスにできる。使えない時は次の経路へ進む |
@@ -265,3 +292,6 @@
 - Android と macOS 以外の Apple の OS は全体が未確認
 - NetBSD・OpenBSD・illumos は peer の資格情報が未確認
 - ブロックしない connect が `EINPROGRESS` を返さないことは Linux と macOS でだけ確認済み
+- bind で安全な綴りを作れない時 (どの置き場にも自分専用のディレクトリを作れない等) に、安全でない綴り (`/proc/self/fd/<fd>/<ファイル名>`、ファイル名だけ) の経路に進むか、`ENAMETOOLONG` にするか ([DR-0011](decisions/DR-0011-bind-spelling-with-random-part.md))
+- bind で相対パスの経路 (今は試さない) をどう扱うか ([DR-0011](decisions/DR-0011-bind-spelling-with-random-part.md))
+- FreeBSD の bindat の bind の綴り (ファイル名だけ) を同じ作りにするか ([DR-0011](decisions/DR-0011-bind-spelling-with-random-part.md))

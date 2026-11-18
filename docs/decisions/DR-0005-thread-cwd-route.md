@@ -50,3 +50,4 @@
 
 - [docs/SPEC-ja.md](../SPEC-ja.md) の「スレッド cwd の経路」「どこから届かなくなるか」
 - 裁定: kawaz (HB-Q4、2026-11-18)
+- [DR-0011](DR-0011-bind-spelling-with-random-part.md) (bind の綴りと順番)

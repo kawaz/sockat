@@ -24,5 +24,6 @@ Status は各 DR ファイルの `Status:` 行が正本。
 | [DR-0008](DR-0008-unsafe-base-held-by-fd.md) | ⬜ 未実装 | `/proc` を使える Linux / Android では、安全でない置き場も自分専用のディレクトリを fd で掴んで symlink の経路に使う (置き場の候補ごとに安全な形 → fd で掴む形、`TMPDIR` を `/tmp` より先) |
 | [DR-0009](DR-0009-apple-bind-without-widened-sockaddr.md) | ⬜ 未実装 | Apple の OS の bind は広げた sockaddr を使わない (相対パス → symlink → スレッド cwd → fork)。connect 系は今のまま |
 | [DR-0010](DR-0010-fork-bind-listen-by-parent.md) | ⬜ 未実装 | fork の経路の bind は listen を必ず親がする。相手から見える副作用は無く、見えない副作用 (`SIGCHLD` 等) はある |
+| [DR-0011](DR-0011-bind-spelling-with-random-part.md) | ⬜ 未実装 | bind に渡す綴りにランダムな部品を挟み、後で別の文脈で解決されても何にも当たらないようにする。bind は安全な綴りの経路だけを短くなる順に試す (/proc → symlink → スレッド cwd → fork) |
 
 経路の設計の判断は [sockat-rs の DR-0001](https://github.com/kawaz/sockat-rs/blob/main/docs/decisions/DR-0001-long-socket-path-routes.md) にある。

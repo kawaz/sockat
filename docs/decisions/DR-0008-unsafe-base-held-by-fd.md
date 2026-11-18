@@ -53,3 +53,4 @@
 - [docs/SPEC-ja.md](../SPEC-ja.md) の「symlink の置き場と名前」「fd で掴む形 (安全でない置き場)」「どこから届かなくなるか」
 - 裁定: kawaz (2026-11-18)。発端は hyoui の実測
 - [DR-0005](DR-0005-thread-cwd-route.md)
+- [DR-0011](DR-0011-bind-spelling-with-random-part.md) (bind の /proc の経路が同じ作りのディレクトリを使う)
