@@ -82,7 +82,7 @@
 | 5 | `ENAMETOOLONG` | `ENAMETOOLONG` | fork の経路 |
 
 - bind の 4 は、2・3 がスレッド cwd / `/proc` を使えない、または `/proc` の綴りに収まらない時に試す。D をどこにも作れない時は、2〜4 を D 無しの形で試す (「D の置き場」)。綴りが sockaddr に入らない時は試さず `ENAMETOOLONG`
-- bind は /proc (D を通さない形)・相対パス・広げた sockaddr・置き場の symlink の経路を使わない (綴りが後で無関係なファイルに当たるか、アドレスが途中で切れて読む側を壊すか、中心の経路で足りる)
+- bind は R を通さない /proc (`/proc/self/fd/<fd>/<ファイル名>`)・相対パス・広げた sockaddr・置き場の symlink の経路を使わない (綴りが後で無関係なファイルに当たるか、アドレスが途中で切れて読む側を壊すか、中心の経路で足りる)
 - connect の綴りは相手に残らない (connect した側のソケットは bind されない) ので、予備の経路は綴りにランダムな部品を挟まない
 
 ### 中心の経路
@@ -242,6 +242,7 @@
 | カーネルが返すアドレス | bind した側の `getsockname` と、そこへ connect した側の `getpeername` は `R/<ファイル名>` (/proc 版は `/proc/self/fd/<fd>/R/<ファイル名>`) を返す。R はもう無いので、後でどこで解決しても何にも当たらない。標準の型でアドレスを返す口を差し替えられる言語 (Python) は元のパスを返す (Python の asyncio は listener の `getsockname` の綴りを `stat` / unlink する)。差し替えられない言語は元のパスを呼び出し元が持つ |
 | ディレクトリを先に引く | 中心の経路は R を作る時にソケットのディレクトリを realpath で引く。予備の経路の /proc・相対パス・connectat と `connect_any` 系の fork はディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない。広げた sockaddr と symlink は標準と同じ |
 | 他のスレッドの chdir | 相対パスの経路は、間に cwd が変わったままなら一般のエラー。変えて戻した場合は見えない |
+| 他人も書けるソケットのディレクトリ | sticky でなく他人も書けるソケットのディレクトリでは、D 無しの形の R を作ってから bind するまでの間に R を差し替えられ、別のディレクトリに bind しうる (そこに同じ名前が既にあれば `EADDRINUSE` で、上書きはしない)。D の中の R は D が 0700 なので差し替えられない |
 | 残骸 | D・R・置き場の symlink を消す前にプロセスが死ぬと、`sockat.XXXXXXXXXX` が置き場に、`.sockat.XXXXXXXXXX` (D か D 無しの形の R) がソケットのディレクトリに残る。D を `O_RDONLY` で開く OS (Linux と Apple の OS 以外) では、umask が持ち主の読み取りを削っていると D を開けず、確かめられないので触らずに残す |
 
 - 先頭以外の NUL は短いパスでも引数の誤り。標準が NUL で黙って切り詰める言語 (Go 等) では、README の「標準と違う点」に書く

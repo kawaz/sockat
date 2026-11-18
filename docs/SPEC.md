@@ -82,7 +82,7 @@ A path over the standard length is tried in the order below and bound / connecte
 | 5 | `ENAMETOOLONG` | `ENAMETOOLONG` | the fork route |
 
 - A bind's step 4 is tried when steps 2 and 3 cannot use the thread cwd / `/proc`, or the `/proc` spelling does not fit. When D can be created nowhere, steps 2 to 4 are tried in the form without D ("Where D is created"). When the spelling does not fit the sockaddr, it is not tried and the result is `ENAMETOOLONG`
-- A bind never uses /proc (the form not going through D), relative path, widened sockaddr, or the symlink in a base (the spelling would hit an unrelated file later, the address would be cut short and break whoever reads it, or the central route suffices)
+- A bind never uses /proc without R (`/proc/self/fd/<fd>/<file name>`), relative path, widened sockaddr, or the symlink in a base (the spelling would hit an unrelated file later, the address would be cut short and break whoever reads it, or the central route suffices)
 - A connect's spelling is left nowhere on the peer (the connecting socket is not bound), so the fallback routes put no random part in it
 
 ### The central route
@@ -242,6 +242,7 @@ When a path over the standard length becomes `ENAMETOOLONG` (the directory exist
 | address the kernel reports | the bound side's `getsockname` and the connecting side's `getpeername` return `R/<file name>` (`/proc/self/fd/<fd>/R/<file name>` for the /proc form). R no longer exists, so it hits nothing wherever it is resolved later. In a language where the address accessors of the standard types can be replaced (Python), they return the original path (Python's asyncio `stat`s / unlinks the listener's `getsockname` spelling). Where they cannot be replaced, the caller keeps the original path |
 | directory looked up first | the central route resolves the socket's directory with realpath when it creates R. The fallback routes' /proc, relative path and connectat, and the fork of the `connect_any` variants, look up the directory, then pass the file name. A rename or symlink swap in between is not reflected. The widened sockaddr and the symlink route behave as the standard |
 | another thread's chdir | the relative route returns a generic error if the cwd stayed changed in between. A change and change back is not seen |
+| a socket's directory others can write to | in a socket's directory that is not sticky and that others can write to, the R of the form without D can be replaced between its creation and the bind, so the bind may land in another directory (if that name already exists there, `EADDRINUSE`; nothing is overwritten). The R inside D cannot be replaced, since D is 0700 |
 | leftovers | if the process dies before removing D, R or a base's symlink, `sockat.XXXXXXXXXX` is left in the base, and `.sockat.XXXXXXXXXX` (D, or the R of the form without D) in the socket's directory. On OSes that open D with `O_RDONLY` (other than Linux and Apple OSes), D cannot be opened when the umask removed the owner's read permission; it cannot be checked, so it is left untouched |
 
 - NUL anywhere but at the start is an invalid argument even in a short path. A language whose standard silently truncates at NUL (Go etc.) says so under "differs from the standard" in its README

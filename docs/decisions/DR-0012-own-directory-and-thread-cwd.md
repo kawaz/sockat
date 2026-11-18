@@ -70,7 +70,7 @@
 | FreeBSD | connectat (ソケットのディレクトリの fd とファイル名) |
 | NetBSD / OpenBSD / illumos | 相対パス → symlink |
 
-- bind は /proc (D を通さない形)・相対パス・広げた sockaddr・置き場の symlink を使わない
+- bind は R を通さない /proc (`/proc/self/fd/<fd>/<ファイル名>`)・相対パス・広げた sockaddr・置き場の symlink を使わない
 - connect の予備の経路は綴りにランダムな部品を挟まない (connect した側のソケットは bind されず、綴りが相手に残らない)
 
 理由:
