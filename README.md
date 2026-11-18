@@ -16,7 +16,7 @@ Libraries that bind and connect Unix domain sockets whose path is longer than `s
 |---|---|---|---|
 | Rust | [kawaz/sockat-rs](https://github.com/kawaz/sockat-rs) | [`sockat`](https://crates.io/crates/sockat) on crates.io | published |
 | Python | [kawaz/sockat-py](https://github.com/kawaz/sockat-py) | [`sockat`](https://pypi.org/project/sockat/) on PyPI | published (no fork route, no `connect_any` variants) |
-| Go | kawaz/sockat-go | `github.com/kawaz/sockat-go` | planned |
+| Go | [kawaz/sockat-go](https://github.com/kawaz/sockat-go) | [`github.com/kawaz/sockat-go`](https://pkg.go.dev/github.com/kawaz/sockat-go) | published (no fork route, no `connect_any` variants, no widened sockaddr on macOS) |
 | JavaScript / TypeScript | kawaz/sockat-ts | npm | planned |
 | Ruby | kawaz/sockat-rb | RubyGems | planned |
 
