@@ -1,6 +1,6 @@
 # DR-0011: bind に渡す綴りにはランダムな部品を挟む
 
-- Status: Active
+- Status: Superseded by DR-0012
 - Date: 2026-11-19
 
 ## Context
@@ -68,6 +68,6 @@ bind に渡す綴りには必ずランダムな部品を挟み、後で別の文
 
 ## 関連
 
-- [docs/SPEC-ja.md](../SPEC-ja.md) の「長いパスの経路と試す順番」「各経路」「bind の綴りに挟むランダムな部品」「どこから届かなくなるか」「長いパスで標準と違う点」「実装が確かめる試験の観点」「未確定」
+- [docs/SPEC-ja.md](../../SPEC-ja.md) の「長いパスの経路と試す順番」「各経路」「bind の綴りに挟むランダムな部品」「どこから届かなくなるか」「長いパスで標準と違う点」「実装が確かめる試験の観点」「未確定」
 - 裁定: kawaz (2026-11-19)
 - [DR-0008](DR-0008-unsafe-base-held-by-fd.md)、[DR-0009](DR-0009-apple-bind-without-widened-sockaddr.md)

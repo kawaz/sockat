@@ -5,7 +5,7 @@
 
 ## Context
 
-- fork の経路の bind に、相手 (connect するクライアント) から見える副作用があるかを確かめる必要がある (DR-0009 の前提)
+- fork の経路の bind に、相手 (connect するクライアント) から見える副作用があるかを確かめる必要がある (DR-0012 で bind の最後の手に fork を置く前提)
 - 実測 (2026-11-18、macOS 26.5.2 と Linux の docker)。peer 情報は macOS が `LOCAL_PEERPID` / `LOCAL_PEEREPID` / audit token の pid と pidversion (kawaz の procline で収集)、Linux が `SO_PEERCRED` / `SO_PEERPIDFD`
 
 | 手順 | クライアントに見えるサーバの peer |
@@ -40,4 +40,4 @@
 
 - [docs/SPEC-ja.md](../SPEC-ja.md) の「fork の経路」「fork の副作用」「実装が確かめる試験の観点」
 - 裁定: kawaz (2026-11-18)
-- [DR-0009](DR-0009-apple-bind-without-widened-sockaddr.md)
+- [DR-0012](DR-0012-own-directory-and-thread-cwd.md)

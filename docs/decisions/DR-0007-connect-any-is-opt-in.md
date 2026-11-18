@@ -5,7 +5,7 @@
 
 ## Context
 
-- スレッド cwd の経路 (DR-0005) で、`connect` 系が届かない場面はほぼ無くなった。`connect_any` 系が要るのは、fork が最後の手になる環境 (NetBSD / OpenBSD / illumos、`unshare` が断られる Linux、`pthread_fchdir_np` が無い Apple の OS) だけ
+- 中心の経路 (DR-0012) で、`connect` 系が届かない場面はほぼ無くなった。`connect_any` 系が要るのは、fork が最後の手になる環境 (NetBSD / OpenBSD / illumos、スレッド cwd も `/proc` も使えない Linux、`pthread_fchdir_np` が無い Apple の OS) だけ
 - 既定の API に `connect` と並んで出ていると、エディタの補完などで利用者がどちらを使うか迷う
 
 ## Decision
@@ -42,4 +42,4 @@
 ## 関連
 
 - 裁定: kawaz (2026-11-18)。feature 名と戻り値の型も kawaz (2026-11-18)
-- [DR-0002](DR-0002-no-connect-any-without-fork.md)、[DR-0005](DR-0005-thread-cwd-route.md)
+- [DR-0002](DR-0002-no-connect-any-without-fork.md)、[DR-0012](DR-0012-own-directory-and-thread-cwd.md)

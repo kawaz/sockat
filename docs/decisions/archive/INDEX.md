@@ -1,0 +1,10 @@
+# 退避した Decision Records
+
+後続の DR に置き換えられた DR。各ファイルの `Status: Superseded by DR-NNNN` が正本で、現役の文書からはここも各ファイルも名指ししない (置き換え先を指す)。
+
+| DR | 説明 | 置き換え先 |
+|---|---|---|
+| [DR-0005](DR-0005-thread-cwd-route.md) | スレッドだけ cwd を移す経路を fork の手前に足す | [DR-0012](../DR-0012-own-directory-and-thread-cwd.md) |
+| [DR-0008](DR-0008-unsafe-base-held-by-fd.md) | 安全でない置き場は自分専用のディレクトリを fd で掴んで symlink の経路に使う | [DR-0012](../DR-0012-own-directory-and-thread-cwd.md) |
+| [DR-0009](DR-0009-apple-bind-without-widened-sockaddr.md) | Apple の OS の bind は広げた sockaddr を使わない | [DR-0012](../DR-0012-own-directory-and-thread-cwd.md) |
+| [DR-0011](DR-0011-bind-spelling-with-random-part.md) | bind に渡す綴りにランダムな部品を挟み、安全な綴りの経路だけを短くなる順に試す | [DR-0012](../DR-0012-own-directory-and-thread-cwd.md) |

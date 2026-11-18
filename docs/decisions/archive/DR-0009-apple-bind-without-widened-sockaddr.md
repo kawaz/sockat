@@ -1,6 +1,6 @@
 # DR-0009: Apple の OS の bind は広げた sockaddr を使わない
 
-- Status: Active
+- Status: Superseded by DR-0012
 - Date: 2026-11-18
 
 ## Context
@@ -45,7 +45,7 @@
 
 ## 関連
 
-- [docs/SPEC-ja.md](../SPEC-ja.md) の「長いパスの経路と試す順番」「各経路」「どこから届かなくなるか」
+- [docs/SPEC-ja.md](../../SPEC-ja.md) の「長いパスの経路と試す順番」「各経路」「どこから届かなくなるか」
 - 裁定: kawaz (2026-11-18)
-- [DR-0010](DR-0010-fork-bind-listen-by-parent.md)
+- [DR-0010](../DR-0010-fork-bind-listen-by-parent.md)
 - [DR-0011](DR-0011-bind-spelling-with-random-part.md) (bind の順番から相対パスを外す)

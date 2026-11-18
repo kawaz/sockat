@@ -1,6 +1,6 @@
 # DR-0005: スレッドだけ cwd を移す経路を fork の手前に足す
 
-- Status: Active
+- Status: Superseded by DR-0012
 - Date: 2026-11-18
 
 ## Context
@@ -48,6 +48,6 @@
 
 ## 関連
 
-- [docs/SPEC-ja.md](../SPEC-ja.md) の「スレッド cwd の経路」「どこから届かなくなるか」
+- [docs/SPEC-ja.md](../../SPEC-ja.md) の「スレッド cwd の経路」「どこから届かなくなるか」
 - 裁定: kawaz (HB-Q4、2026-11-18)
 - [DR-0011](DR-0011-bind-spelling-with-random-part.md) (bind の綴りと順番)
