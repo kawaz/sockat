@@ -30,6 +30,8 @@
 
 - 戻り値の listener / stream は、標準の bind / connect が返すのと同じ型。標準の代わりに置き換えるだけで使える
 - 名前はその言語の命名の慣習に合わせてよい。振る舞いは上の表に従う
+- fork の経路を作れない言語では `connect_any` 系を出さない。README の表に「fork の経路なし」と書く
+- 標準の connect が元から待たない言語 (Node.js 等) では、標準と同じ形の connect を 1 つだけ出し、`_nonblocking` を分けない
 - `connect` / `connect_nonblocking` は fork の経路に来た所で `ENAMETOOLONG` を返す
 - `connect_any` 系は、他の経路が全部使えない時に fork してでも connect する。fork の経路を通った時だけ `true`。pid は返さない
 - ブロックしない 2 つは、connect の前にソケットを非ブロッキングにし、そのまま返す。相手の backlog が満杯なら待たずに失敗する
@@ -38,12 +40,12 @@
 
 ## 短いパス
 
-上限以内のパスは標準にそのまま渡す。何も足さず、環境変数も読まない。
+その言語の標準が受け付ける長さまでは、標準にそのまま渡す。何も足さず、環境変数も読まない。それを超えたら経路に回す。多くの言語の標準は次の長さ (`sun_path` − 1) まで受け付ける。これより短い言語 (Java は `sun_path` − 2) は、その言語の標準の上限を使う。
 
-| OS | 標準にそのまま渡す長さ |
+| OS | `sun_path` − 1 |
 |---|---|
-| Linux / Android / illumos | 107 バイトまで |
-| macOS / iOS / FreeBSD / NetBSD / OpenBSD | 103 バイトまで |
+| Linux / Android / illumos | 107 バイト |
+| macOS / iOS / FreeBSD / NetBSD / OpenBSD | 103 バイト |
 
 ## 長いパスの経路と試す順番
 
@@ -193,7 +195,4 @@ bind は子が bind するだけで listen は親なので、相手から見え�
 
 ## 未確定
 
-- 標準の上限が `sun_path` − 1 より短い言語 (Java は `sun_path` − 2) で、その差の長さのパスをどう扱うか
-- fork の経路を作れない言語 (Go) で `connect_any` 系を公開するか
-- 標準のソケットが非同期を前提とする言語 (Node.js 等) での `connect` と `connect_nonblocking` の対応
 - Android、macOS 以外の Apple OS、NetBSD・OpenBSD・illumos の peer の資格情報は確かめていない

@@ -8,7 +8,7 @@ Libraries that bind and connect Unix domain sockets whose path is longer than `s
 
 - The standard library bind / connect refuses a path that does not fit in `sun_path`. A socket in a deep temporary directory (macOS's `$TMPDIR` alone is about 50 bytes) hits it quickly
 - The limit applies only to the argument handed to `bind(2)` / `connect(2)`, so sockat hands the kernel a short spelling of the same place
-- A short path (up to `sun_path` − 1 bytes) is handed to the standard library unchanged
+- A path the standard library accepts (usually up to `sun_path` − 1 bytes) is handed to it unchanged
 
 ## Implementations
 

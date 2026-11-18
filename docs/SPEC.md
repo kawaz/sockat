@@ -30,6 +30,8 @@ How sockat behaves, independent of the language. Every implementation follows it
 
 - The listener / stream returned is of the same type the standard bind / connect returns, so it is a drop-in replacement for the standard
 - Names may follow the language's naming conventions. The behavior follows the table above
+- A language that cannot build the fork route does not provide the `connect_any` variants; its README says "no fork route" in the table
+- A language whose standard connect never blocks (Node.js etc.) provides one connect in the standard's own form, with no separate `_nonblocking`
 - `connect` / `connect_nonblocking` return `ENAMETOOLONG` when they reach the fork route
 - The `connect_any` variants connect even by forking when no other route can be used. The bool is `true` only when the fork route was taken. No pid is returned
 - The two non-blocking variants make the socket non-blocking before connecting and return it that way. When the peer's backlog is full they fail without waiting
@@ -38,12 +40,12 @@ How sockat behaves, independent of the language. Every implementation follows it
 
 ## Short paths
 
-A path within the limit is handed to the standard unchanged. Nothing is added and no environment variable is read.
+A path the language's standard accepts is handed to it unchanged. Nothing is added and no environment variable is read. A longer path goes to the routes. Most standards accept up to `sun_path` − 1 bytes (below); a language whose standard stops earlier (Java: `sun_path` − 2) uses its standard's own limit.
 
-| OS | Handed to the standard |
+| OS | `sun_path` − 1 |
 |---|---|
-| Linux / Android / illumos | up to 107 bytes |
-| macOS / iOS / FreeBSD / NetBSD / OpenBSD | up to 103 bytes |
+| Linux / Android / illumos | 107 bytes |
+| macOS / iOS / FreeBSD / NetBSD / OpenBSD | 103 bytes |
 
 ## Routes for long paths and their order
 
@@ -193,7 +195,4 @@ A bind has no side effect visible to the peer, since the child only binds and th
 
 ## Open questions
 
-- In a language whose standard limit is shorter than `sun_path` − 1 (Java: `sun_path` − 2), how to treat paths in the gap
-- Whether a language that cannot build the fork route (Go) exposes the `connect_any` variants
-- How `connect` and `connect_nonblocking` map in languages whose standard sockets are asynchronous by design (Node.js etc.)
 - Android, Apple OSes other than macOS, and the peer credentials on NetBSD / OpenBSD / illumos are not checked
