@@ -20,7 +20,9 @@ Status は各 DR ファイルの `Status:` 行が正本。
 | [DR-0004](DR-0004-standard-length-per-language.md) | ⬜ 未実装 | 標準に渡す長さはその言語の標準が受け付ける長さ。経路の綴りの条件は sockaddr に入る長さ (`sun_path` − 1) |
 | [DR-0005](DR-0005-thread-cwd-route.md) | ⬜ 未実装 | スレッドだけ cwd を移す経路を fork の手前に足す (Linux は `unshare(CLONE_FS)`、Apple の OS は `pthread_fchdir_np`)。`connect` 系も試す |
 | [DR-0006](DR-0006-nul-is-invalid-at-any-length.md) | ⬜ 未実装 | 先頭以外に NUL を含むパスは長さによらず引数の誤り。先頭が NUL (abstract) は対象外 |
-| [DR-0007](DR-0007-connect-any-is-opt-in.md) | ⬜ 未実装 | `connect_any` 系は既定の API に出さず、使う人が選んで有効にする (Rust は feature `connect-any`) |
+| [DR-0007](DR-0007-connect-any-is-opt-in.md) | ⬜ 未実装 | `connect_any` 系は既定の API に出さず、使う人が選んで有効にする (Rust は feature `any`)。戻り値は stream と `forked` を持つ名前付きの型 |
 | [DR-0008](DR-0008-unsafe-base-held-by-fd.md) | ⬜ 未実装 | `/proc` を使える Linux / Android では、安全でない置き場も自分専用のディレクトリを fd で掴んで symlink の経路に使う (置き場の候補ごとに安全な形 → fd で掴む形、`TMPDIR` を `/tmp` より先) |
+| [DR-0009](DR-0009-apple-bind-without-widened-sockaddr.md) | ⬜ 未実装 | Apple の OS の bind は広げた sockaddr を使わない (相対パス → symlink → スレッド cwd → fork)。connect 系は今のまま |
+| [DR-0010](DR-0010-fork-bind-listen-by-parent.md) | ⬜ 未実装 | fork の経路の bind は listen を必ず親がする。相手から見える副作用は無く、見えない副作用 (`SIGCHLD` 等) はある |
 
 経路の設計の判断は [sockat-rs の DR-0001](https://github.com/kawaz/sockat-rs/blob/main/docs/decisions/DR-0001-long-socket-path-routes.md) にある。

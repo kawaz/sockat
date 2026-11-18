@@ -17,7 +17,7 @@
 | Apple の OS | `pthread_fchdir_np(dirfd)` → bind / connect → `pthread_fchdir_np(-1)` で戻すか、スレッドを捨てる |
 | NetBSD / OpenBSD / illumos 等 | 無い |
 
-- 順番: 相対パス → (Apple) 広げた sockaddr → symlink → スレッド cwd → fork (bind と `connect_any` 系だけ)
+- 順番: 相対パス → (Apple の OS の connect 系) 広げた sockaddr → symlink → スレッド cwd → fork (bind と `connect_any` 系だけ)
 - `bind` / `connect` / `connect_nonblocking` / `connect_any` 系のどれも試す
 - sockat が作った使い捨てのスレッドで行い、捨てる。呼び出し元のスレッドの cwd には触らない
 - 使えないとみなして次へ: seccomp の filter が掛かっている (Linux、`prctl(PR_GET_SECCOMP)` が 0 でない)、`unshare` が断られた、`pthread_fchdir_np` が無い・失敗した、その言語でスレッドを作れない・固定できない

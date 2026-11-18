@@ -26,16 +26,17 @@
 | `bind` | 最後に試す | (待たない) | listen 済みの listener |
 | `connect` | 試さない | する | stream |
 | `connect_nonblocking` | 試さない | しない | 非ブロッキングの stream |
-| `connect_any` | 最後に試す | する | stream と、fork の経路を通ったか (bool) |
-| `connect_any_nonblocking` | 最後に試す | しない | stream と、fork の経路を通ったか (bool) |
+| `connect_any` | 最後に試す | する | stream と `forked` を持つ名前付きの型 |
+| `connect_any_nonblocking` | 最後に試す | しない | 非ブロッキングの stream と `forked` を持つ名前付きの型 |
 
 - 戻り値の listener / stream は、標準の bind / connect が返すのと同じ型。標準の代わりに置き換えるだけで使える
+- `connect_any` 系の戻り値は、標準の stream と `forked` (fork の経路を通った時だけ真) を持つ名前付きの型。形は言語の慣習で決める (Rust は struct 等)
 - 名前はその言語の命名の慣習に合わせてよい。振る舞いは上の表に従う
 - fork の経路を作れない言語では `connect_any` 系を出さない。README の表に「fork の経路なし」と書く ([DR-0002](decisions/DR-0002-no-connect-any-without-fork.md))
 - 標準の connect が元から待たない言語 (Node.js 等) では、標準と同じ形の connect を 1 つだけ出し、`_nonblocking` を分けない ([DR-0003](decisions/DR-0003-single-connect-when-standard-never-blocks.md))
 - `connect` / `connect_nonblocking` は fork の経路に来た所で `ENAMETOOLONG` を返す
-- `connect_any` 系は、他の経路が全部使えない時に fork してでも connect する。fork の経路を通った時だけ `true`。pid は返さない
-- `connect_any` 系は既定の API に出さない。使う人が自分で選んで有効にする、その言語の仕組みの後ろに置く (Rust は feature `connect-any`、Python は別のモジュール等) ([DR-0007](decisions/DR-0007-connect-any-is-opt-in.md))
+- `connect_any` 系は、他の経路が全部使えない時に fork してでも connect する。pid は返さない
+- `connect_any` 系は既定の API に出さない。使う人が自分で選んで有効にする、その言語の仕組みの後ろに置く (Rust は feature `any`、Python は別のモジュール等) ([DR-0007](decisions/DR-0007-connect-any-is-opt-in.md))
 - ブロックしない 2 つは、connect の前にソケットを非ブロッキングにし、そのまま返す。相手の backlog が満杯なら待たずに失敗する
 - ブロックしない connect は呼び出しの中で結果が出る前提。`EINPROGRESS` が返ったらそれをエラーとして返し、ソケットを閉じる (つながっていない stream を返さない)
 - 自前で作るソケットは、その言語の標準が作るソケットと同じ設定にする (close-on-exec、`SO_NOSIGPIPE`、listen の backlog 等)
@@ -65,11 +66,13 @@
 | Linux / Android (`/proc` を使える) | /proc → 相対パス → symlink → スレッド cwd → fork |
 | Linux / Android (`/proc` を使えない) | 相対パス → symlink → スレッド cwd → fork |
 | FreeBSD | bindat |
-| macOS / iOS 等 Apple の OS | 相対パス → 広げた sockaddr → symlink → スレッド cwd → fork |
+| macOS / iOS 等 Apple の OS の bind | 相対パス → symlink → スレッド cwd → fork |
+| macOS / iOS 等 Apple の OS の connect 系 | 相対パス → 広げた sockaddr → symlink → スレッド cwd → fork |
 | NetBSD / OpenBSD / illumos / その他の Unix | 相対パス → symlink → fork |
 
 - 標準に渡す長さを超えるパスで、最後がファイル名でないもの (`dir/`、`dir/.`、`dir/..`、`..`) は、何も作らずに引数の誤りを返す
 - どの経路も呼び出し元のプロセスの cwd を変えない
+- Apple の OS の bind は広げた sockaddr を使わない。そのソケットのアドレスは途中で切れて `sun_path` に入らず、読む側を壊す (CPython の `getsockname` が後ろに無関係なバイトを付ける、Go の `net.FileConn` で相手の `RemoteAddr` が nil になる) ([DR-0009](decisions/DR-0009-apple-bind-without-widened-sockaddr.md))
 - symlink の経路は、置き場の候補ごとに、安全なら置き場に直接 symlink を作り、安全でなければ fd で掴む形 (`/proc` を使える Linux / Android だけ) で試す。`TMPDIR` を `/tmp` より先に使い切る
 
 ### 各経路
@@ -79,12 +82,12 @@
 | /proc | ディレクトリを `O_PATH \| O_DIRECTORY` で開き、`/proc/self/fd/<fd>/<ファイル名>` を標準に渡す | `/proc/self/fd/<fd>` を stat で引け、綴り全体が sockaddr に入る長さ以内 (ファイル名はおよそ 90 バイトまで) |
 | bindat | ディレクトリを `O_RDONLY` で開き、`bindat(2)` / `connectat(2)` でファイル名を渡す | FreeBSD。ファイル名が 103 バイトを超えたら `ENAMETOOLONG` |
 | 相対パス | cwd からの相対パスを標準に渡す。文字列を書き直すだけで `chdir` しない | 元のパスが絶対パスで、相対パスが sockaddr に入る長さ以内。相対パスのディレクトリと元のディレクトリの `(st_dev, st_ino)` が一致し、綴りを作る間に cwd が変わっていない |
-| 広げた sockaddr | `sun_len` とアドレス長を `2 + パスの長さ` にした sockaddr で、元のパス、無理なら相対パスを渡す | Apple の OS。パスが 253 バイト以内。カーネルが `EINVAL` / `ENAMETOOLONG` を返したら使えないとみなす |
+| 広げた sockaddr | `sun_len` とアドレス長を `2 + パスの長さ` にした sockaddr で、元のパス、無理なら相対パスを渡す | Apple の OS の connect 系だけ。パスが 253 バイト以内。カーネルが `EINVAL` / `ENAMETOOLONG` を返したら使えないとみなす |
 | symlink | 置き場に短い symlink を作り、それを通した綴りを渡して、すぐ消す | 綴りが sockaddr に入る長さ以内 (*) で、symlink を作れる置き場がある。置き場が安全でない時は fd で掴む形で、`/proc` を使える Linux / Android の connect 系だけ |
 | スレッド cwd | bind / connect するスレッドだけ cwd をディレクトリに移し、ファイル名で bind / connect する | Linux / Apple の OS。ファイル名が sockaddr に入る長さ以内 (*)。その言語でスレッドを作って固定できる |
 | fork | ディレクトリの fd に `fchdir` した子を fork し、子がファイル名で bind / connect する | `bind` と `connect_any` 系だけ。ファイル名が sockaddr に入る長さ以内 (*) |
 
-(*) Apple の OS でカーネルが広げた sockaddr を受け付ける時は 253 バイト以内。断った時は sockaddr に入る長さで判定する。
+(*) Apple の OS の connect 系でカーネルが広げた sockaddr を受け付ける時は 253 バイト以内。bind と、カーネルが断った時は sockaddr に入る長さで判定する。
 
 ### 相対パスの作り方
 
@@ -148,7 +151,7 @@
 
 1. 親がソケットを作り、ディレクトリを開いた fd を持ち、sockaddr を組み立ててから fork する。ブロックしない connect では fork の前にソケットを非ブロッキングにする
 2. 子は `fchdir(dirfd)` → ファイル名で `bind` / `connect` → `_exit(結果)` (0 が成功、1〜255 が errno)
-3. 親はその pid だけを `waitpid` する。bind の後の listen は親がする
+3. 親はその pid だけを `waitpid` する。bind の後の listen は必ず親がする。子が listen すると、クライアントに見えるサーバの peer 情報が子になる ([DR-0010](decisions/DR-0010-fork-bind-listen-by-parent.md))
 
 - 子の区間は async-signal-safe な呼び出しだけ (allocation・lock・言語の後始末を通さない)
 - `waitpid` が `ECHILD` (status を他者に刈り取られた) なら、ソケットの状態から結果を読む: bind は `getsockname` にパスが入っているか、connect は `getpeername` が通るか。失敗は一般のエラー
@@ -177,29 +180,30 @@
 | Linux (`/proc` あり) | ファイル名 > 107 | ファイル名 > 107、symlink も使えない (置き場の安全は問わない)<br>スレッド cwd が使えない時: ファイル名が `/proc` の綴りに収まらず、相対パス > 107、symlink も使えない (置き場の安全は問わない) | ファイル名 > 107、symlink も使えない (置き場の安全は問わない) |
 | Linux (`/proc` 無し) | ファイル名 > 107 | ファイル名 > 107、symlink も使えない<br>スレッド cwd が使えない時: 相対パス > 107、symlink も使えない | ファイル名 > 107、symlink も使えない |
 | FreeBSD | ファイル名 > 103 | ファイル名 > 103 | ファイル名 > 103 |
-| macOS / iOS 等 Apple の OS | ファイル名 > 253 | ファイル名 > 253、symlink も使えない<br>スレッド cwd が使えない時: 元のパスも相対パスも > 253、symlink も使えない | ファイル名 > 253、symlink も使えない |
+| macOS / iOS 等 Apple の OS | ファイル名 > 103 | ファイル名 > 253、symlink も使えない<br>スレッド cwd が使えない時: 元のパスも相対パスも > 253、symlink も使えない | ファイル名 > 253、symlink も使えない |
 | NetBSD / OpenBSD / その他の BSD | ファイル名 > 103 | 相対パス > 103、symlink も使えない | ファイル名 > 103、symlink も使えない |
 | illumos | ファイル名 > 107 | 相対パス > 107、symlink も使えない | ファイル名 > 107、symlink も使えない |
 
 - スレッド cwd の経路を使える Linux / Apple の OS では、`connect` 系も `connect_any` 系と同じ所まで届く
 - `/tmp` で symlink の経路を使えれば、connect はディレクトリの深さにもファイル名の長さにもよらず届く
 - `/proc` を使える Linux では、置き場が安全でなくても、そこにディレクトリを作れれば connect は同じく届く (fd で掴む形)
-- `/tmp` を通した bind はファイル名が 84 バイト (`sun_path` が 104 の OS は 80、macOS は 230) まで
+- `/tmp` を通した bind はファイル名が 84 バイト (`sun_path` が 104 の OS は 80) まで
+- ディレクトリを開く等でフルパスを渡すので、PATH_MAX (macOS 1024、Linux 4096) を超えるパスは `ENAMETOOLONG`。sockat の責務外
 
 ## fork の副作用
 
-| 副作用 | 内容 |
+| 範囲 | 副作用 |
 |---|---|
-| peer の pid | fork の経路で connect すると、サーバに見える peer の pid は終了した子の pid。uid / gid は呼び出し元と同じ<br>Linux の `SO_PEERCRED` は子の pid のまま<br>macOS の `LOCAL_PEERPID` は呼び出し元が send すると呼び出し元の pid になる |
-| fd の複製 | 子は終了まで全 fd の複製を持つ。その間に他のスレッドが閉じたソケットやパイプは開いたままになる |
+| 相手から見える (`connect_any` 系だけ) | サーバに見える peer の pid は終了した子の pid。uid / gid は呼び出し元と同じ<br>Linux の `SO_PEERCRED` は子の pid のまま<br>macOS の `LOCAL_PEERPID` は呼び出し元が send すると呼び出し元の pid になる |
+| 相手から見えない (`bind` と `connect_any` 系) | 子は終了まで全 fd の複製を持つ。その間に他のスレッドが閉じたソケットやパイプは開いたままになる<br>親に `SIGCHLD` が届く<br>`pthread_atfork` の handler が走る<br>監視ツールに短命の子が見える<br>他のスレッドの `waitpid(-1)` が子を刈り取りうる |
 
-bind は子が bind するだけで listen は親なので、相手から見える副作用は無い。
+- bind は相手から見える副作用が無い。子は bind だけして listen は親がするので、クライアントに見えるサーバの peer 情報 (macOS の `LOCAL_PEERPID` / `LOCAL_PEEREPID` / audit token の pid と pidversion、Linux の `SO_PEERCRED` / `SO_PEERPIDFD`) は send の前から親 (実測 2026-11-18、macOS 26.5.2 と Linux) ([DR-0010](decisions/DR-0010-fork-bind-listen-by-parent.md))
 
 ## 長いパスで標準と違う点
 
 | 点 | 内容 |
 |---|---|
-| カーネルが返すアドレス | `getsockname` / `getpeername` は bind に使った綴りを返す (相対パス、`/proc/self/fd/...`、もう無い symlink、ファイル名だけ、途中で切れたパス)。広げた sockaddr の綴りは、言語の標準によっては切れた後ろに無関係なバイトが付く (macOS の CPython で版によらず観測)。元のパスは呼び出し元が持つ |
+| カーネルが返すアドレス | `getsockname` / `getpeername` は bind に使った綴りを返す (相対パス、`/proc/self/fd/...`、もう無い symlink、ファイル名だけ)。元のパスは呼び出し元が持つ |
 | ディレクトリを先に引く | /proc・相対パス・bindat・スレッド cwd・fork は、ディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない。広げた sockaddr と symlink は標準と同じ |
 | 他のスレッドの chdir | 相対パスの経路は、間に cwd が変わったままなら一般のエラー。変えて戻した場合は見えない |
 | symlink の残骸 | symlink や fd で掴む形のディレクトリを消す前にプロセスが死ぬと `sockat.XXXXXXXXXX` が置き場に残る |
@@ -226,7 +230,7 @@ bind は子が bind するだけで listen は親なので、相手から見え�
 ## 各実装に求めること
 
 - 上の経路と順番に従う。その言語で作れない経路は飛ばし (使えない経路として次へ進む)、README に OS × 経路の表で明示する
-- 自前で作ったソケットを標準の型に取り込む言語では、広げた sockaddr で bind / connect したソケットを取り込んでも、アドレスの取得で落ちないか確かめる (Go は取り込みやアドレスの取得で落ちるので、広げた sockaddr の経路を飛ばす)。落ちるならその経路を作れない経路として飛ばす
+- 自前で作ったソケットを標準の型に取り込む言語では、広げた sockaddr で connect したソケットを取り込んでも、取り込みやアドレスの取得で落ちないか確かめる。落ちるならその経路を作れない経路として飛ばす
 - 経路は公開 API に出さない。試験はパッケージの中から各経路を直接呼んで強制する
 - 環境を読む部分 (symlink の置き場の候補、`/proc/self/fd` の場所、Apple の OS で広げた sockaddr を受け付けるか、スレッド cwd の経路を使えるか) は試験から差し替えられるようにする
 - README とマニュアルにこの仕様へのリンクを置く。仕様と食い違う振る舞いを入れる時は、先にこの仕様を直す
@@ -243,11 +247,11 @@ bind は子が bind するだけで listen は親なので、相手から見え�
 | /proc が無い Linux | `/proc/self/fd` の場所を空のディレクトリ等に差し替えて、相対パス → symlink → スレッド cwd → fork に進む |
 | symlink の置き場 | 安全でない置き場を飛ばす、深すぎる `TMPDIR` で `/tmp` に回る、名前の衝突を飛ばし 16 回で打ち切る、成功でも失敗でも symlink を消す |
 | fd で掴む形 | 安全でない置き場で、ソケットが元のパスにでき届く、終わった後に置き場に何も残らない、作ってから開くまでに差し替えたディレクトリ (持ち主が違うか group / other に権限が付いた) を使わず、その中身も消さない、`TMPDIR` を `/tmp` より先に使う、`/proc` を使えない時は安全でない置き場を飛ばす |
-| connect と fork | `connect` 系は fork でしか届かない時に `ENAMETOOLONG`、`connect_any` 系は届いて `true` |
+| connect と fork | `connect` 系は fork でしか届かない時に `ENAMETOOLONG`、`connect_any` 系は届いて `forked` が真 |
 | cwd | どの経路の後も cwd が変わっていない。相対パスの経路の途中で cwd が変わったら一般のエラー |
 | スレッド cwd | 経路を強制して、プロセスの cwd が変わらない、peer の pid が呼び出し元、ソケットが元のパスにできる。使えない時は次の経路へ進む |
-| fork | peer の pid の振る舞い、`SIGCHLD` を `SIG_IGN` にした時の結果の読み取り |
-| macOS | 253 バイトのパスが広げた sockaddr で通る |
+| fork | fork の経路で bind したサーバに connect したクライアントから見える peer が親 (send の前も後も)。`connect_any` 系の peer の pid の振る舞い、`SIGCHLD` を `SIG_IGN` にした時の結果の読み取り |
+| macOS | connect 系で 253 バイトのパスが広げた sockaddr で通る。bind は広げた sockaddr を使わない |
 | ブロックしない connect | backlog が満杯で待たずに失敗する |
 | 名前で終わらないパス、先頭以外の NUL | 何も作らずに引数の誤り。NUL は短いパスでも。先頭が NUL (abstract) は標準に渡る |
 | カーネルが返すアドレス | 長いパスでも取得で落ちない |

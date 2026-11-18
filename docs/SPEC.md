@@ -26,16 +26,17 @@ How sockat behaves, independent of the language. Every implementation follows it
 | `bind` | tried last | (does not wait) | a listening listener |
 | `connect` | never tried | yes | a stream |
 | `connect_nonblocking` | never tried | no | a non-blocking stream |
-| `connect_any` | tried last | yes | a stream, and whether the fork route was taken (bool) |
-| `connect_any_nonblocking` | tried last | no | a stream, and whether the fork route was taken (bool) |
+| `connect_any` | tried last | yes | a named type holding a stream and `forked` |
+| `connect_any_nonblocking` | tried last | no | a named type holding a non-blocking stream and `forked` |
 
 - The listener / stream returned is of the same type the standard bind / connect returns, so it is a drop-in replacement for the standard
+- The `connect_any` variants return a named type holding the standard stream and `forked` (true only when the fork route was taken). Its shape follows the language's conventions (a struct in Rust, etc.)
 - Names may follow the language's naming conventions. The behavior follows the table above
 - A language that cannot build the fork route does not provide the `connect_any` variants; its README says "no fork route" in the table ([DR-0002](decisions/DR-0002-no-connect-any-without-fork.md), Japanese)
 - A language whose standard connect never blocks (Node.js etc.) provides one connect in the standard's own form, with no separate `_nonblocking` ([DR-0003](decisions/DR-0003-single-connect-when-standard-never-blocks.md), Japanese)
 - `connect` / `connect_nonblocking` return `ENAMETOOLONG` when they reach the fork route
-- The `connect_any` variants connect even by forking when no other route can be used. The bool is `true` only when the fork route was taken. No pid is returned
-- The `connect_any` variants are not in the default API. They sit behind a mechanism the user opts into in that language (a `connect-any` feature in Rust, a separate module in Python, etc.) ([DR-0007](decisions/DR-0007-connect-any-is-opt-in.md), Japanese)
+- The `connect_any` variants connect even by forking when no other route can be used. No pid is returned
+- The `connect_any` variants are not in the default API. They sit behind a mechanism the user opts into in that language (an `any` feature in Rust, a separate module in Python, etc.) ([DR-0007](decisions/DR-0007-connect-any-is-opt-in.md), Japanese)
 - The two non-blocking variants make the socket non-blocking before connecting and return it that way. When the peer's backlog is full they fail without waiting
 - A non-blocking connect is expected to finish within the call. On `EINPROGRESS` that error is returned and the socket is closed (a stream that is not connected is never returned)
 - A socket the implementation creates itself gets the same settings as one the language's standard creates (close-on-exec, `SO_NOSIGPIPE`, the listen backlog, etc.)
@@ -65,11 +66,13 @@ A path over the standard length is tried on the routes below, in this order per 
 | Linux / Android (`/proc` usable) | /proc → relative path → symlink → thread cwd → fork |
 | Linux / Android (`/proc` not usable) | relative path → symlink → thread cwd → fork |
 | FreeBSD | bindat |
-| macOS / iOS and the other Apple OSes | relative path → widened sockaddr → symlink → thread cwd → fork |
+| macOS / iOS and the other Apple OSes, bind | relative path → symlink → thread cwd → fork |
+| macOS / iOS and the other Apple OSes, connect variants | relative path → widened sockaddr → symlink → thread cwd → fork |
 | NetBSD / OpenBSD / illumos / other Unix | relative path → symlink → fork |
 
 - A path over the standard length whose last component is not a file name (`dir/`, `dir/.`, `dir/..`, `..`) is an invalid-argument error, and nothing is created
 - No route changes the calling process's cwd
+- A bind on an Apple OS never uses the widened sockaddr. The address of such a socket is cut short, does not fit `sun_path`, and breaks whoever reads it (CPython's `getsockname` appends unrelated bytes; Go's `net.FileConn` gives a nil `RemoteAddr` for the peer) ([DR-0009](decisions/DR-0009-apple-bind-without-widened-sockaddr.md), Japanese)
 - The symlink route goes through the base candidates one by one: a symlink directly in the base when it is safe, the fd-held form when it is not (Linux / Android with `/proc` usable only). `TMPDIR` is used up before `/tmp`
 
 ### The routes
@@ -79,12 +82,12 @@ A path over the standard length is tried on the routes below, in this order per 
 | /proc | open the directory `O_PATH \| O_DIRECTORY` and hand `/proc/self/fd/<fd>/<file name>` to the standard | `/proc/self/fd/<fd>` can be stat'ed and the whole spelling is within the sockaddr length (a file name up to about 90 bytes) |
 | bindat | open the directory `O_RDONLY` and pass the file name to `bindat(2)` / `connectat(2)` | FreeBSD. A file name over 103 bytes is `ENAMETOOLONG` |
 | relative path | hand the path relative to the cwd to the standard. Only the string is rewritten; no `chdir` | the original path is absolute and the relative path is within the sockaddr length. The relative directory and the original directory have the same `(st_dev, st_ino)`, and the cwd did not change while the spelling was built |
-| widened sockaddr | pass the original path, failing that the relative path, in a sockaddr whose `sun_len` and address length are `2 + path length` | Apple OSes. The path is at most 253 bytes. `EINVAL` / `ENAMETOOLONG` from the kernel means the route is not usable |
+| widened sockaddr | pass the original path, failing that the relative path, in a sockaddr whose `sun_len` and address length are `2 + path length` | the connect variants on Apple OSes only. The path is at most 253 bytes. `EINVAL` / `ENAMETOOLONG` from the kernel means the route is not usable |
 | symlink | create a short symlink in a base directory, hand the spelling through it, remove it at once | the spelling is within the sockaddr length (*) and there is a base where the symlink can be created. An unsafe base only through the fd-held form, on Linux / Android with `/proc` usable |
 | thread cwd | move the cwd of the binding / connecting thread alone into the directory and bind / connect by the file name | Linux / Apple OSes. The file name is within the sockaddr length (*). The language can create a thread and pin to it |
 | fork | fork a child that `fchdir`s into the directory fd and binds / connects by the file name | only `bind` and the `connect_any` variants. The file name is within the sockaddr length (*) |
 
-(*) 253 bytes on an Apple OS while the kernel takes the widened sockaddr. Once it refuses, the sockaddr length applies.
+(*) 253 bytes for the connect variants on an Apple OS while the kernel takes the widened sockaddr. For a bind, and once the kernel refuses, the sockaddr length applies.
 
 ### Building the relative path
 
@@ -148,7 +151,7 @@ The process's cwd is not changed ([DR-0005](decisions/DR-0005-thread-cwd-route.m
 
 1. The parent creates the socket, holds the directory fd and builds the sockaddr before forking. For a non-blocking connect it makes the socket non-blocking before the fork
 2. The child does `fchdir(dirfd)` → `bind` / `connect` by the file name → `_exit(result)` (0 is success, 1–255 an errno)
-3. The parent `waitpid`s for that pid only. The listen after a bind is done by the parent
+3. The parent `waitpid`s for that pid only. The listen after a bind is always done by the parent. If the child listened, the server's peer information seen by a client would be the child's ([DR-0010](decisions/DR-0010-fork-bind-listen-by-parent.md), Japanese)
 
 - The child's section uses async-signal-safe calls only (no allocation, locks, or the language's cleanup)
 - If `waitpid` fails with `ECHILD` (someone else reaped the status), read the result from the socket: for a bind whether `getsockname` holds a path, for a connect whether `getpeername` succeeds. A failure is a generic error
@@ -177,29 +180,30 @@ When a path over the standard length becomes `ENAMETOOLONG` (the directory exist
 | Linux (`/proc` present) | file name > 107 | file name > 107, and no symlink (whether or not the base is safe)<br>without thread cwd: file name does not fit the `/proc` spelling, relative path > 107, and no symlink (whether or not the base is safe) | file name > 107, and no symlink (whether or not the base is safe) |
 | Linux (no `/proc`) | file name > 107 | file name > 107, and no symlink<br>without thread cwd: relative path > 107, and no symlink | file name > 107, and no symlink |
 | FreeBSD | file name > 103 | file name > 103 | file name > 103 |
-| macOS / iOS and the other Apple OSes | file name > 253 | file name > 253, and no symlink<br>without thread cwd: both the original and the relative path > 253, and no symlink | file name > 253, and no symlink |
+| macOS / iOS and the other Apple OSes | file name > 103 | file name > 253, and no symlink<br>without thread cwd: both the original and the relative path > 253, and no symlink | file name > 253, and no symlink |
 | NetBSD / OpenBSD / other BSD | file name > 103 | relative path > 103, and no symlink | file name > 103, and no symlink |
 | illumos | file name > 107 | relative path > 107, and no symlink | file name > 107, and no symlink |
 
 - On Linux / Apple OSes where the thread cwd route is usable, the `connect` variants reach as far as the `connect_any` variants
 - With the symlink route through `/tmp`, a connect reaches the path whatever the directory depth and the file name length
 - On Linux with `/proc` usable, a connect reaches it likewise even through an unsafe base, as long as a directory can be created there (the fd-held form)
-- A bind through `/tmp` takes a file name up to 84 bytes (80 on OSes with a 104-byte `sun_path`, 230 on macOS)
+- A bind through `/tmp` takes a file name up to 84 bytes (80 on OSes with a 104-byte `sun_path`)
+- Full paths are passed when opening the directory and so on, so a path over PATH_MAX (1024 on macOS, 4096 on Linux) is `ENAMETOOLONG`. That is outside sockat's responsibility
 
 ## Side effects of the fork route
 
-| Side effect | Detail |
+| Scope | Side effect |
 |---|---|
-| peer pid | after a connect through the fork route, the peer pid the server sees is that of the exited child. uid / gid are the caller's<br>Linux's `SO_PEERCRED` keeps the child's pid<br>macOS's `LOCAL_PEERPID` turns into the caller's pid once the caller sends |
-| fd copies | until it exits, the child holds copies of every fd. A socket or pipe another thread closes meanwhile stays open |
+| visible to the peer (`connect_any` variants only) | the peer pid the server sees is that of the exited child. uid / gid are the caller's<br>Linux's `SO_PEERCRED` keeps the child's pid<br>macOS's `LOCAL_PEERPID` turns into the caller's pid once the caller sends |
+| not visible to the peer (`bind` and the `connect_any` variants) | until it exits, the child holds copies of every fd. A socket or pipe another thread closes meanwhile stays open<br>the parent gets `SIGCHLD`<br>`pthread_atfork` handlers run<br>monitoring tools see a short-lived child<br>another thread's `waitpid(-1)` may reap the child |
 
-A bind has no side effect visible to the peer, since the child only binds and the parent listens.
+- A bind has no side effect visible to the peer. The child only binds and the parent listens, so the server's peer information a client sees (macOS's `LOCAL_PEERPID` / `LOCAL_PEEREPID` / the audit token's pid and pidversion, Linux's `SO_PEERCRED` / `SO_PEERPIDFD`) is the parent's from before any send (measured 2026-11-18 on macOS 26.5.2 and Linux) ([DR-0010](decisions/DR-0010-fork-bind-listen-by-parent.md), Japanese)
 
 ## What differs from the standard for a long path
 
 | Point | Detail |
 |---|---|
-| address the kernel reports | `getsockname` / `getpeername` return the spelling used for the bind (a relative path, `/proc/self/fd/...`, a symlink that no longer exists, the file name alone, a truncated path). For a widened sockaddr, some languages' standards append unrelated bytes after the cut (observed with CPython on macOS, regardless of version). The caller keeps the original path |
+| address the kernel reports | `getsockname` / `getpeername` return the spelling used for the bind (a relative path, `/proc/self/fd/...`, a symlink that no longer exists, the file name alone). The caller keeps the original path |
 | directory looked up first | /proc, relative path, bindat, thread cwd and fork look up the directory, then pass the file name. A rename or symlink swap in between is not reflected. widened sockaddr and symlink behave as the standard |
 | another thread's chdir | the relative route returns a generic error if the cwd stayed changed in between. A change and change back is not seen |
 | leftover symlink | if the process dies before removing the symlink or the fd-held form's directory, `sockat.XXXXXXXXXX` is left in the base |
@@ -226,7 +230,7 @@ A bind has no side effect visible to the peer, since the child only binds and th
 ## What each implementation must do
 
 - Follow the routes and order above. Skip a route the language cannot build (treat it as not usable and go on), and show it in the README as an OS × route table
-- In a language that brings a socket it created into the standard type, check that a socket bound / connected with a widened sockaddr does not break that step or the address lookups (Go does, so Go skips the widened route). If it breaks, treat the route as one the language cannot build and skip it
+- In a language that brings a socket it created into the standard type, check that a socket connected with a widened sockaddr does not break that step or the address lookups. If it breaks, treat the route as one the language cannot build and skip it
 - Keep the routes out of the public API. Tests force each route by calling it directly from inside the package
 - Make the parts that read the environment (symlink base candidates, the location of `/proc/self/fd`, whether an Apple OS takes the widened sockaddr, whether the thread cwd route is usable) replaceable from tests
 - Link this specification from the README and manual. Before introducing behavior that differs from it, change this specification first
@@ -243,11 +247,11 @@ A bind has no side effect visible to the peer, since the child only binds and th
 | Linux without /proc | with the `/proc/self/fd` location replaced by an empty directory etc., relative path → symlink → thread cwd → fork is followed |
 | symlink base | an unsafe base is skipped, a too deep `TMPDIR` falls back to `/tmp`, colliding names are skipped and the attempts stop at 16, the symlink is removed on success and on failure |
 | fd-held form | in an unsafe base, the socket is created at the original path and reached, nothing remains in the base afterwards, a directory swapped between creating and opening (another owner, or permission for group / other) is neither used nor emptied, `TMPDIR` is used before `/tmp`, and unsafe bases are skipped when `/proc` is not usable |
-| connect and fork | the `connect` variants return `ENAMETOOLONG` when only the fork route reaches; the `connect_any` variants reach and return `true` |
+| connect and fork | the `connect` variants return `ENAMETOOLONG` when only the fork route reaches; the `connect_any` variants reach with `forked` true |
 | cwd | the cwd is unchanged after every route; a cwd change during the relative route is a generic error |
 | thread cwd | with the route forced, the process's cwd is unchanged, the peer pid is the caller's, and the socket is created at the original path. When not usable, the next route is tried |
-| fork | the peer pid behavior; reading the result with `SIGCHLD` set to `SIG_IGN` |
-| macOS | a 253-byte path goes through the widened sockaddr |
+| fork | a client connected to a server bound through the fork route sees the parent as the peer (before and after any send); the peer pid behavior of the `connect_any` variants; reading the result with `SIGCHLD` set to `SIG_IGN` |
+| macOS | a 253-byte path goes through the widened sockaddr for the connect variants. A bind never uses the widened sockaddr |
 | non-blocking connect | a full backlog fails without waiting |
 | path not ending with a name, NUL anywhere but at the start | invalid argument, nothing created. NUL even for a short path. A leading NUL (abstract) goes to the standard |
 | address the kernel reports | reading it does not fail for a long path |

@@ -15,14 +15,18 @@
 
 | 言語 | 置き場 |
 |---|---|
-| Rust | feature `connect-any` (docs.rs では全 feature を有効にし、feature が要ることを表示する) |
+| Rust | feature `any` (docs.rs では全 feature を有効にし、feature が要ることを表示する) |
 | Python 等 | 既定で import されない別のモジュール等。各言語の DR で決める |
 | fork を作れない言語 | 出さない (DR-0002) |
+
+- Rust の feature 名は `any`。fork を受け入れる 1 つの意思表示で、`connect_any` 系だけを有効にする (bind は今のまま fork するので `bind_any` は作らない)
+- 戻り値は、標準の stream と `forked` (fork の経路を通った時だけ真) を持つ名前付きの型 (Rust は struct 等、言語の慣習で)
 
 理由:
 
 - 有効にする手間が「fork の副作用を受け入れる」という意思表示になる
 - ほぼ使わない関数で、普段の補完と doc の入口を散らかさない
+- 名前付きの型なら、組の何番目が何かを覚えずに読める
 
 ## Alternatives Considered
 
@@ -37,5 +41,5 @@
 
 ## 関連
 
-- 裁定: kawaz (2026-11-18)
+- 裁定: kawaz (2026-11-18)。feature 名と戻り値の型も kawaz (2026-11-18)
 - [DR-0002](DR-0002-no-connect-any-without-fork.md)、[DR-0005](DR-0005-thread-cwd-route.md)
