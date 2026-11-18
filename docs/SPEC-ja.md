@@ -114,8 +114,9 @@
 
 `/proc` を使える Linux / Android で、安全でない置き場の候補に自分専用のディレクトリを作り、名前でなく fd で辿る ([DR-0008](decisions/DR-0008-unsafe-base-held-by-fd.md))。
 
+0. 何かを作る前に、`/proc` を使えるか確かめる (置き場の fd で `/proc/self/fd/<fd>` を引ける)。使えなければ何も作らずに次へ
 1. 置き場に mode 0700 のディレクトリを作る。名前と衝突の扱いは symlink と同じ (`sockat.` + 10 文字、`EEXIST` で引き直し 16 回で打ち切り)
-2. それを `O_DIRECTORY | O_NOFOLLOW` で開いて fd を持ち、`fstat` で「ディレクトリ・持ち主が実効 uid・mode が 0700」を確かめる。違えば使えない
+2. それを `O_DIRECTORY | O_NOFOLLOW` で開いて fd を持ち、`fstat` で「ディレクトリ・持ち主が実効 uid・group と other に権限が無い」を確かめる。違えば使えない。通ったら `fchmod(fd, 0700)` で持ち主の権限をそろえる (umask が持ち主のビットを削る環境で、毎回確認に落ちて残骸が溜まらないため)
 3. fd の中に `symlinkat` で、ソケットのファイル (元のパス) を指す symlink `s` を作る
 4. 綴り `/proc/self/fd/<fd>/s` を渡す
 5. 片付け: `unlinkat(fd, "s")`。ディレクトリは、その名前を `lstat` した `(st_dev, st_ino)` が fd と一致する時だけ `rmdir` する。fd を閉じる

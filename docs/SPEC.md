@@ -114,8 +114,9 @@ A path over the standard length is tried on the routes below, in this order per 
 
 On Linux / Android with `/proc` usable, an unsafe base candidate gets a directory of sockat's own, followed by fd rather than by name ([DR-0008](decisions/DR-0008-unsafe-base-held-by-fd.md), Japanese).
 
+0. Before creating anything, check that `/proc` is usable (`/proc/self/fd/<fd>` resolves for an fd of the base). If not, create nothing and go on
 1. Create a directory with mode 0700 in the base. Name and collisions as for the symlink (`sockat.` + 10 characters, a new name on `EEXIST`, give up after 16)
-2. Open it `O_DIRECTORY | O_NOFOLLOW` and hold the fd; `fstat` that it is a directory, owned by the effective uid, with mode 0700. Otherwise not usable
+2. Open it `O_DIRECTORY | O_NOFOLLOW` and hold the fd; `fstat` that it is a directory, owned by the effective uid, with no permission for group or other. Otherwise not usable. Then `fchmod(fd, 0700)` to settle the owner's bits (so a umask that strips owner bits does not fail the check every time and pile up leftovers)
 3. Create the symlink `s` in the fd with `symlinkat`, pointing to the socket file (the original path)
 4. Hand the spelling `/proc/self/fd/<fd>/s`
 5. Cleanup: `unlinkat(fd, "s")`. `rmdir` the directory only when `lstat` of its name gives the same `(st_dev, st_ino)` as the fd. Close the fd
