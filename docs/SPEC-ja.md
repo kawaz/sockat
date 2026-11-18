@@ -175,7 +175,7 @@ bind は子が bind するだけで listen は親なので、相手から見え�
 
 | 点 | 内容 |
 |---|---|
-| カーネルが返すアドレス | `getsockname` / `getpeername` は bind に使った綴りを返す (相対パス、`/proc/self/fd/...`、もう無い symlink、ファイル名だけ、途中で切れたパス)。元のパスは呼び出し元が持つ |
+| カーネルが返すアドレス | `getsockname` / `getpeername` は bind に使った綴りを返す (相対パス、`/proc/self/fd/...`、もう無い symlink、ファイル名だけ、途中で切れたパス)。広げた sockaddr の綴りは、言語の標準によっては切れた後ろに無関係なバイトが付く (CPython 3.15 の macOS で観測)。元のパスは呼び出し元が持つ |
 | ディレクトリを先に引く | /proc・相対パス・bindat・スレッド cwd・fork は、ディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない。広げた sockaddr と symlink は標準と同じ |
 | 他のスレッドの chdir | 相対パスの経路は、間に cwd が変わったままなら一般のエラー。変えて戻した場合は見えない |
 | symlink の残骸 | symlink を消す前にプロセスが死ぬと `sockat.XXXXXXXXXX` が置き場に残る |
