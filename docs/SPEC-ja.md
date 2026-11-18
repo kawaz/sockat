@@ -44,7 +44,8 @@
 
 標準に渡す長さ以下のパスは、標準にそのまま渡す。何も足さず、環境変数も読まない。それを超えたら経路に回す ([DR-0004](decisions/DR-0004-standard-length-per-language.md))。
 
-- NUL を含むパスは、長さによらず標準に渡さず引数の誤りにする ([DR-0006](decisions/DR-0006-nul-is-invalid-at-any-length.md))
+- 先頭以外に NUL を含むパスは、長さによらず標準に渡さず引数の誤りにする ([DR-0006](decisions/DR-0006-nul-is-invalid-at-any-length.md))
+- Linux / Android で先頭が NUL のパス (abstract namespace。ファイルではない) は sockat の対象外で、長さによらず標準にそのまま渡す。言語固有の abstract の書き方 (Go の `@` 等) も同じ
 - 標準にブロックしない connect が無い言語では、ブロックしない connect に限り、標準と同じアドレスで自前のソケットを connect する
 - 経路の綴りを標準が受け付けない時 (標準に渡す長さが sockaddr に入る長さより短い言語) も、標準と同じアドレスで自前のソケットを使う
 
@@ -178,7 +179,7 @@ bind は子が bind するだけで listen は親なので、相手から見え�
 | 他のスレッドの chdir | 相対パスの経路は、間に cwd が変わったままなら一般のエラー。変えて戻した場合は見えない |
 | symlink の残骸 | symlink を消す前にプロセスが死ぬと `sockat.XXXXXXXXXX` が置き場に残る |
 
-- NUL を含むパスは短いパスでも引数の誤り。標準が NUL で黙って切り詰める言語 (Go 等) では、README の「標準と違う点」に書く
+- 先頭以外の NUL は短いパスでも引数の誤り。標準が NUL で黙って切り詰める言語 (Go 等) では、README の「標準と違う点」に書く
 
 ## エラー
 
@@ -190,7 +191,7 @@ bind は子が bind するだけで listen は親なので、相手から見え�
 | backlog が満杯 | Linux はブロックしない connect で `EAGAIN` (ブロックする connect は待つ)、macOS は `ECONNREFUSED` |
 | どの経路にも収まらない。`connect` 系では fork の経路でしか届かない時も | `ENAMETOOLONG` |
 | 標準に渡す長さを超えるパスで、名前で終わらない | 引数の誤り |
-| NUL を含むパス (長さによらない) | 引数の誤り |
+| 先頭以外に NUL を含むパス (長さによらない) | 引数の誤り |
 | 相対パスの経路の途中で cwd が変わった | 一般のエラー |
 | fork した子が正常に終了しなかった。または status を刈り取られ、bind / connect されていなかった | 一般のエラー |
 
@@ -221,7 +222,7 @@ bind は子が bind するだけで listen は親なので、相手から見え�
 | fork | peer の pid の振る舞い、`SIGCHLD` を `SIG_IGN` にした時の結果の読み取り |
 | macOS | 253 バイトのパスが広げた sockaddr で通る |
 | ブロックしない connect | backlog が満杯で待たずに失敗する |
-| 名前で終わらないパス、NUL | 何も作らずに引数の誤り。NUL は短いパスでも |
+| 名前で終わらないパス、先頭以外の NUL | 何も作らずに引数の誤り。NUL は短いパスでも。先頭が NUL (abstract) は標準に渡る |
 | カーネルが返すアドレス | 長いパスでも取得で落ちない |
 
 - 経路は OS で違うので、少なくとも macOS と Linux で回す。他の Unix は CI の VM で回す

@@ -44,7 +44,8 @@ How sockat behaves, independent of the language. Every implementation follows it
 
 A path up to the standard length is handed to the standard unchanged. Nothing is added and no environment variable is read. A longer path goes to the routes ([DR-0004](decisions/DR-0004-standard-length-per-language.md), Japanese).
 
-- A path containing NUL is never handed to the standard, whatever its length; it is an invalid-argument error ([DR-0006](decisions/DR-0006-nul-is-invalid-at-any-length.md), Japanese)
+- A path containing NUL anywhere but at the start is never handed to the standard, whatever its length; it is an invalid-argument error ([DR-0006](decisions/DR-0006-nul-is-invalid-at-any-length.md), Japanese)
+- On Linux / Android a path starting with NUL (abstract namespace, not a file) is out of sockat's scope and is handed to the standard unchanged, whatever its length. A language's own abstract notation (Go's `@` etc.) likewise
 - In a language whose standard has no non-blocking connect, a non-blocking connect alone uses the implementation's own socket, connected to the same address as the standard would
 - When the standard does not accept a route's spelling (a language whose standard length is shorter than the sockaddr length), the implementation's own socket is used with the same address too
 
@@ -178,7 +179,7 @@ A bind has no side effect visible to the peer, since the child only binds and th
 | another thread's chdir | the relative route returns a generic error if the cwd stayed changed in between. A change and change back is not seen |
 | leftover symlink | if the process dies before removing the symlink, `sockat.XXXXXXXXXX` is left in the base |
 
-- A path containing NUL is an invalid argument even when short. A language whose standard silently truncates at NUL (Go etc.) says so under "differs from the standard" in its README
+- NUL anywhere but at the start is an invalid argument even in a short path. A language whose standard silently truncates at NUL (Go etc.) says so under "differs from the standard" in its README
 
 ## Errors
 
@@ -190,7 +191,7 @@ A bind has no side effect visible to the peer, since the child only binds and th
 | backlog full | Linux: `EAGAIN` for a non-blocking connect (a blocking one waits); macOS: `ECONNREFUSED` |
 | fits no route; for the `connect` variants also when only the fork route would reach it | `ENAMETOOLONG` |
 | path over the standard length that does not end with a name | invalid argument |
-| path containing NUL (at any length) | invalid argument |
+| path containing NUL anywhere but at the start (at any length) | invalid argument |
 | the cwd changed during the relative route | generic error |
 | the forked child did not exit normally, or its status was reaped elsewhere and the socket was not bound / connected | generic error |
 
@@ -221,7 +222,7 @@ A bind has no side effect visible to the peer, since the child only binds and th
 | fork | the peer pid behavior; reading the result with `SIGCHLD` set to `SIG_IGN` |
 | macOS | a 253-byte path goes through the widened sockaddr |
 | non-blocking connect | a full backlog fails without waiting |
-| path not ending with a name, NUL | invalid argument, nothing created. NUL even for a short path |
+| path not ending with a name, NUL anywhere but at the start | invalid argument, nothing created. NUL even for a short path. A leading NUL (abstract) goes to the standard |
 | address the kernel reports | reading it does not fail for a long path |
 
 - The routes differ per OS, so run at least on macOS and Linux. Other Unixes run in CI VMs
