@@ -84,7 +84,7 @@
 ### 中心の経路
 
 1. 置き場 (「D の置き場」) を開いて fd で掴み、その中に `mkdirat` で mode 0700 の D を作る。名前は `sockat.` (ソケットのディレクトリでは `.sockat.`) + 英数 62 種から 10 文字 (OS の安全な乱数)。`EEXIST` で引き直し、16 回で打ち切る
-2. D を開く (`/proc` を使える Linux は `O_PATH | O_DIRECTORY | O_NOFOLLOW`、`/proc` を使えない Linux と他の OS は `O_RDONLY | O_DIRECTORY | O_NOFOLLOW`)。`fstat` で「ディレクトリ・持ち主が実効 uid・group と other に権限が無い」を確かめ、0700 にそろえる (`O_PATH` の fd は `chmod("/proc/self/fd/<fd>", 0700)`、他は `fchmod`。`O_PATH` の fd に `fchmod` は `EBADF` になる)
+2. D を開く (`/proc` を使える Linux は `O_PATH | O_DIRECTORY | O_NOFOLLOW`、Apple の OS は `O_SEARCH | O_DIRECTORY | O_NOFOLLOW` (カーネルが `EISDIR` / `EINVAL` を返したら `O_RDONLY`)、`/proc` を使えない Linux と他の OS は `O_RDONLY | O_DIRECTORY | O_NOFOLLOW`。`O_PATH` と `O_SEARCH` は umask が持ち主の読み取りを削っても開ける)。`fstat` で「ディレクトリ・持ち主が実効 uid・group と other に権限が無い」を確かめ、0700 にそろえる (`O_PATH` の fd は `chmod("/proc/self/fd/<fd>", 0700)`、他は `fchmod`。`O_PATH` の fd に `fchmod` は `EBADF` になる)
 3. D の中に R を作る: `symlinkat(<ソケットのディレクトリの realpath>, Dfd, R)`。R の名前は英数 62 種から 10 文字 (`sockat.` を付けない)。`EEXIST` で引き直し、16 回で打ち切る
 4. D の fd を基準に `R/<ファイル名>` で bind / connect する (「D の fd を基準にする手段」)
 5. 片付け: R は自分が作れた時だけ `unlinkat(Dfd, R)`。D は手順 2 の確認が通り、`fstatat(置き場の fd, D の名前, AT_SYMLINK_NOFOLLOW)` の `(st_dev, st_ino)` が fd と一致する時だけ `unlinkat(置き場の fd, D の名前, AT_REMOVEDIR)`。fd を閉じる。成功でも失敗でもする。消す失敗は無視する
