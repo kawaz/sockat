@@ -206,6 +206,7 @@ A bind has no side effect visible to the peer, since the child only binds and th
 ## What each implementation must do
 
 - Follow the routes and order above. Skip a route the language cannot build (treat it as not usable and go on), and show it in the README as an OS × route table
+- In a language that brings a socket it created into the standard type, check that a socket bound / connected with a widened sockaddr does not break that step or the address lookups (Go does, so Go skips the widened route). If it breaks, treat the route as one the language cannot build and skip it
 - Keep the routes out of the public API. Tests force each route by calling it directly from inside the package
 - Make the parts that read the environment (symlink base candidates, the location of `/proc/self/fd`, whether an Apple OS takes the widened sockaddr, whether the thread cwd route is usable) replaceable from tests
 - Link this specification from the README and manual. Before introducing behavior that differs from it, change this specification first
