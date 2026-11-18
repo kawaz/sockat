@@ -1,7 +1,7 @@
 ---
 title: "SOCK_DGRAM と SOCK_SEQPACKET も長いパスで使えるようにする"
 status: open
-category: idea
+category: feature
 created: 2026-11-18
 origin: "自リポ TODO"
 ---
@@ -11,7 +11,7 @@ origin: "自リポ TODO"
 ## 概要
 
 - SOCK_DGRAM と SOCK_SEQPACKET も同じ `sun_path` の上限に当たる
-- 今の対象は SOCK_STREAM だけ。将来の拡張の候補
+- 今の対象は SOCK_STREAM だけ。作る (kawaz 承認 2026-11-18)。今の SPEC の変更 (sockat-rs 0.4.0 等) を出し終えてから着手する
 
 | 型 | 考えること |
 |---|---|
@@ -20,4 +20,6 @@ origin: "自リポ TODO"
 
 ## 受け入れ条件
 
-- [ ] 対象に入れるか、型ごとに経路の当て方を SPEC に書くかを決める
+- [ ] 型ごとの経路の当て方と API の形を SPEC に書く (SOCK_DGRAM の宛先つきの送信は、送るたびに経路を当てるか、connect して宛先を固定してもらうかを比べて決める)
+- [ ] Rust / Python / Go で実装する (Rust は std に SOCK_SEQPACKET の型が無いので返す型も決める)
+- [ ] 需要を調べる (systemd の NOTIFY_SOCKET、syslog の /dev/log 等で長いパスに当たる報告)
