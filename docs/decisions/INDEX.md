@@ -15,5 +15,8 @@ Status は各 DR ファイルの `Status:` 行が正本。
 | DR | 状態 | 説明 |
 |---|---|---|
 | [DR-0001](DR-0001-hub-and-per-language-repos.md) | N/A | 言語ごとに別リポ (`kawaz/sockat-<言語>`)、ハブ `kawaz/sockat` に言語によらない仕様の正本、Rust 版は sockat-rs (crate 名は `sockat` のまま) |
+| [DR-0002](DR-0002-no-connect-any-without-fork.md) | ⬜ 未実装 | fork の経路を作れない言語は `connect_any` 系を出さない |
+| [DR-0003](DR-0003-single-connect-when-standard-never-blocks.md) | ⬜ 未実装 | 標準の connect が元から待たない言語は connect を 1 つだけ出し、`_nonblocking` を分けない |
+| [DR-0004](DR-0004-standard-length-per-language.md) | ⬜ 未実装 | 標準に渡す長さはその言語の標準が受け付ける長さ。経路の綴りの条件は sockaddr に入る長さ (`sun_path` − 1) |
 
 経路の設計の判断は [sockat-rs の DR-0001](https://github.com/kawaz/sockat-rs/blob/main/docs/decisions/DR-0001-long-socket-path-routes.md) にある。

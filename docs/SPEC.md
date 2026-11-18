@@ -9,7 +9,8 @@ How sockat behaves, independent of the language. Every implementation follows it
 | Term | Meaning |
 |---|---|
 | standard | the language's standard library bind / connect for Unix domain sockets |
-| limit | the length of `sun_path` − 1 byte (leaving room for the NUL) |
+| standard length | the longest path the language's standard accepts. A path up to it is handed to the standard unchanged. Usually `sun_path` − 1, `sun_path` − 2 for Java ([DR-0004](decisions/DR-0004-standard-length-per-language.md), Japanese) |
+| sockaddr length | the length of `sun_path` − 1 byte (leaving room for the NUL). The longest spelling a sockaddr that is not widened carries. The condition on the spellings of the /proc, relative path, symlink and fork routes |
 | directory / file name | what precedes the last component of the path, and the last component |
 | spelling | the path string handed to the kernel. A route is a way to build another spelling of the same place |
 
@@ -30,54 +31,60 @@ How sockat behaves, independent of the language. Every implementation follows it
 
 - The listener / stream returned is of the same type the standard bind / connect returns, so it is a drop-in replacement for the standard
 - Names may follow the language's naming conventions. The behavior follows the table above
-- A language that cannot build the fork route does not provide the `connect_any` variants; its README says "no fork route" in the table
-- A language whose standard connect never blocks (Node.js etc.) provides one connect in the standard's own form, with no separate `_nonblocking`
+- A language that cannot build the fork route does not provide the `connect_any` variants; its README says "no fork route" in the table ([DR-0002](decisions/DR-0002-no-connect-any-without-fork.md), Japanese)
+- A language whose standard connect never blocks (Node.js etc.) provides one connect in the standard's own form, with no separate `_nonblocking` ([DR-0003](decisions/DR-0003-single-connect-when-standard-never-blocks.md), Japanese)
 - `connect` / `connect_nonblocking` return `ENAMETOOLONG` when they reach the fork route
 - The `connect_any` variants connect even by forking when no other route can be used. The bool is `true` only when the fork route was taken. No pid is returned
 - The two non-blocking variants make the socket non-blocking before connecting and return it that way. When the peer's backlog is full they fail without waiting
+- A non-blocking connect is expected to finish within the call. On `EINPROGRESS` that error is returned and the socket is closed (a stream that is not connected is never returned)
 - A socket the implementation creates itself gets the same settings as one the language's standard creates (close-on-exec, `SO_NOSIGPIPE`, the listen backlog, etc.)
-- The socket file is not removed when the listener is closed (as with the standard)
+- When the listener is closed, the socket file is treated as the standard treats it for a short path (Go's standard removes it). For a long path it is not removed, even where the standard removes it (the spelling the kernel holds is not the original path, and removing by that spelling may remove another file). A language whose standard removes it says so under "differs from the standard" in its README
 
 ## Short paths
 
-A path the language's standard accepts is handed to it unchanged. Nothing is added and no environment variable is read. A longer path goes to the routes. Most standards accept up to `sun_path` − 1 bytes (below); a language whose standard stops earlier (Java: `sun_path` − 2) uses its standard's own limit.
+A path up to the standard length is handed to the standard unchanged. Nothing is added and no environment variable is read. A longer path goes to the routes ([DR-0004](decisions/DR-0004-standard-length-per-language.md), Japanese).
 
-| OS | `sun_path` − 1 |
+- In a language whose standard has no non-blocking connect, a non-blocking connect alone uses the implementation's own socket, connected to the same address as the standard would
+- When the standard does not accept a route's spelling (a language whose standard length is shorter than the sockaddr length), the implementation's own socket is used with the same address too
+
+| OS | sockaddr length |
 |---|---|
 | Linux / Android / illumos | 107 bytes |
-| macOS / iOS / FreeBSD / NetBSD / OpenBSD | 103 bytes |
+| macOS / iOS and the other Apple OSes / FreeBSD / NetBSD / OpenBSD | 103 bytes |
 
 ## Routes for long paths and their order
 
-A path over the limit is tried on the routes below, in this order per OS, and bound / connected on the first route that can be used.
+A path over the standard length is tried on the routes below, in this order per OS, and bound / connected on the first route that can be used.
 
 | OS | Order tried |
 |---|---|
 | Linux / Android (`/proc` usable) | /proc |
 | Linux / Android (`/proc` not usable) | relative path → symlink → fork |
 | FreeBSD | bindat |
-| macOS | relative path → widened sockaddr → symlink → fork |
+| macOS / iOS and the other Apple OSes | relative path → widened sockaddr → symlink → fork |
 | NetBSD / OpenBSD / illumos / other Unix | relative path → symlink → fork |
 
-- A path over the limit whose last component is not a file name (`dir/`, `dir/.`, `dir/..`, `..`) is an invalid-argument error, and nothing is created
+- A path over the standard length whose last component is not a file name (`dir/`, `dir/.`, `dir/..`, `..`) is an invalid-argument error, and nothing is created
 - No route changes the calling process's cwd
 
 ### The routes
 
 | Route | How | Usable when |
 |---|---|---|
-| /proc | open the directory `O_PATH \| O_DIRECTORY` and hand `/proc/self/fd/<fd>/<file name>` to the standard | `/proc/self/fd/<fd>` can be stat'ed and the whole spelling is within the limit (a file name up to about 90 bytes) |
+| /proc | open the directory `O_PATH \| O_DIRECTORY` and hand `/proc/self/fd/<fd>/<file name>` to the standard | `/proc/self/fd/<fd>` can be stat'ed and the whole spelling is within the sockaddr length (a file name up to about 90 bytes) |
 | bindat | open the directory `O_RDONLY` and pass the file name to `bindat(2)` / `connectat(2)` | FreeBSD. A file name over 103 bytes is `ENAMETOOLONG` |
-| relative path | hand the path relative to the cwd to the standard. Only the string is rewritten; no `chdir` | the original path is absolute and the relative path is within the limit |
-| widened sockaddr | pass the original path, failing that the relative path, in a sockaddr whose `sun_len` and address length are `2 + path length` | macOS. The path is at most 253 bytes. `EINVAL` / `ENAMETOOLONG` from the kernel means the route is not usable |
-| symlink | create a short symlink in a base directory, hand the spelling through it, remove it at once | the spelling is within the limit (253 on macOS) and there is a safe base where the symlink can be created |
-| fork | fork a child that `fchdir`s into the directory fd and binds / connects by the file name | only `bind` and the `connect_any` variants. The file name is within the limit (253 on macOS) |
+| relative path | hand the path relative to the cwd to the standard. Only the string is rewritten; no `chdir` | the original path is absolute and the relative path is within the sockaddr length. The relative directory and the original directory have the same `(st_dev, st_ino)`, and the cwd did not change while the spelling was built |
+| widened sockaddr | pass the original path, failing that the relative path, in a sockaddr whose `sun_len` and address length are `2 + path length` | Apple OSes. The path is at most 253 bytes. `EINVAL` / `ENAMETOOLONG` from the kernel means the route is not usable |
+| symlink | create a short symlink in a base directory, hand the spelling through it, remove it at once | the spelling is within the sockaddr length (*) and there is a safe base where the symlink can be created |
+| fork | fork a child that `fchdir`s into the directory fd and binds / connects by the file name | only `bind` and the `connect_any` variants. The file name is within the sockaddr length (*) |
+
+(*) 253 bytes on an Apple OS while the kernel takes the widened sockaddr. Once it refuses, the sockaddr length applies.
 
 ### Building the relative path
 
 1. If the path starts with a spelling of the cwd (`getcwd`, or `$PWD` when its `stat` `(st_dev, st_ino)` matches that of `.`), strip it, comparing whole components
-2. Only when 1 is not within the limit, resolve the socket's directory and the cwd with `realpath` and build a spelling that climbs with `..`
-3. Use the shorter. Before using it, check that the relative directory and the original directory have the same `(st_dev, st_ino)`
+2. Only when 1 is not within the sockaddr length, resolve the socket's directory and the cwd with `realpath` and build a spelling that climbs with `..`
+3. Use the shorter. Before using it, check that the relative directory and the original directory have the same `(st_dev, st_ino)`, and that the cwd's `(st_dev, st_ino)` is the same as before 1. Otherwise the route is not usable
 4. If the cwd's `(st_dev, st_ino)` has changed after the bind / connect, discard the result and return a generic error (do not remove a socket file it may have created)
 
 ### symlink base and name
@@ -104,24 +111,30 @@ A path over the limit is tried on the routes below, in this order per OS, and bo
 
 - The child's section uses async-signal-safe calls only (no allocation, locks, or the language's cleanup)
 - If `waitpid` fails with `ECHILD` (someone else reaped the status), read the result from the socket: for a bind whether `getsockname` holds a path, for a connect whether `getpeername` succeeds. A failure is a generic error
-- How the directory is opened: `O_SEARCH` on macOS (`O_RDONLY` if the kernel answers `EISDIR` / `EINVAL`), the `O_PATH` fd from the /proc route on Linux, `O_RDONLY` elsewhere
+- How the directory is opened: `O_SEARCH` on Apple OSes (`O_RDONLY` if the kernel answers `EISDIR` / `EINVAL`), the `O_PATH` fd from the /proc route on Linux, `O_RDONLY` elsewhere
 
 ## How a failing route is treated
 
 - When a route actually binds / connects and fails (`ENOENT`, `EADDRINUSE`, `ECONNREFUSED`, etc.), that error is returned and no later route or base is tried
-- The next one is tried only when the route itself cannot be used (too short, `/proc` not usable, the kernel refuses the widened sockaddr, the base is unsafe or the symlink cannot be created)
-- `connect` / `connect_nonblocking` open the directory and then return `ENAMETOOLONG` just before the fork route. A missing directory is `ENOENT`
+- The next one is tried only when the route itself cannot be used
+  - too short
+  - `/proc` not usable
+  - the kernel refuses the widened sockaddr
+  - the base is unsafe or the symlink cannot be created
+  - on the relative route, the directory of the spelling built does not match the original by `(st_dev, st_ino)`, or the cwd has already changed
+- A missing directory is `ENOENT` on every OS. The directory is opened first, so this is settled before the file name's length is judged
+- `connect` / `connect_nonblocking` open the directory and then return `ENAMETOOLONG` just before the fork route
 
 ## Where a path stops being reached
 
-When a path over the limit becomes `ENAMETOOLONG` (numbers in bytes).
+When a path over the standard length becomes `ENAMETOOLONG` (the directory exists; numbers in bytes).
 
 | OS | `bind` | `connect` variants | `connect_any` variants |
 |---|---|---|---|
 | Linux (`/proc` present) | file name > 107 | file name does not fit the `/proc` spelling, relative path > 107, and no symlink | file name > 107, and no symlink |
 | Linux (no `/proc`) | file name > 107 | relative path > 107, and no symlink | file name > 107, and no symlink |
 | FreeBSD | file name > 103 | file name > 103 | file name > 103 |
-| macOS | file name > 253 | both the original and the relative path > 253, and no symlink | file name > 253, and no symlink |
+| macOS / iOS and the other Apple OSes | file name > 253 | both the original and the relative path > 253, and no symlink | file name > 253, and no symlink |
 | NetBSD / OpenBSD / other BSD | file name > 103 | relative path > 103, and no symlink | file name > 103, and no symlink |
 | illumos | file name > 107 | relative path > 107, and no symlink | file name > 107, and no symlink |
 
@@ -155,7 +168,7 @@ A bind has no side effect visible to the peer, since the child only binds and th
 | a socket file nobody listens on | `ECONNREFUSED` |
 | backlog full | Linux: `EAGAIN` for a non-blocking connect (a blocking one waits); macOS: `ECONNREFUSED` |
 | fits no route; for the `connect` variants also when only the fork route would reach it | `ENAMETOOLONG` |
-| path over the limit that does not end with a name | invalid argument |
+| path over the standard length that does not end with a name | invalid argument |
 | path containing NUL | invalid argument |
 | the cwd changed during the relative route | generic error |
 | the forked child did not exit normally, or its status was reaped elsewhere and the socket was not bound / connected | generic error |
@@ -167,14 +180,14 @@ A bind has no side effect visible to the peer, since the child only binds and th
 
 - Follow the routes and order above. Skip a route the language cannot build (treat it as not usable and go on), and show it in the README as an OS × route table
 - Keep the routes out of the public API. Tests force each route by calling it directly from inside the package
-- Make the parts that read the environment (symlink base candidates, the location of `/proc/self/fd`, whether macOS takes the widened sockaddr) replaceable from tests
+- Make the parts that read the environment (symlink base candidates, the location of `/proc/self/fd`, whether an Apple OS takes the widened sockaddr) replaceable from tests
 - Link this specification from the README and manual. Before introducing behavior that differs from it, change this specification first
 
 ## What implementations test
 
 | Aspect | What to check |
 |---|---|
-| short path boundary | exactly the limit goes to the standard unchanged; one byte more goes to the routes (check the boundary with the standard itself) |
+| short path boundary | exactly the standard length goes to the standard unchanged; one byte more goes to the routes (check the boundary with the standard itself) |
 | location | on each route the socket file is created at the original path and nothing remains in the base |
 | traffic | on each route data actually flows between the bound listener and the connected stream |
 | standard types | the return values work as the standard types (in languages with async runtimes, hand them over and use them) |
@@ -195,4 +208,6 @@ A bind has no side effect visible to the peer, since the child only binds and th
 
 ## Open questions
 
-- Android, Apple OSes other than macOS, and the peer credentials on NetBSD / OpenBSD / illumos are not checked
+- Android and the Apple OSes other than macOS are not checked at all
+- NetBSD / OpenBSD / illumos: the peer credentials are not checked
+- That a non-blocking connect never answers `EINPROGRESS` is checked only on Linux and macOS
