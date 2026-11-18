@@ -6,7 +6,7 @@ sockat は、`sun_path` の上限を超えるパスでも Unix domain socket を
 
 - [docs/SPEC-ja.md](docs/SPEC-ja.md) — 言語によらない仕様の正本
 - [docs/decisions/DR-0001](docs/decisions/DR-0001-hub-and-per-language-repos.md) — リポの分け方と、仕様をここに置く理由
-- [sockat-rs の DR-0001](https://github.com/kawaz/sockat-rs/blob/main/docs/decisions/DR-0001-long-socket-path-routes.md) — 経路の設計の判断と却下した案
+- [docs/decisions/DR-0012](docs/decisions/DR-0012-own-directory-and-thread-cwd.md) — 長いパスの経路の判断と却下した案
 
 ## 構成
 

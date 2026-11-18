@@ -26,18 +26,20 @@
 
 - 戻り値は、その言語の標準の bind / connect が返すのと同じソケットの型
 - 長いパスでも、ソケットファイルは渡したパスにできる
-- 長いパスは OS ごとの経路 (/proc、bindat、相対パス、広げた sockaddr、symlink、fork) を決まった順に試す
-- どの経路も呼び出し元の cwd を変えない
-- `connect` は fork しない。fork するのは `bind` と `connect_any` 系だけ
+- 長いパスは、sockat 専用のディレクトリを作って fd で掴み、その中に置いた乱数の名前の symlink を通す短い綴りで bind / connect し、終わったら片付ける
+- そのディレクトリの fd を基準にする手段は、OS ごとに決まった順に試す (スレッド cwd、bindat / connectat、/proc、fork)。connect は予備に OS ごとの経路 (/proc、相対パス、広げた sockaddr、symlink) を持つ
+- どの経路も呼び出し元のプロセスとスレッドの cwd を変えない
+- `connect` は fork しない。fork するのは `bind` と `connect_any` 系だけで、他の手段が使えない時の最後の手
 - 経路が実際に bind / connect して失敗したら、そのエラーを返し、次の経路でやり直さない
-- カーネルが返すアドレス (`getsockname` / `getpeername`) は元のパスでない。元のパスは呼び出し元が持つ
+- カーネルが返すアドレス (`getsockname` / `getpeername`) は元のパスでない (後でどこで解決しても何にも当たらない綴り)。標準の型のまま差し替えられる言語は元のパスを返し、それ以外は元のパスを呼び出し元が持つ
+- 後始末つきの bind (`bind_ex` 等) は、閉じる時に自分が作ったソケットのファイルだけを消す
 - Windows は対象外
 
 ## ドキュメント
 
 - [docs/SPEC-ja.md](./docs/SPEC-ja.md) — 言語によらない仕様 (経路、試す順番、安全条件、エラー、各実装に求めること)
 - [docs/decisions/](./docs/decisions/INDEX.md) — このリポの構成の判断 (DR)
-- [sockat-rs の DR-0001](https://github.com/kawaz/sockat-rs/blob/main/docs/decisions/DR-0001-long-socket-path-routes.md) — 経路の設計の判断と却下した案
+- [docs/decisions/DR-0012](./docs/decisions/DR-0012-own-directory-and-thread-cwd.md) — 長いパスの経路の判断と却下した案
 
 ## ライセンス
 

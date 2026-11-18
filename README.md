@@ -26,18 +26,20 @@ Usage is in each repository's README.
 
 - Returns the same socket types the language's standard bind / connect return
 - Even for a long path, the socket file is created at the path given
-- A long path is tried on per-OS routes (/proc, bindat, relative path, widened sockaddr, symlink, fork) in a fixed order
-- No route changes the caller's cwd
-- `connect` never forks. Only `bind` and the `connect_any` variants fork
+- A long path is bound / connected through a short spelling: sockat creates a directory of its own, holds it by fd, and goes through a randomly named symlink placed inside it, then cleans up
+- The means of resolving against that directory's fd are tried per OS in a fixed order (thread cwd, bindat / connectat, /proc, fork). `connect` also has per-OS fallback routes (/proc, relative path, widened sockaddr, symlink)
+- No route changes the cwd of the calling process or thread
+- `connect` never forks. Only `bind` and the `connect_any` variants fork, and only as the last resort when no other means works
 - When a route actually binds / connects and fails, that error is returned and no later route is tried
-- The address the kernel reports (`getsockname` / `getpeername`) is not the original path. The caller keeps the original path
+- The address the kernel reports (`getsockname` / `getpeername`) is not the original path (it is a spelling that matches nothing wherever it is resolved later). Languages that can substitute it while keeping the standard type return the original path; elsewhere the caller keeps the original path
+- The bind with cleanup (`bind_ex` and the like) removes, on close, only the socket file it created
 - Windows is not supported
 
 ## Documentation
 
 - [docs/SPEC.md](./docs/SPEC.md) — the language-independent specification (routes, order, safety conditions, errors, what each implementation must do)
 - [docs/decisions/](./docs/decisions/INDEX.md) — decisions on how this repository is organized (DR, Japanese)
-- [sockat-rs's DR-0001](https://github.com/kawaz/sockat-rs/blob/main/docs/decisions/DR-0001-long-socket-path-routes.md) — design decisions on the routes and rejected alternatives (Japanese)
+- [docs/decisions/DR-0012](./docs/decisions/DR-0012-own-directory-and-thread-cwd.md) — the decision on the long-path routes and rejected alternatives (Japanese)
 
 ## License
 
