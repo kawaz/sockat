@@ -63,7 +63,7 @@ A path up to the standard length is handed to the standard unchanged. Nothing is
 A path over the standard length is tried in the order below and bound / connected on the first route that can be used ([DR-0012](decisions/DR-0012-own-directory-and-thread-cwd.md), Japanese).
 
 - A path whose last component is not a file name (`dir/`, `dir/.`, `dir/..`, `..`) is an invalid-argument error, and nothing is created
-- The socket's directory is looked up first. When it is missing, `ENOENT` (before the length is judged or D is created)
+- The socket's directory is looked up first with `stat`. When it is missing, `ENOENT` (before the length is judged or D is created). Only the routes that need an fd of the socket's directory (/proc, connectat, fork, the R of the fork without D) open it, and when it cannot be opened that route is unusable (`O_RDONLY` on other OSes cannot open a directory without read permission)
 - No route changes the calling process's cwd or the calling thread's cwd
 - How a directory is opened (the base, the socket's directory): `O_SEARCH` on Apple OSes (`O_RDONLY` if the kernel answers `EISDIR` / `EINVAL`), `O_PATH | O_DIRECTORY` on Linux, `O_RDONLY | O_DIRECTORY` elsewhere
 

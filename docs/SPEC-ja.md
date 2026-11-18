@@ -63,7 +63,7 @@
 標準に渡す長さを超えるパスは、次の順に試し、最初に使えた経路で bind / connect する ([DR-0012](decisions/DR-0012-own-directory-and-thread-cwd.md))。
 
 - 最後がファイル名でないパス (`dir/`、`dir/.`、`dir/..`、`..`) は、何も作らずに引数の誤り
-- 最初にソケットのディレクトリを引く。無ければ `ENOENT` (長さの判定や D を作るより前)
+- 最初にソケットのディレクトリを `stat` で引く。無ければ `ENOENT` (長さの判定や D を作るより前)。ソケットのディレクトリの fd が要る経路 (/proc、connectat、fork、D 無しの fork の R) だけがそれを開き、開けなければその経路は使えない (他の OS の `O_RDONLY` は読み取り権限の無いディレクトリを開けない)
 - どの経路も、呼び出し元のプロセスの cwd も呼び出し元のスレッドの cwd も変えない
 - ディレクトリの開き方 (置き場、ソケットのディレクトリ): Apple の OS は `O_SEARCH` (カーネルが `EISDIR` / `EINVAL` を返したら `O_RDONLY`)、Linux は `O_PATH | O_DIRECTORY`、他は `O_RDONLY | O_DIRECTORY`
 
