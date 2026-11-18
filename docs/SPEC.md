@@ -27,10 +27,10 @@ How sockat behaves, independent of the language. Every implementation follows it
 |---|---|---|---|---|---|---|
 | bind | `bind` | `bind` | `Listen` | tried | (does not wait) | a listening standard listener |
 | bind with cleanup | `bind_ex` | `bind_ex` | `ListenEx` | tried | (does not wait) | a standard listener and `discard()` |
-| bind that reaches even by losing something | `bind_any` | `bind_any` | `ListenAny` | tried | (does not wait) | a standard listener, the level of what was lost, and the route name |
+| bind that reaches even by losing something | `bind_any` | `bind_any` | `ListenAny` | tried | (does not wait) | a standard listener, and `level` / `route` / `skipped` |
 | connect | `connect` | `connect` | `Dial` | never tried | yes | a standard stream |
 | non-blocking connect | `connect_nonblocking` | `connect_nonblocking` | none | never tried | no | a non-blocking standard stream |
-| connect that reaches even by losing something | `connect_any` | none | none | tried | yes | a standard stream, the level of what was lost, and the route name |
+| connect that reaches even by losing something | `connect_any` | none | none | tried | yes | a standard stream, and `level` / `route` / `skipped` |
 | the same, non-blocking | `connect_any_nonblocking` | none | none | tried | no | as above (the stream is non-blocking) |
 
 - The names are provisional. Other languages follow their own naming conventions. The behavior follows the table above
@@ -41,7 +41,12 @@ How sockat behaves, independent of the language. Every implementation follows it
   - `discard()` succeeds when the file is already gone and when it has been replaced by another file and is left alone. It fails when the check cannot be made (`lstat` fails with something other than `ENOENT` / `ENOTDIR`) and when the removal itself fails (it does not report success when it cannot tell whether anything was removed)
   - Someone who can write to the socket's directory swapping the file between the check and the removal, or between the bind and the remembering, cannot be prevented (POSIX has no way to remove by inode)
 - The any family (`bind_any`, the `connect_any` variants) reaches even by losing something when none of the default routes can be used ([DR-0013](decisions/DR-0013-any-means-reach-at-any-cost.md), Japanese). `bind_any` tries the base's [symlink](#symlink) last, the `connect_any` variants [fork-direct](#fork-direct) last. No pid is returned
-- The any family returns the level of what was lost on the route taken (exactly one of the 4 in "[Levels of what is lost](#levels-of-what-is-lost)") and the route name. The route name is for diagnostics and promises nothing about its content (routes are added and changed). Branch on the level. Levels may be added in future (the documentation says an unknown value may arrive). The names of the level values and of the return type follow each language's conventions
+- The any family returns these three ([DR-0013](decisions/DR-0013-any-means-reach-at-any-cost.md), Japanese)
+  - `level`: the level of what was lost on the route taken (exactly one of the 4 in "[Levels of what is lost](#levels-of-what-is-lost)"). Branch on it. Levels have no order and may be added in future (the documentation says to read an unknown value only as "not standard")
+  - `route`: the name of the route taken
+  - `skipped`: the routes tried and found unusable, in the order tried. Each element is `{ name, reason }` (the route name and why it was unusable). Every route tried before `route` was unusable, so there is no "was it usable" field
+  - `route` and `skipped` are for diagnostics and promise nothing about their content (routes are added and changed). `skipped` is not returned on failure
+  - The field and type names, and the names of the level values, follow each language's conventions
 - The any family is not in the default API; it sits behind a mechanism the user opts into (an `any` feature in Rust). The `connect_any` variants are no different from the default connect in a language that cannot build the fork route, so such a language does not provide them; its README says "no fork route" in the table ([DR-0002](decisions/DR-0002-no-connect-any-without-fork.md), Japanese). `bind_any` is provided whether or not fork exists
 - A language whose standard connect never blocks (Node.js etc.) provides one connect in the standard's own form ([DR-0003](decisions/DR-0003-single-connect-when-standard-never-blocks.md), Japanese)
 - `connect` / `connect_nonblocking` return `ENAMETOOLONG` when they reach [fork-direct](#fork-direct)

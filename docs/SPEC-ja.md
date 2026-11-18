@@ -27,10 +27,10 @@
 |---|---|---|---|---|---|---|
 | bind | `bind` | `bind` | `Listen` | 試す | (待たない) | listen 済みの標準の listener |
 | 後始末つきの bind | `bind_ex` | `bind_ex` | `ListenEx` | 試す | (待たない) | 標準の listener と `discard()` |
-| 何かを失ってでも届く bind | `bind_any` | `bind_any` | `ListenAny` | 試す | (待たない) | 標準の listener と、失ったものの段階と経路の名前 |
+| 何かを失ってでも届く bind | `bind_any` | `bind_any` | `ListenAny` | 試す | (待たない) | 標準の listener と、`level`・`route`・`skipped` |
 | connect | `connect` | `connect` | `Dial` | 試さない | する | 標準の stream |
 | ブロックしない connect | `connect_nonblocking` | `connect_nonblocking` | なし | 試さない | しない | 非ブロッキングの標準の stream |
-| 何かを失ってでも届く connect | `connect_any` | なし | なし | 試す | する | 標準の stream と、失ったものの段階と経路の名前 |
+| 何かを失ってでも届く connect | `connect_any` | なし | なし | 試す | する | 標準の stream と、`level`・`route`・`skipped` |
 | 同 (ブロックしない) | `connect_any_nonblocking` | なし | なし | 試す | しない | 同上 (stream は非ブロッキング) |
 
 - 名前は仮。他の言語はその言語の命名の慣習に合わせる。振る舞いは上の表に従う
@@ -41,7 +41,12 @@
   - `discard()` は、ファイルが既に無い時と別のファイルに置き換わっていて消さない時も成功を返す。失敗を返すのは、確かめられない時 (`lstat` が `ENOENT` / `ENOTDIR` 以外で失敗) と消そうとして失敗した時 (消せたか分からないのを成功に見せない)
   - 確かめてから消すまでと、bind してから覚えるまでの間に、ソケットのディレクトリに書ける者がファイルをすり替えるのは防げない (inode を指定して消す手段が POSIX に無い)
 - any 系 (`bind_any`、`connect_any` 系) は、既定の経路が全部使えない時に、何かを失ってでも届かせる ([DR-0013](decisions/DR-0013-any-means-reach-at-any-cost.md))。`bind_any` は最後に置き場の [symlink](#symlink)、`connect_any` 系は最後に [fork-direct](#fork-direct) を試す。pid は返さない
-- any 系は、通った経路で失ったものの段階 (「[失ったものの段階](#失ったものの段階)」の 4 つのどれか 1 つ) と経路の名前を返す。経路の名前は診断用で、中身を約束しない (経路は増えたり変わったりする)。分岐には段階を使う。段階は将来増えうる (知らない値が来うると説明に書く)。段階の値と戻り値の型の名前は各言語の慣習で決める
+- any 系は次の 3 つを返す ([DR-0013](decisions/DR-0013-any-means-reach-at-any-cost.md))
+  - `level`: 通った経路で失ったものの段階 (「[失ったものの段階](#失ったものの段階)」の 4 つのどれか 1 つ)。分岐に使う。段階に大小は無く、将来増えうる (知らない値は「標準ではない」とだけ読むと説明に書く)
+  - `route`: 通った経路の名前
+  - `skipped`: 試して使えなかった経路の並び (試した順)。各要素は `{ name, reason }` (経路の名前と使えなかった理由)。`route` より前に試した経路はすべて使えなかったものなので、「使えたか」は持たない
+  - `route`・`skipped` は診断用で、中身を約束しない (経路は増えたり変わったりする)。失敗した時の `skipped` は返さない
+  - 項目と型の名前、段階の値の名前は各言語の慣習で決める
 - any 系は既定の API に出さず、使う人が選んで有効にする仕組みの後ろに置く (Rust は feature `any`)。`connect_any` 系は fork の経路を作れない言語では既定の connect と変わらないので出さず、README の表に「fork の経路なし」と書く ([DR-0002](decisions/DR-0002-no-connect-any-without-fork.md))。`bind_any` は fork の有無によらず出す
 - 標準の connect が元から待たない言語 (Node.js 等) は、標準と同じ形の connect を 1 つだけ出す ([DR-0003](decisions/DR-0003-single-connect-when-standard-never-blocks.md))
 - `connect` / `connect_nonblocking` は [fork-direct](#fork-direct) に来た所で `ENAMETOOLONG` を返す
