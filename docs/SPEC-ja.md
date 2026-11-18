@@ -203,7 +203,7 @@
 
 | 点 | 内容 |
 |---|---|
-| カーネルが返すアドレス | `getsockname` / `getpeername` は bind に使った綴りを返す (相対パス、`/proc/self/fd/...`、もう無い symlink、ファイル名だけ)。元のパスは呼び出し元が持つ |
+| カーネルが返すアドレス | カーネルの `getsockname` / `getpeername` は bind に使った綴り (相対パス、`/proc/self/fd/...`、もう無い symlink、ファイル名だけ) を返す。標準の型でアドレスを返す口を sockat が差し替えられる言語では、元のパスを返す (上のライブラリがアドレスの綴りで後始末をする。Python の asyncio は listener の `getsockname` の綴りを `stat` / unlink する)。差し替えられない言語は元のパスを呼び出し元が持つ |
 | ディレクトリを先に引く | /proc・相対パス・bindat・スレッド cwd・fork は、ディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない。広げた sockaddr と symlink は標準と同じ |
 | 他のスレッドの chdir | 相対パスの経路は、間に cwd が変わったままなら一般のエラー。変えて戻した場合は見えない |
 | symlink の残骸 | symlink や fd で掴む形のディレクトリを消す前にプロセスが死ぬと `sockat.XXXXXXXXXX` が置き場に残る |
@@ -254,7 +254,7 @@
 | macOS | connect 系で 253 バイトのパスが広げた sockaddr で通る。bind は広げた sockaddr を使わない |
 | ブロックしない connect | backlog が満杯で待たずに失敗する |
 | 名前で終わらないパス、先頭以外の NUL | 何も作らずに引数の誤り。NUL は短いパスでも。先頭が NUL (abstract) は標準に渡る |
-| カーネルが返すアドレス | 長いパスでも取得で落ちない |
+| カーネルが返すアドレス | 長いパスでも取得で落ちない。差し替えられる言語では、listener・accept したソケット・connect したソケットの各口が元のパスを返し、その言語の代表的な上のライブラリ (Python の asyncio の `start_unix_server(sock=...)` 等) が引数を足さずに短いパスと同じに動く |
 
 - 経路は OS で違うので、少なくとも macOS と Linux で回す。他の Unix は CI の VM で回す
 - cwd やシグナルの扱いのようにプロセス全体に効く設定を変える試験は、子プロセスの中で行う

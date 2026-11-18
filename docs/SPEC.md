@@ -203,7 +203,7 @@ When a path over the standard length becomes `ENAMETOOLONG` (the directory exist
 
 | Point | Detail |
 |---|---|
-| address the kernel reports | `getsockname` / `getpeername` return the spelling used for the bind (a relative path, `/proc/self/fd/...`, a symlink that no longer exists, the file name alone). The caller keeps the original path |
+| address the kernel reports | the kernel's `getsockname` / `getpeername` return the spelling used for the bind (a relative path, `/proc/self/fd/...`, a symlink that no longer exists, the file name alone). In a language where sockat can replace the address accessors of the standard types, they return the original path (higher layers clean up by that spelling: Python's asyncio `stat`s / unlinks the listener's `getsockname`). Where they cannot be replaced, the caller keeps the original path |
 | directory looked up first | /proc, relative path, bindat, thread cwd and fork look up the directory, then pass the file name. A rename or symlink swap in between is not reflected. widened sockaddr and symlink behave as the standard |
 | another thread's chdir | the relative route returns a generic error if the cwd stayed changed in between. A change and change back is not seen |
 | leftover symlink | if the process dies before removing the symlink or the fd-held form's directory, `sockat.XXXXXXXXXX` is left in the base |
@@ -254,7 +254,7 @@ When a path over the standard length becomes `ENAMETOOLONG` (the directory exist
 | macOS | a 253-byte path goes through the widened sockaddr for the connect variants. A bind never uses the widened sockaddr |
 | non-blocking connect | a full backlog fails without waiting |
 | path not ending with a name, NUL anywhere but at the start | invalid argument, nothing created. NUL even for a short path. A leading NUL (abstract) goes to the standard |
-| address the kernel reports | reading it does not fail for a long path |
+| address the kernel reports | reading it does not fail for a long path. Where the accessors can be replaced, the listener, accepted and connected sockets return the original path, and the language's usual higher layers (Python's asyncio `start_unix_server(sock=...)` etc.) behave as for a short path without extra arguments |
 
 - The routes differ per OS, so run at least on macOS and Linux. Other Unixes run in CI VMs
 - Tests that change process-wide settings such as the cwd or signal handling run inside a child process
