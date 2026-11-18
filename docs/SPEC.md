@@ -179,7 +179,7 @@ A bind has no side effect visible to the peer, since the child only binds and th
 
 | Point | Detail |
 |---|---|
-| address the kernel reports | `getsockname` / `getpeername` return the spelling used for the bind (a relative path, `/proc/self/fd/...`, a symlink that no longer exists, the file name alone, a truncated path). For a widened sockaddr, some languages' standards append unrelated bytes after the cut (observed with CPython 3.15 on macOS). The caller keeps the original path |
+| address the kernel reports | `getsockname` / `getpeername` return the spelling used for the bind (a relative path, `/proc/self/fd/...`, a symlink that no longer exists, the file name alone, a truncated path). For a widened sockaddr, some languages' standards append unrelated bytes after the cut (observed with CPython on macOS, regardless of version). The caller keeps the original path |
 | directory looked up first | /proc, relative path, bindat, thread cwd and fork look up the directory, then pass the file name. A rename or symlink swap in between is not reflected. widened sockaddr and symlink behave as the standard |
 | another thread's chdir | the relative route returns a generic error if the cwd stayed changed in between. A change and change back is not seen |
 | leftover symlink | if the process dies before removing the symlink, `sockat.XXXXXXXXXX` is left in the base |
