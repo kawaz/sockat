@@ -37,7 +37,7 @@
 - `_ex` は bind の側だけ。bind したソケットのファイルの realpath と `(st_dev, st_ino)` を覚え、`discard()` で listener を閉じ、そのパスの `(st_dev, st_ino)` が同じ時だけファイルを消す
   - 覚えるのは bind が通った直後 (経路の中で、listener を返す前)。覚えられなければ listener を閉じ、ファイルは消さずにエラーを返す (消せない `discard()` を成功に見せない)
   - 引数のパスは入口で一度だけ文字列にし、覚える・bind する・返すのすべてにその値を使う (呼ぶたびに違う値を返しうるパスの型で、覚えた物と bind した物を食い違わせない)
-  - `discard()` は、ファイルが既に無い時と別のファイルに置き換わっていて消さない時も成功を返す。失敗を返すのは消そうとして失敗した時だけ
+  - `discard()` は、ファイルが既に無い時と別のファイルに置き換わっていて消さない時も成功を返す。失敗を返すのは、確かめられない時 (`lstat` が `ENOENT` / `ENOTDIR` 以外で失敗) と消そうとして失敗した時 (消せたか分からないのを成功に見せない)
   - 確かめてから消すまでと、bind してから覚えるまでの間に、ソケットのディレクトリに書ける者がファイルをすり替えるのは防げない (inode を指定して消す手段が POSIX に無い)
 - `connect_any` 系は、他の経路が全部使えない時に fork してでも connect する。pid は返さない。`forked` は fork の経路を通った時だけ真
 - `connect_any` 系は既定の API に出さず、使う人が選んで有効にする仕組みの後ろに置く (Rust は feature `any`) ([DR-0007](decisions/DR-0007-connect-any-is-opt-in.md))。fork の経路を作れない言語は出さず、README の表に「fork の経路なし」と書く ([DR-0002](decisions/DR-0002-no-connect-any-without-fork.md))
