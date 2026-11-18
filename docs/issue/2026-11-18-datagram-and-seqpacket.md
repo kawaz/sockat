@@ -1,7 +1,7 @@
 ---
 title: "SOCK_DGRAM と SOCK_SEQPACKET も長いパスで使えるようにする"
 status: open
-category: feature
+category: task
 created: 2026-11-18
 origin: "自リポ TODO"
 ---
