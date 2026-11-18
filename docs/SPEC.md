@@ -98,7 +98,7 @@ A path over the standard length is tried on the routes below, in this order per 
 | Item | Specification |
 |---|---|
 | base candidates | `TMPDIR` (when a non-empty absolute path), then `/tmp`. Tried once when `TMPDIR` is spelled the same as `/tmp` |
-| safe base | stat'ed following symlinks, and one of<br>sticky bit set, owned by root or the effective uid<br>owned by the effective uid, with `mode & 0o022 == 0` |
+| safe base | stat'ed following symlinks; a directory, and one of<br>sticky bit set, owned by root or the effective uid<br>owned by the effective uid, with `mode & 0o022 == 0` |
 | name | `sockat.` + 10 characters from 62 alphanumerics, taken from the OS's secure random source |
 | collision | on `EEXIST` from `symlink(2)` draw a new name. Give up after 16 attempts and treat the candidate as not usable |
 | bind's symlink | points to the socket's directory. Spelling `<base>/sockat.XXXXXXXXXX/<file name>` |
@@ -119,7 +119,7 @@ On Linux / Android with `/proc` usable, an unsafe base candidate gets a director
 2. Open it `O_PATH | O_DIRECTORY | O_NOFOLLOW` and hold the fd (works without read permission); `fstat` that it is a directory, owned by the effective uid, with no permission for group or other. Otherwise not usable. Then `chmod("/proc/self/fd/<fd>", 0700)` to settle the owner's bits (an `O_PATH` fd cannot be `fchmod`ed; the /proc spelling acts on what the fd refers to, so nothing can be swapped in by name). A umask that strips owner bits then neither fails the check nor leaves leftovers
 3. Create the symlink `s` in the fd with `symlinkat`, pointing to the socket file (the original path)
 4. Hand the spelling `/proc/self/fd/<fd>/s`
-5. Cleanup: `unlinkat(fd, "s")`. `rmdir` the directory only when `lstat` of its name gives the same `(st_dev, st_ino)` as the fd. Close the fd
+5. Cleanup: remove `s` with `unlinkat(fd, "s")` only if this call's `symlinkat` created it. `rmdir` the directory only when the check in step 2 passed and `lstat` of its name gives the same `(st_dev, st_ino)` as the fd (a directory that failed the check is someone else's; leave it and its contents alone). Close the fd
 
 - Only the connect variants use it. A bind spelling (`/proc/self/fd/<fd>/s/<file name>`) is longer than the /proc route's, so whenever it would fit the /proc route has already succeeded; it never helps a bind
 - Not usable: the directory cannot be created, the `fstat` check fails, `symlinkat` fails
@@ -242,7 +242,7 @@ A bind has no side effect visible to the peer, since the child only binds and th
 | no retry on failure | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` are returned and nothing is created on later routes or bases (the later candidate directory's mtime is unchanged) |
 | Linux without /proc | with the `/proc/self/fd` location replaced by an empty directory etc., relative path → symlink → thread cwd → fork is followed |
 | symlink base | an unsafe base is skipped, a too deep `TMPDIR` falls back to `/tmp`, colliding names are skipped and the attempts stop at 16, the symlink is removed on success and on failure |
-| fd-held form | in an unsafe base, the socket is created at the original path and reached, nothing remains in the base afterwards, a directory swapped between creating and opening (other owner or mode) is not used, `TMPDIR` is used before `/tmp`, and unsafe bases are skipped when `/proc` is not usable |
+| fd-held form | in an unsafe base, the socket is created at the original path and reached, nothing remains in the base afterwards, a directory swapped between creating and opening (another owner, or permission for group / other) is neither used nor emptied, `TMPDIR` is used before `/tmp`, and unsafe bases are skipped when `/proc` is not usable |
 | connect and fork | the `connect` variants return `ENAMETOOLONG` when only the fork route reaches; the `connect_any` variants reach and return `true` |
 | cwd | the cwd is unchanged after every route; a cwd change during the relative route is a generic error |
 | thread cwd | with the route forced, the process's cwd is unchanged, the peer pid is the caller's, and the socket is created at the original path. When not usable, the next route is tried |
