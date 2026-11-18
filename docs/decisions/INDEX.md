@@ -21,5 +21,6 @@ Status は各 DR ファイルの `Status:` 行が正本。
 | [DR-0005](DR-0005-thread-cwd-route.md) | ⬜ 未実装 | スレッドだけ cwd を移す経路を fork の手前に足す (Linux は `unshare(CLONE_FS)`、Apple の OS は `pthread_fchdir_np`)。`connect` 系も試す |
 | [DR-0006](DR-0006-nul-is-invalid-at-any-length.md) | ⬜ 未実装 | 先頭以外に NUL を含むパスは長さによらず引数の誤り。先頭が NUL (abstract) は対象外 |
 | [DR-0007](DR-0007-connect-any-is-opt-in.md) | ⬜ 未実装 | `connect_any` 系は既定の API に出さず、使う人が選んで有効にする (Rust は feature `connect-any`) |
+| [DR-0008](DR-0008-unsafe-base-held-by-fd.md) | ⬜ 未実装 | `/proc` を使える Linux / Android では、安全でない置き場も自分専用のディレクトリを fd で掴んで symlink の経路に使う (置き場の候補ごとに安全な形 → fd で掴む形、`TMPDIR` を `/tmp` より先) |
 
 経路の設計の判断は [sockat-rs の DR-0001](https://github.com/kawaz/sockat-rs/blob/main/docs/decisions/DR-0001-long-socket-path-routes.md) にある。

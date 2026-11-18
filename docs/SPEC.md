@@ -62,7 +62,7 @@ A path over the standard length is tried on the routes below, in this order per 
 
 | OS | Order tried |
 |---|---|
-| Linux / Android (`/proc` usable) | /proc |
+| Linux / Android (`/proc` usable) | /proc → relative path → symlink → thread cwd → fork |
 | Linux / Android (`/proc` not usable) | relative path → symlink → thread cwd → fork |
 | FreeBSD | bindat |
 | macOS / iOS and the other Apple OSes | relative path → widened sockaddr → symlink → thread cwd → fork |
@@ -70,6 +70,7 @@ A path over the standard length is tried on the routes below, in this order per 
 
 - A path over the standard length whose last component is not a file name (`dir/`, `dir/.`, `dir/..`, `..`) is an invalid-argument error, and nothing is created
 - No route changes the calling process's cwd
+- The symlink route goes through the base candidates one by one: a symlink directly in the base when it is safe, the fd-held form when it is not (Linux / Android with `/proc` usable only). `TMPDIR` is used up before `/tmp`
 
 ### The routes
 
@@ -79,7 +80,7 @@ A path over the standard length is tried on the routes below, in this order per 
 | bindat | open the directory `O_RDONLY` and pass the file name to `bindat(2)` / `connectat(2)` | FreeBSD. A file name over 103 bytes is `ENAMETOOLONG` |
 | relative path | hand the path relative to the cwd to the standard. Only the string is rewritten; no `chdir` | the original path is absolute and the relative path is within the sockaddr length. The relative directory and the original directory have the same `(st_dev, st_ino)`, and the cwd did not change while the spelling was built |
 | widened sockaddr | pass the original path, failing that the relative path, in a sockaddr whose `sun_len` and address length are `2 + path length` | Apple OSes. The path is at most 253 bytes. `EINVAL` / `ENAMETOOLONG` from the kernel means the route is not usable |
-| symlink | create a short symlink in a base directory, hand the spelling through it, remove it at once | the spelling is within the sockaddr length (*) and there is a safe base where the symlink can be created |
+| symlink | create a short symlink in a base directory, hand the spelling through it, remove it at once | the spelling is within the sockaddr length (*) and there is a base where the symlink can be created. An unsafe base only through the fd-held form, on Linux / Android with `/proc` usable |
 | thread cwd | move the cwd of the binding / connecting thread alone into the directory and bind / connect by the file name | Linux / Apple OSes. The file name is within the sockaddr length (*). The language can create a thread and pin to it |
 | fork | fork a child that `fchdir`s into the directory fd and binds / connects by the file name | only `bind` and the `connect_any` variants. The file name is within the sockaddr length (*) |
 
@@ -105,8 +106,24 @@ A path over the standard length is tried on the routes below, in this order per 
 | symlink target | the user's path as spelled (its directory part for a bind; a relative path gets the cwd prepended) |
 | cleanup | removed whether the bind / connect succeeds or fails. A failure to remove is ignored |
 
-- For each candidate, check the spelling's length and the base's safety before creating anything. A candidate that fails gets nothing and the next is tried
+- For each candidate, check the spelling's length and the base's safety before creating anything. A candidate whose spelling does not fit gets nothing and the next is tried
+- Order: `TMPDIR` safe → symlink; unsafe → fd-held form; then `/tmp` safe → symlink; unsafe → fd-held form. Where there is no fd-held form, an unsafe candidate gets nothing and the next is tried
 - When the symlink cannot be created (no base, not writable, names exhausted, no random bytes), the next candidate is tried as well
+
+### The fd-held form (unsafe base)
+
+On Linux / Android with `/proc` usable, an unsafe base candidate gets a directory of sockat's own, followed by fd rather than by name ([DR-0008](decisions/DR-0008-unsafe-base-held-by-fd.md), Japanese).
+
+1. Create a directory with mode 0700 in the base. Name and collisions as for the symlink (`sockat.` + 10 characters, a new name on `EEXIST`, give up after 16)
+2. Open it `O_DIRECTORY | O_NOFOLLOW` and hold the fd; `fstat` that it is a directory, owned by the effective uid, with mode 0700. Otherwise not usable
+3. Create the symlink `s` in the fd with `symlinkat`, pointing to the socket file (the original path)
+4. Hand the spelling `/proc/self/fd/<fd>/s`
+5. Cleanup: `unlinkat(fd, "s")`. `rmdir` the directory only when `lstat` of its name gives the same `(st_dev, st_ino)` as the fd. Close the fd
+
+- Only the connect variants use it. A bind spelling (`/proc/self/fd/<fd>/s/<file name>`) is longer than the /proc route's, so whenever it would fit the /proc route has already succeeded; it never helps a bind
+- Not usable: the directory cannot be created, the `fstat` check fails, `symlinkat` fails
+- Once found not usable, clean up what was created, then try the next candidate
+- Cleanup happens whether the bind / connect succeeds or fails. A failure to remove is ignored
 
 ### The thread cwd route
 
@@ -144,6 +161,7 @@ The process's cwd is not changed ([DR-0005](decisions/DR-0005-thread-cwd-route.m
   - `/proc` not usable
   - the kernel refuses the widened sockaddr
   - the base is unsafe or the symlink cannot be created
+  - in the fd-held form (connect variants only), the directory cannot be created, the `fstat` check fails, or `symlinkat` fails
   - on the relative route, the directory of the spelling built does not match the original by `(st_dev, st_ino)`, or the cwd has already changed
   - on the thread cwd route, a seccomp filter is in place (Linux), `unshare` is refused, `pthread_fchdir_np` is absent or fails, or a thread cannot be created or pinned
 - A missing directory is `ENOENT` on every OS. The directory is opened first, so this is settled before the file name's length is judged
@@ -155,7 +173,7 @@ When a path over the standard length becomes `ENAMETOOLONG` (the directory exist
 
 | OS | `bind` | `connect` variants | `connect_any` variants |
 |---|---|---|---|
-| Linux (`/proc` present) | file name > 107 | file name > 107, and no symlink<br>without thread cwd: file name does not fit the `/proc` spelling, relative path > 107, and no symlink | file name > 107, and no symlink |
+| Linux (`/proc` present) | file name > 107 | file name > 107, and no symlink (whether or not the base is safe)<br>without thread cwd: file name does not fit the `/proc` spelling, relative path > 107, and no symlink (whether or not the base is safe) | file name > 107, and no symlink (whether or not the base is safe) |
 | Linux (no `/proc`) | file name > 107 | file name > 107, and no symlink<br>without thread cwd: relative path > 107, and no symlink | file name > 107, and no symlink |
 | FreeBSD | file name > 103 | file name > 103 | file name > 103 |
 | macOS / iOS and the other Apple OSes | file name > 253 | file name > 253, and no symlink<br>without thread cwd: both the original and the relative path > 253, and no symlink | file name > 253, and no symlink |
@@ -164,6 +182,7 @@ When a path over the standard length becomes `ENAMETOOLONG` (the directory exist
 
 - On Linux / Apple OSes where the thread cwd route is usable, the `connect` variants reach as far as the `connect_any` variants
 - With the symlink route through `/tmp`, a connect reaches the path whatever the directory depth and the file name length
+- On Linux with `/proc` usable, a connect reaches it likewise even through an unsafe base, as long as a directory can be created there (the fd-held form)
 - A bind through `/tmp` takes a file name up to 84 bytes (80 on OSes with a 104-byte `sun_path`, 230 on macOS)
 
 ## Side effects of the fork route
@@ -182,7 +201,7 @@ A bind has no side effect visible to the peer, since the child only binds and th
 | address the kernel reports | `getsockname` / `getpeername` return the spelling used for the bind (a relative path, `/proc/self/fd/...`, a symlink that no longer exists, the file name alone, a truncated path). For a widened sockaddr, some languages' standards append unrelated bytes after the cut (observed with CPython on macOS, regardless of version). The caller keeps the original path |
 | directory looked up first | /proc, relative path, bindat, thread cwd and fork look up the directory, then pass the file name. A rename or symlink swap in between is not reflected. widened sockaddr and symlink behave as the standard |
 | another thread's chdir | the relative route returns a generic error if the cwd stayed changed in between. A change and change back is not seen |
-| leftover symlink | if the process dies before removing the symlink, `sockat.XXXXXXXXXX` is left in the base |
+| leftover symlink | if the process dies before removing the symlink or the fd-held form's directory, `sockat.XXXXXXXXXX` is left in the base |
 
 - NUL anywhere but at the start is an invalid argument even in a short path. A language whose standard silently truncates at NUL (Go etc.) says so under "differs from the standard" in its README
 
@@ -222,6 +241,7 @@ A bind has no side effect visible to the peer, since the child only binds and th
 | no retry on failure | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` are returned and nothing is created on later routes or bases (the later candidate directory's mtime is unchanged) |
 | Linux without /proc | with the `/proc/self/fd` location replaced by an empty directory etc., relative path → symlink → thread cwd → fork is followed |
 | symlink base | an unsafe base is skipped, a too deep `TMPDIR` falls back to `/tmp`, colliding names are skipped and the attempts stop at 16, the symlink is removed on success and on failure |
+| fd-held form | in an unsafe base, the socket is created at the original path and reached, nothing remains in the base afterwards, a directory swapped between creating and opening (other owner or mode) is not used, `TMPDIR` is used before `/tmp`, and unsafe bases are skipped when `/proc` is not usable |
 | connect and fork | the `connect` variants return `ENAMETOOLONG` when only the fork route reaches; the `connect_any` variants reach and return `true` |
 | cwd | the cwd is unchanged after every route; a cwd change during the relative route is a generic error |
 | thread cwd | with the route forced, the process's cwd is unchanged, the peer pid is the caller's, and the socket is created at the original path. When not usable, the next route is tried |

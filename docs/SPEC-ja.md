@@ -62,7 +62,7 @@
 
 | OS | 試す順番 |
 |---|---|
-| Linux / Android (`/proc` を使える) | /proc |
+| Linux / Android (`/proc` を使える) | /proc → 相対パス → symlink → スレッド cwd → fork |
 | Linux / Android (`/proc` を使えない) | 相対パス → symlink → スレッド cwd → fork |
 | FreeBSD | bindat |
 | macOS / iOS 等 Apple の OS | 相対パス → 広げた sockaddr → symlink → スレッド cwd → fork |
@@ -70,6 +70,7 @@
 
 - 標準に渡す長さを超えるパスで、最後がファイル名でないもの (`dir/`、`dir/.`、`dir/..`、`..`) は、何も作らずに引数の誤りを返す
 - どの経路も呼び出し元のプロセスの cwd を変えない
+- symlink の経路は、置き場の候補ごとに、安全なら置き場に直接 symlink を作り、安全でなければ fd で掴む形 (`/proc` を使える Linux / Android だけ) で試す。`TMPDIR` を `/tmp` より先に使い切る
 
 ### 各経路
 
@@ -79,7 +80,7 @@
 | bindat | ディレクトリを `O_RDONLY` で開き、`bindat(2)` / `connectat(2)` でファイル名を渡す | FreeBSD。ファイル名が 103 バイトを超えたら `ENAMETOOLONG` |
 | 相対パス | cwd からの相対パスを標準に渡す。文字列を書き直すだけで `chdir` しない | 元のパスが絶対パスで、相対パスが sockaddr に入る長さ以内。相対パスのディレクトリと元のディレクトリの `(st_dev, st_ino)` が一致し、綴りを作る間に cwd が変わっていない |
 | 広げた sockaddr | `sun_len` とアドレス長を `2 + パスの長さ` にした sockaddr で、元のパス、無理なら相対パスを渡す | Apple の OS。パスが 253 バイト以内。カーネルが `EINVAL` / `ENAMETOOLONG` を返したら使えないとみなす |
-| symlink | 置き場に短い symlink を作り、それを通した綴りを渡して、すぐ消す | 綴りが sockaddr に入る長さ以内 (*) で、安全で symlink を作れる置き場がある |
+| symlink | 置き場に短い symlink を作り、それを通した綴りを渡して、すぐ消す | 綴りが sockaddr に入る長さ以内 (*) で、symlink を作れる置き場がある。置き場が安全でない時は fd で掴む形で、`/proc` を使える Linux / Android の connect 系だけ |
 | スレッド cwd | bind / connect するスレッドだけ cwd をディレクトリに移し、ファイル名で bind / connect する | Linux / Apple の OS。ファイル名が sockaddr に入る長さ以内 (*)。その言語でスレッドを作って固定できる |
 | fork | ディレクトリの fd に `fchdir` した子を fork し、子がファイル名で bind / connect する | `bind` と `connect_any` 系だけ。ファイル名が sockaddr に入る長さ以内 (*) |
 
@@ -105,8 +106,24 @@
 | symlink の先 | 利用者のパスの綴りそのもの (bind はそのディレクトリ部分。相対パスなら cwd を前に付ける) |
 | 片付け | bind / connect が成功しても失敗しても消す。消す失敗は無視する |
 
-- 候補ごとに、何かを作る前に綴りの長さと置き場の安全を確かめる。満たさない候補には何も作らず次へ進む
+- 候補ごとに、何かを作る前に綴りの長さと置き場の安全を確かめる。綴りが収まらない候補には何も作らず次へ進む
+- 試す順: `TMPDIR` が安全なら symlink → 安全でなければ fd で掴む形 → `/tmp` が安全なら symlink → 安全でなければ fd で掴む形。fd で掴む形が無い OS では安全でない候補に何も作らず次へ進む
 - symlink を作れない時 (置き場が無い・書けない、名前を使い切った、乱数が取れない) も次の候補へ進む
+
+### fd で掴む形 (安全でない置き場)
+
+`/proc` を使える Linux / Android で、安全でない置き場の候補に自分専用のディレクトリを作り、名前でなく fd で辿る ([DR-0008](decisions/DR-0008-unsafe-base-held-by-fd.md))。
+
+1. 置き場に mode 0700 のディレクトリを作る。名前と衝突の扱いは symlink と同じ (`sockat.` + 10 文字、`EEXIST` で引き直し 16 回で打ち切り)
+2. それを `O_DIRECTORY | O_NOFOLLOW` で開いて fd を持ち、`fstat` で「ディレクトリ・持ち主が実効 uid・mode が 0700」を確かめる。違えば使えない
+3. fd の中に `symlinkat` で、ソケットのファイル (元のパス) を指す symlink `s` を作る
+4. 綴り `/proc/self/fd/<fd>/s` を渡す
+5. 片付け: `unlinkat(fd, "s")`。ディレクトリは、その名前を `lstat` した `(st_dev, st_ino)` が fd と一致する時だけ `rmdir` する。fd を閉じる
+
+- connect 系だけが使う。bind の綴り (`/proc/self/fd/<fd>/s/<ファイル名>`) は /proc の経路の綴りより長く、これが収まるなら /proc の経路が先に通っているので、bind には効かない
+- 使えない: ディレクトリを作れない、`fstat` の確認が通らない、`symlinkat` が失敗した
+- 使えないと分かった時は、作った物を片付けてから次の候補へ進む
+- 片付けは bind / connect が成功しても失敗してもする。消す失敗は無視する
 
 ### スレッド cwd の経路
 
@@ -144,6 +161,7 @@
   - `/proc` を使えない
   - カーネルが広げた sockaddr を受け付けない
   - 置き場が安全でない・symlink を作れない
+  - fd で掴む形 (connect 系だけ) で、ディレクトリを作れない、`fstat` の確認が通らない、`symlinkat` が失敗した
   - 相対パスの経路で、作った綴りのディレクトリが元と `(st_dev, st_ino)` で一致しない、または cwd が既に変わっている
   - スレッド cwd の経路で、seccomp の filter が掛かっている (Linux)、`unshare` が断られた、`pthread_fchdir_np` が無い・失敗した、スレッドを作れない・固定できない
 - ディレクトリが無い時はどの OS でも `ENOENT`。ディレクトリを先に開くので、ファイル名の長さの判定より前に決まる
@@ -155,7 +173,7 @@
 
 | OS | `bind` | `connect` 系 | `connect_any` 系 |
 |---|---|---|---|
-| Linux (`/proc` あり) | ファイル名 > 107 | ファイル名 > 107、symlink も使えない<br>スレッド cwd が使えない時: ファイル名が `/proc` の綴りに収まらず、相対パス > 107、symlink も使えない | ファイル名 > 107、symlink も使えない |
+| Linux (`/proc` あり) | ファイル名 > 107 | ファイル名 > 107、symlink も使えない (置き場の安全は問わない)<br>スレッド cwd が使えない時: ファイル名が `/proc` の綴りに収まらず、相対パス > 107、symlink も使えない (置き場の安全は問わない) | ファイル名 > 107、symlink も使えない (置き場の安全は問わない) |
 | Linux (`/proc` 無し) | ファイル名 > 107 | ファイル名 > 107、symlink も使えない<br>スレッド cwd が使えない時: 相対パス > 107、symlink も使えない | ファイル名 > 107、symlink も使えない |
 | FreeBSD | ファイル名 > 103 | ファイル名 > 103 | ファイル名 > 103 |
 | macOS / iOS 等 Apple の OS | ファイル名 > 253 | ファイル名 > 253、symlink も使えない<br>スレッド cwd が使えない時: 元のパスも相対パスも > 253、symlink も使えない | ファイル名 > 253、symlink も使えない |
@@ -164,6 +182,7 @@
 
 - スレッド cwd の経路を使える Linux / Apple の OS では、`connect` 系も `connect_any` 系と同じ所まで届く
 - `/tmp` で symlink の経路を使えれば、connect はディレクトリの深さにもファイル名の長さにもよらず届く
+- `/proc` を使える Linux では、置き場が安全でなくても、そこにディレクトリを作れれば connect は同じく届く (fd で掴む形)
 - `/tmp` を通した bind はファイル名が 84 バイト (`sun_path` が 104 の OS は 80、macOS は 230) まで
 
 ## fork の副作用
@@ -182,7 +201,7 @@ bind は子が bind するだけで listen は親なので、相手から見え�
 | カーネルが返すアドレス | `getsockname` / `getpeername` は bind に使った綴りを返す (相対パス、`/proc/self/fd/...`、もう無い symlink、ファイル名だけ、途中で切れたパス)。広げた sockaddr の綴りは、言語の標準によっては切れた後ろに無関係なバイトが付く (macOS の CPython で版によらず観測)。元のパスは呼び出し元が持つ |
 | ディレクトリを先に引く | /proc・相対パス・bindat・スレッド cwd・fork は、ディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない。広げた sockaddr と symlink は標準と同じ |
 | 他のスレッドの chdir | 相対パスの経路は、間に cwd が変わったままなら一般のエラー。変えて戻した場合は見えない |
-| symlink の残骸 | symlink を消す前にプロセスが死ぬと `sockat.XXXXXXXXXX` が置き場に残る |
+| symlink の残骸 | symlink や fd で掴む形のディレクトリを消す前にプロセスが死ぬと `sockat.XXXXXXXXXX` が置き場に残る |
 
 - 先頭以外の NUL は短いパスでも引数の誤り。標準が NUL で黙って切り詰める言語 (Go 等) では、README の「標準と違う点」に書く
 
@@ -222,6 +241,7 @@ bind は子が bind するだけで listen は親なので、相手から見え�
 | 失敗をやり直さない | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` を返し、後の経路・置き場に何も作らない (後の候補のディレクトリの mtime が変わらない) |
 | /proc が無い Linux | `/proc/self/fd` の場所を空のディレクトリ等に差し替えて、相対パス → symlink → スレッド cwd → fork に進む |
 | symlink の置き場 | 安全でない置き場を飛ばす、深すぎる `TMPDIR` で `/tmp` に回る、名前の衝突を飛ばし 16 回で打ち切る、成功でも失敗でも symlink を消す |
+| fd で掴む形 | 安全でない置き場で、ソケットが元のパスにでき届く、終わった後に置き場に何も残らない、作ってから開くまでに差し替えたディレクトリ (持ち主か mode が違う) を使わない、`TMPDIR` を `/tmp` より先に使う、`/proc` を使えない時は安全でない置き場を飛ばす |
 | connect と fork | `connect` 系は fork でしか届かない時に `ENAMETOOLONG`、`connect_any` 系は届いて `true` |
 | cwd | どの経路の後も cwd が変わっていない。相対パスの経路の途中で cwd が変わったら一般のエラー |
 | スレッド cwd | 経路を強制して、プロセスの cwd が変わらない、peer の pid が呼び出し元、ソケットが元のパスにできる。使えない時は次の経路へ進む |
