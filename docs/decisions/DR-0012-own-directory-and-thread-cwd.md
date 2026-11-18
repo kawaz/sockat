@@ -23,7 +23,7 @@
 ### 中心の経路
 
 1. 置き場を開いて fd で掴み、`sockat.` (ソケットのディレクトリでは `.sockat.`) + 英数 62 種 10 文字 (`EEXIST` で引き直し 16 回まで) の名前で 0700 の D を作る
-2. D を fd で開き (Linux は `O_PATH | O_DIRECTORY | O_NOFOLLOW`、他は `O_DIRECTORY | O_NOFOLLOW`)、`fstat` で「ディレクトリ・持ち主が実効 uid・group と other に権限が無い」を確かめ、0700 にそろえる (Linux は `chmod("/proc/self/fd/<fd>")`、他は `fchmod`)
+2. D を fd で開き (`/proc` を使える Linux は `O_PATH | O_DIRECTORY | O_NOFOLLOW`、他は `O_RDONLY | O_DIRECTORY | O_NOFOLLOW`)、`fstat` で「ディレクトリ・持ち主が実効 uid・group と other に権限が無い」を確かめ、0700 にそろえる (`O_PATH` の fd は `chmod("/proc/self/fd/<fd>")`、他は `fchmod`。`O_PATH` の fd の `fchmod` は `EBADF`、sockat-py が実測)
 3. D の中に、ソケットのディレクトリの realpath を指す乱数の名前 (62 種 10 文字) の symlink R を `symlinkat` で作る。D の中に他のディレクトリは挟まない
 4. D の fd を基準に `R/<ファイル名>` で bind / connect する
 5. R は自分が作れた時だけ消す。D は手順 2 の確認が通り、名前の `(st_dev, st_ino)` が fd と一致する時だけ消す。成功でも失敗でも片付ける
