@@ -123,4 +123,4 @@ connect は、書き込みもスレッドも要らない経路を先に、D を�
 
 - [docs/SPEC-ja.md](../SPEC-ja.md) の「長いパスの経路と試す順番」「どこから届かなくなるか」「長いパスで標準と違う点」「実装が確かめる試験の観点」
 - 裁定: kawaz (2026-11-19)
-- [DR-0013](DR-0013-any-means-reach-at-any-cost.md)、[DR-0010](DR-0010-fork-bind-listen-by-parent.md)
+- [DR-0015](DR-0015-ex-with-last-resort-and-diagnostics.md)、[DR-0010](DR-0010-fork-bind-listen-by-parent.md)

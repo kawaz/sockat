@@ -1,6 +1,6 @@
 # DR-0014: 後始末つきの bind の discard はファイルを消すだけで、listener を閉じない
 
-- Status: Active
+- Status: Superseded by DR-0015
 - Date: 2026-11-19
 
 ## Context
@@ -39,4 +39,4 @@
 ## 関連
 
 - 裁定: kawaz (2026-11-19)
-- [DR-0012](DR-0012-own-directory-and-thread-cwd.md)
+- [DR-0012](../DR-0012-own-directory-and-thread-cwd.md)

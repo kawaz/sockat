@@ -1,11 +1,11 @@
 # DR-0013: any 系は「何かを失ってでも届かせる」opt-in の API で、何を失ったかを返す
 
-- Status: Active
+- Status: Superseded by DR-0015
 - Date: 2026-11-19
 
 ## Context
 
-- 既定の bind / connect は、標準と同じに振る舞い、安全でない綴りを残さない経路だけを使う ([DR-0012](DR-0012-own-directory-and-thread-cwd.md))。そのため届かない環境が残る
+- 既定の bind / connect は、標準と同じに振る舞い、安全でない綴りを残さない経路だけを使う ([DR-0012](../DR-0012-own-directory-and-thread-cwd.md))。そのため届かない環境が残る
   - fork の無い言語 (Python、Go) の bind: NetBSD / OpenBSD / illumos の長いパス全部、スレッド cwd も `/proc` も使えない Linux、`pthread_fchdir_np` が無い Apple の OS
   - connect: fork でしか届かない所
 - 届かせる手はあるが、どれも何かを失う (fork の副作用、他の利用者が作り直せる綴り)。失ってでも届かせたい人と、失いたくない人がいる
@@ -28,7 +28,7 @@
 | 操作 | 既定の操作との違い |
 |---|---|
 | `bind_any` | 既定の bind の経路を全部試した後、最後に置き場の symlink を試す。fork のある言語 (Rust) にも置く (3 言語で API をそろえる) |
-| `connect_any` 系 | 既定の connect の経路を全部試した後、最後に fork を試す。fork を作れない言語は、既定の connect と何も変わらないので出さない ([DR-0002](DR-0002-no-connect-any-without-fork.md)) |
+| `connect_any` 系 | 既定の connect の経路を全部試した後、最後に fork を試す。fork を作れない言語は、既定の connect と何も変わらないので出さない ([DR-0002](../DR-0002-no-connect-any-without-fork.md)) |
 
 ### bind_any の置き場の symlink
 
@@ -99,4 +99,4 @@ any 系は、標準の型 (listener / stream) と一緒に、次の 3 つを返�
 ## 関連
 
 - 裁定: kawaz (2026-11-19。any の意味、Rust にも `bind_any`、置き場の順、失ったものは名前の並び、経路は通った経路と飛ばした経路 (理由つき) で診断用、失敗した時も飛ばした経路を返す)
-- [DR-0002](DR-0002-no-connect-any-without-fork.md)、[DR-0012](DR-0012-own-directory-and-thread-cwd.md)
+- [DR-0002](../DR-0002-no-connect-any-without-fork.md)、[DR-0012](../DR-0012-own-directory-and-thread-cwd.md)
