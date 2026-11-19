@@ -154,7 +154,7 @@ connect:
 
 - 起きること: fork した子が一瞬できる (「[fork の副作用](#fork-の副作用)」)。子は全 fd の複製を持ち、親に `SIGCHLD` が届き、`pthread_atfork` の handler が走る。最終手段を使う `connect_ex` 系ではサーバに見える peer の pid が子
 - 注意すること: `SIGCHLD` の handler や `waitpid(-1)` を使うプログラムは、子を刈り取ったり、結果を取り違えたりしうる。fd を閉じて相手に EOF を伝えるつもりのプログラムは、子が終わるまで伝わらない。最終手段を使う `connect_ex` 系の相手のサーバは、peer の pid での認可を当てにできない
-- 避け方: 他のスレッドで `waitpid(-1)` を使わない (pid を指定して待つ)。`forked` を受け入れられない所では最終手段を使わない
+- 避け方: 他のスレッドで `waitpid(-1)` を使わない (pid を指定して待つ)。connect では最終手段を使わなければ fork しない。bind の fork は既定の経路なので、fork のある言語では避けられない
 
 #### recreatable-spelling
 
@@ -508,7 +508,7 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 | listener を閉じればソケットのファイルが消えると当てにする | 長いパスでは、標準が消す言語 (Go 等) でも消えない ([respelled](#respelled)) | `discard()` か、元のパスで消す |
 | `discard()` で listener も閉じると当てにする | `discard()` はファイルを消すだけ ([DR-0015](decisions/DR-0015-ex-with-last-resort-and-diagnostics.md)) | listener は自分で閉じる |
 | `_ex` の `route`・`skipped`・`reason` の文字列で分岐する | 診断用で、中身を約束しない (経路は増えたり変わったりする) | `losses` で分岐する |
-| `_ex` で fork を通るプログラムで、他のスレッドが `waitpid(-1)` で子を刈る | sockat の子を刈り取り、結果を取り違えうる ([forked](#forked)) | pid を指定して待つ。`forked` を受け入れられない所では最終手段を使わない |
+| `_ex` で fork を通るプログラムで、他のスレッドが `waitpid(-1)` で子を刈る | sockat の子を刈り取り、結果を取り違えうる ([forked](#forked)) | pid を指定して待つ。connect では最終手段を使わない (bind の fork は既定の経路) |
 
 ## 長いパスで標準と違う点
 

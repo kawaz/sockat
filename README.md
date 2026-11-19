@@ -15,8 +15,8 @@ Libraries that bind and connect Unix domain sockets whose path is longer than `s
 | Language | Repository | Package | Status |
 |---|---|---|---|
 | Rust | [kawaz/sockat-rs](https://github.com/kawaz/sockat-rs) | [`sockat`](https://crates.io/crates/sockat) on crates.io | published |
-| Python | [kawaz/sockat-py](https://github.com/kawaz/sockat-py) | [`sockat`](https://pypi.org/project/sockat/) on PyPI | published (no fork route, no `connect_any` variants) |
-| Go | [kawaz/sockat-go](https://github.com/kawaz/sockat-go) | [`github.com/kawaz/sockat-go`](https://pkg.go.dev/github.com/kawaz/sockat-go) | published (no fork route, no `connect_any` variants, no widened sockaddr on macOS) |
+| Python | [kawaz/sockat-py](https://github.com/kawaz/sockat-py) | [`sockat`](https://pypi.org/project/sockat/) on PyPI | published (no fork route) |
+| Go | [kawaz/sockat-go](https://github.com/kawaz/sockat-go) | [`github.com/kawaz/sockat-go`](https://pkg.go.dev/github.com/kawaz/sockat-go) | published (no fork route, no widened sockaddr on macOS) |
 | JavaScript / TypeScript | kawaz/sockat-ts | npm | planned |
 | Ruby | kawaz/sockat-rb | RubyGems | planned |
 
@@ -29,7 +29,7 @@ Usage is in each repository's README.
 - A long path is bound / connected through a short spelling: sockat creates a directory of its own, holds it by fd, and goes through a randomly named symlink placed inside it, then cleans up
 - The means of resolving against that directory's fd are tried per OS in a fixed order (thread cwd, bindat / connectat, /proc, fork). `connect` tries routes that need neither writing nor a thread (/proc, relative path, widened sockaddr) first
 - No route changes the cwd of the calling process or thread
-- `connect` never forks. Only `bind` and the `connect_any` variants fork, and only as the last resort when no other means works
+- `connect` never forks. Only `bind` and the `connect_ex` variants with the last resort fork, and only as the last resort when no other means works
 - When a route actually binds / connects and fails, that error is returned and no later route is tried
 - The address the kernel reports (`getsockname` / `getpeername`) is not the original path (a spelling that normally matches nothing when resolved later; remove by the original path). Languages that can substitute it while keeping the standard type return the original path; elsewhere the caller keeps the original path
 - The bind with cleanup (`bind_ex` and the like) has `discard()`, which removes only the socket file it created (it does not close the listener)

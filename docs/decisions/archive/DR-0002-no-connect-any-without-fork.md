@@ -1,6 +1,6 @@
 # DR-0002: fork の経路を作れない言語は connect_any 系を出さない
 
-- Status: Active
+- Status: Superseded by DR-0015
 - Date: 2026-11-18
 
 ## Context
@@ -29,4 +29,4 @@
 
 ## 関連
 
-- [docs/SPEC-ja.md](../SPEC-ja.md) の「公開する操作」
+- [docs/SPEC-ja.md](../../SPEC-ja.md) の「公開する操作」

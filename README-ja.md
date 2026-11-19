@@ -15,8 +15,8 @@
 | 言語 | リポ | パッケージ | 状態 |
 |---|---|---|---|
 | Rust | [kawaz/sockat-rs](https://github.com/kawaz/sockat-rs) | crates.io の [`sockat`](https://crates.io/crates/sockat) | 公開済み |
-| Python | [kawaz/sockat-py](https://github.com/kawaz/sockat-py) | PyPI の [`sockat`](https://pypi.org/project/sockat/) | 公開済み (fork の経路と `connect_any` 系なし) |
-| Go | [kawaz/sockat-go](https://github.com/kawaz/sockat-go) | [`github.com/kawaz/sockat-go`](https://pkg.go.dev/github.com/kawaz/sockat-go) | 公開済み (fork の経路と `connect_any` 系なし。macOS の広げた sockaddr なし) |
+| Python | [kawaz/sockat-py](https://github.com/kawaz/sockat-py) | PyPI の [`sockat`](https://pypi.org/project/sockat/) | 公開済み (fork の経路なし) |
+| Go | [kawaz/sockat-go](https://github.com/kawaz/sockat-go) | [`github.com/kawaz/sockat-go`](https://pkg.go.dev/github.com/kawaz/sockat-go) | 公開済み (fork の経路なし。macOS の広げた sockaddr なし) |
 | JavaScript / TypeScript | kawaz/sockat-ts | npm | 予定 |
 | Ruby | kawaz/sockat-rb | RubyGems | 予定 |
 
@@ -29,7 +29,7 @@
 - 長いパスは、sockat 専用のディレクトリを作って fd で掴み、その中に置いた乱数の名前の symlink を通す短い綴りで bind / connect し、終わったら片付ける
 - そのディレクトリの fd を基準にする手段は、OS ごとに決まった順に試す (スレッド cwd、bindat / connectat、/proc、fork)。connect は、書き込みもスレッドも要らない経路 (/proc、相対パス、広げた sockaddr) を先に試す
 - どの経路も呼び出し元のプロセスとスレッドの cwd を変えない
-- `connect` は fork しない。fork するのは `bind` と `connect_any` 系だけで、他の手段が使えない時の最後の手
+- `connect` は fork しない。fork するのは `bind` と、最終手段を使う `connect_ex` 系だけで、他の手段が使えない時の最後の手
 - 経路が実際に bind / connect して失敗したら、そのエラーを返し、次の経路でやり直さない
 - カーネルが返すアドレス (`getsockname` / `getpeername`) は元のパスでない (普段は後で解決しても何にも当たらない綴り。消す時は元のパスで消す)。標準の型のまま差し替えられる言語は元のパスを返し、それ以外は元のパスを呼び出し元が持つ
 - 後始末つきの bind (`bind_ex` 等) の `discard()` は、自分が作ったソケットのファイルだけを消す (listener は閉じない)

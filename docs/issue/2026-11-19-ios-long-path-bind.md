@@ -29,4 +29,4 @@ kawaz が iOS で何かする機会ができた時に、実機で確かめて決
 ## 関連
 
 - [DR-0012](../decisions/DR-0012-own-directory-and-thread-cwd.md) の案 D (広げた sockaddr の bind を不採用にした理由)
-- [DR-0013](../decisions/DR-0013-any-means-reach-at-any-cost.md) (失うものの名前)
+- [DR-0015](../decisions/DR-0015-ex-with-last-resort-and-diagnostics.md) (失うものの名前、最終手段)

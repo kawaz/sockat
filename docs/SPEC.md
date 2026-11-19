@@ -154,7 +154,7 @@ Each language's README / manual puts recommended code for how to avoid each, und
 
 - What happens: a child is forked for a moment ("[Side effects of the fork route](#side-effects-of-the-fork-route)"). The child holds copies of every fd, the parent gets `SIGCHLD`, and `pthread_atfork` handlers run. In the `connect_ex` variants with the last resort the peer pid the server sees is that of the child
 - Watch out for: a program that uses a `SIGCHLD` handler or `waitpid(-1)` may reap the child or mistake the result. A program that closes an fd to tell the peer EOF gets it across only after the child exits. The server on the other end of a `connect_ex` variant with the last resort cannot count on authorizing by the peer's pid
-- How to avoid: do not use `waitpid(-1)` in other threads (wait by pid). Where `forked` cannot be accepted, do not use the last resort
+- How to avoid: do not use `waitpid(-1)` in other threads (wait by pid). For connect, not using the last resort means no fork. The fork of bind is a default route, so it cannot be avoided in a language that has fork
 
 #### recreatable-spelling
 
@@ -508,7 +508,7 @@ Ways of using sockat that remove an unrelated file or fail to remove the file. E
 | relying on closing the listener to remove the socket file | for a long path it is not removed, even in a language whose standard removes it (Go etc.) ([respelled](#respelled)) | `discard()`, or remove by the original path |
 | relying on `discard()` to close the listener too | `discard()` only removes the file ([DR-0015](decisions/DR-0015-ex-with-last-resort-and-diagnostics.md), Japanese) | close the listener yourself |
 | branching on the strings of `_ex`'s `route` / `skipped` / `reason` | they are for diagnostics and promise nothing (routes are added and changed) | branch on `losses` |
-| in a program that goes through a fork in `_ex`, another thread reaping children with `waitpid(-1)` | it may reap sockat's child and confuse the result ([forked](#forked)) | wait by pid. Where `forked` is not acceptable, do not use the last resort |
+| in a program that goes through a fork in `_ex`, another thread reaping children with `waitpid(-1)` | it may reap sockat's child and confuse the result ([forked](#forked)) | wait by pid. For connect, do not use the last resort (the fork of bind is a default route) |
 
 ## What differs from the standard for a long path
 

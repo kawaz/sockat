@@ -12,7 +12,7 @@
 ## Decision
 
 - 標準の connect が元から待たない言語は、標準と同じ形の connect を 1 つだけ出し、`_nonblocking` を分けない
-- `connect_any` 系も同じく 1 つ
+- `connect_ex` 系も同じく 1 つ
 
 理由:
 

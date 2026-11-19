@@ -4,6 +4,7 @@
 
 | DR | 説明 | 置き換え先 |
 |---|---|---|
+| [DR-0002](DR-0002-no-connect-any-without-fork.md) | fork の経路を作れない言語は connect_any 系を出さない | [DR-0015](../DR-0015-ex-with-last-resort-and-diagnostics.md) |
 | [DR-0005](DR-0005-thread-cwd-route.md) | スレッドだけ cwd を移す経路を fork の手前に足す | [DR-0012](../DR-0012-own-directory-and-thread-cwd.md) |
 | [DR-0007](DR-0007-connect-any-is-opt-in.md) | connect_any 系は既定の API に出さず、使う人が選んで有効にする | [DR-0013](DR-0013-any-means-reach-at-any-cost.md) |
 | [DR-0008](DR-0008-unsafe-base-held-by-fd.md) | 安全でない置き場は自分専用のディレクトリを fd で掴んで symlink の経路に使う | [DR-0012](../DR-0012-own-directory-and-thread-cwd.md) |

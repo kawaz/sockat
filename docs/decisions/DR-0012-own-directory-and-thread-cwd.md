@@ -65,7 +65,7 @@ bind:
 | 4 | 中心の経路を fork で |
 | 5 | `ENAMETOOLONG` |
 
-connect は、書き込みもスレッドも要らない経路を先に、D を作る経路とスレッドを立てる経路をその後にする (kawaz 裁定 2026-11-19)。標準に渡す長さ以下なら標準にそのまま、その後は OS ごとに次の順。`connect_any` 系は最後に fork (ソケットのディレクトリの fd とファイル名)。
+connect は、書き込みもスレッドも要らない経路を先に、D を作る経路とスレッドを立てる経路をその後にする (kawaz 裁定 2026-11-19)。標準に渡す長さ以下なら標準にそのまま、その後は OS ごとに次の順。最終手段を使う `connect_ex` 系は最後に fork (ソケットのディレクトリの fd とファイル名)。
 
 | OS | connect の順 |
 |---|---|
@@ -116,7 +116,7 @@ connect は、書き込みもスレッドも要らない経路を先に、D を�
 
 ### connect の fork と FreeBSD の connectat (ソケットのディレクトリの fd) は D を通さない
 
-- `connect_any` 系の fork と FreeBSD の connectat (connect の順の最初) は、ソケットのディレクトリの fd とファイル名で connect する (kawaz 裁定 2026-11-19)
+- 最終手段の fork (fork-direct) と FreeBSD の connectat (connect の順の最初) は、ソケットのディレクトリの fd とファイル名で connect する (kawaz 裁定 2026-11-19)
 - connect した側のソケットは bind されないので、connect の綴りはどこにも残らない。R を挟む理由が無く、挟むと届くファイル名が 11 バイト短くなるだけ
 
 ## 関連
