@@ -50,3 +50,9 @@ promote:
 # push (gate を全部通してから)
 push: check-on-default-branch ensure-clean check-outdated-translations
     bump-semver vcs push --branch main --jj-bookmark-auto-advance
+
+# ---------- 適合試験 ----------
+
+# 言語によらない適合試験を流す (例: just conformance --langs rs,go --case long-connect)
+conformance *ARGS:
+    python3 -I conformance/run.py {{ARGS}}

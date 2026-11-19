@@ -1,0 +1,114 @@
+[
+  {
+    "name": "short-absolute-bind",
+    "op": "bind",
+    "path": "{short}/s.sock",
+    "cwd": "{root}",
+    "setup": [],
+    "expect": { "ok": true, "error": null, "route": "standard", "losses": [], "skipped": [], "file": true }
+  },
+  {
+    "name": "short-relative-bind",
+    "op": "bind",
+    "path": "s.sock",
+    "cwd": "{root}",
+    "setup": [],
+    "expect": { "ok": true, "error": null, "route": "standard", "losses": ["cwd-relative"], "skipped": [], "file": true }
+  },
+  {
+    "name": "long-absolute-bind",
+    "op": "bind",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "expect": { "ok": true, "error": null, "losses": ["respelled"], "file": true, "residue": [] }
+  },
+  {
+    "name": "long-bind-no-directory",
+    "op": "bind",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": [],
+    "expect": { "ok": false, "error": "ENOENT", "route": null, "losses": [], "skipped": [], "created": [] }
+  },
+  {
+    "name": "long-bind-file-in-the-middle",
+    "op": "bind",
+    "path": "{long}/f/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}", "touch {long}/f"],
+    "expect": { "ok": false, "error": "ENOTDIR", "route": null, "losses": [], "skipped": [], "created": [] }
+  },
+  {
+    "name": "long-bind-file-exists",
+    "op": "bind",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}", "touch {long}/s.sock"],
+    "expect": { "ok": false, "error": "EADDRINUSE", "losses": [], "created": [] }
+  },
+  {
+    "name": "long-connect",
+    "op": "connect",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}", "listen {long}/s.sock"],
+    "expect": { "ok": true, "error": null, "losses": [], "received": "x", "residue": [] }
+  },
+  {
+    "name": "long-connect-not-listening",
+    "op": "connect",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}", "stale-socket {long}/s.sock"],
+    "expect": { "ok": false, "error": "ECONNREFUSED", "losses": [], "created": [] }
+  },
+  {
+    "name": "long-bind-trailing-slash",
+    "op": "bind",
+    "path": "{long}/",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "expect": { "ok": false, "error": "invalid-argument", "route": null, "losses": [], "skipped": [], "created": [] }
+  },
+  {
+    "name": "long-bind-dot",
+    "op": "bind",
+    "path": "{long}/.",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "expect": { "ok": false, "error": "invalid-argument", "route": null, "losses": [], "skipped": [], "created": [] }
+  },
+  {
+    "name": "long-bind-dotdot",
+    "op": "bind",
+    "path": "{long}/..",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "expect": { "ok": false, "error": "invalid-argument", "route": null, "losses": [], "skipped": [], "created": [] }
+  },
+  {
+    "name": "short-bind-nul",
+    "op": "bind",
+    "path": "s\u0000.sock",
+    "cwd": "{root}",
+    "setup": [],
+    "expect": { "ok": false, "error": "invalid-argument", "route": null, "losses": [], "skipped": [], "created": [] }
+  },
+  {
+    "name": "long-bind-nul",
+    "op": "bind",
+    "path": "{long}/s\u0000.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "expect": { "ok": false, "error": "invalid-argument", "route": null, "losses": [], "skipped": [], "created": [] }
+  },
+  {
+    "name": "long-connect-nul",
+    "op": "connect",
+    "path": "{long}/s\u0000.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "expect": { "ok": false, "error": "invalid-argument", "route": null, "losses": [], "skipped": [], "created": [] }
+  }
+]

@@ -1,0 +1,5 @@
+{
+  "rs": { "cwd": "../../sockat-rs/main", "cmd": null },
+  "py": { "cwd": "../../sockat-py/main", "cmd": null },
+  "go": { "cwd": "../../sockat-go/main", "cmd": null }
+}
