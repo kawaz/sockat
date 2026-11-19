@@ -477,6 +477,19 @@ When a path over the standard length becomes `ENAMETOOLONG` (the directory exist
 
 - A bind has no side effect visible to the peer. The child only binds and the parent listens, so the server's peer information a client sees (macOS's `LOCAL_PEERPID` / `LOCAL_PEEREPID` / the audit token's pid and pidversion, Linux's `SO_PEERCRED` / `SO_PEERPIDFD`) is the parent's from before any send (measured 2026-11-18 on macOS 26.5.2 and Linux) ([DR-0010](decisions/DR-0010-fork-bind-listen-by-parent.md), Japanese)
 
+## Patterns not to use
+
+Ways of using sockat that remove an unrelated file or fail to remove the file. Each language's README / manual lists, under a heading of the same name, the concrete form in that language (e.g. Go's `os.Remove(l.Addr().String())`).
+
+| Pattern | Why not | Instead |
+|---|---|---|
+| unlinking / `stat`ing the socket file by the spelling the kernel reports (`getsockname`, the listener's address, etc.) | for a long path it is not the original path ([respelled](#respelled)). Depending on the cwd or a shared base, it may hit another file someone recreated ([cwd-relative](#cwd-relative), [recreatable-spelling](#recreatable-spelling)) | keep the original path and use it. `_ex`'s `discard()` |
+| binding with a relative path and removing by that relative path after the cwd changes | hits a file in another place ([cwd-relative](#cwd-relative)) | make the path absolute before the bind. `discard()` |
+| relying on closing the listener to remove the socket file | for a long path it is not removed, even in a language whose standard removes it (Go etc.) ([respelled](#respelled)) | `discard()`, or remove by the original path |
+| relying on `discard()` to close the listener too | `discard()` only removes the file ([DR-0014](decisions/DR-0014-discard-removes-only.md), Japanese) | close the listener yourself |
+| branching on the strings of the any family's `route` / `skipped` / `reason` | they are for diagnostics and promise nothing (routes are added and changed) | branch on `losses` |
+| in a program that uses the any family's fork, another thread reaping children with `waitpid(-1)` | it may reap sockat's child and confuse the result ([forked](#forked)) | wait by pid. Where `forked` is not acceptable, do not use the any family |
+
 ## What differs from the standard for a long path
 
 | Point | Detail |

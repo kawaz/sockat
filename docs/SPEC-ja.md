@@ -477,6 +477,19 @@ D を通す経路が使えない時 (手段が無い、D を作れない、綴�
 
 - bind は相手から見える副作用が無い。子は bind だけして listen は親がするので、クライアントに見えるサーバの peer 情報 (macOS の `LOCAL_PEERPID` / `LOCAL_PEEREPID` / audit token の pid と pidversion、Linux の `SO_PEERCRED` / `SO_PEERPIDFD`) は send の前から親 (実測 2026-11-18、macOS 26.5.2 と Linux) ([DR-0010](decisions/DR-0010-fork-bind-listen-by-parent.md))
 
+## 使ってはいけない書き方
+
+sockat を使う時に、無関係なファイルを消したり、ファイルを消し損ねたりする書き方。各言語の README / マニュアルは、同じ見出しで、その言語での具体的な形 (例: Go の `os.Remove(l.Addr().String())`) を挙げる。
+
+| 書き方 | なぜいけないか | 代わりに |
+|---|---|---|
+| カーネルが返す綴り (`getsockname`、listener のアドレス等) でソケットのファイルを unlink / stat する | 長いパスでは元のパスでない ([respelled](#respelled))。cwd や共有の置き場しだいで、作り直された別のファイルに当たりうる ([cwd-relative](#cwd-relative)、[recreatable-spelling](#recreatable-spelling)) | 元のパスを持っておいて使う。`_ex` の `discard()` |
+| 相対パスで bind し、cwd を変えた後にその相対パスで消す | 別の場所のファイルに当たる ([cwd-relative](#cwd-relative)) | bind の前に絶対パスにする。`discard()` |
+| listener を閉じればソケットのファイルが消えると当てにする | 長いパスでは、標準が消す言語 (Go 等) でも消えない ([respelled](#respelled)) | `discard()` か、元のパスで消す |
+| `discard()` で listener も閉じると当てにする | `discard()` はファイルを消すだけ ([DR-0014](decisions/DR-0014-discard-removes-only.md)) | listener は自分で閉じる |
+| any 系の `route`・`skipped`・`reason` の文字列で分岐する | 診断用で、中身を約束しない (経路は増えたり変わったりする) | `losses` で分岐する |
+| any 系の fork を使うプログラムで、他のスレッドが `waitpid(-1)` で子を刈る | sockat の子を刈り取り、結果を取り違えうる ([forked](#forked)) | pid を指定して待つ。`forked` を受け入れられない所では any 系を使わない |
+
 ## 長いパスで標準と違う点
 
 | 点 | 内容 |
