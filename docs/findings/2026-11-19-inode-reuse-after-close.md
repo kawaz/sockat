@@ -23,8 +23,8 @@
 | ext4 で使い回された時の birth time / ctime (`stat -c '%w %z'`) | 元と違う (20/20、差はおよそ 0.6ms) | | | | |
 
 - sockat-rs のセッションも ext4 で同じことを確かめた (3 回とも `(1792,13)`)。試験も ext4 の `/tmp` で落ちる
-- sockat-py の CI (GitHub Actions の VM、run 44468917295) では、FreeBSD と NetBSD で、閉じてから消して作り直した物を `discard()` が消した (py の `discard()` が消すのは `(st_dev, st_ino)` が一致した時だけなので、FreeBSD の UFS と NetBSD の FFS でも番号が使い回されたと読める。番号そのものはログに無く、消された結果からの推定)
-- OpenBSD・illumos と FreeBSD の ZFS は未測
+- sockat-py の CI (GitHub Actions の VM、run 44468917295) では、FreeBSD・NetBSD・OpenBSD で、閉じてから消して作り直した物を `discard()` が消した (py の `discard()` が消すのは `(st_dev, st_ino)` が一致した時だけなので、FreeBSD の UFS と NetBSD・OpenBSD の FFS でも番号が使い回されたと読める。番号そのものはログに無く、消された結果からの推定)
+- illumos と FreeBSD の ZFS は未測
 
 ## 分かったこと
 
@@ -35,5 +35,5 @@
 
 ## 未確認
 
-- OpenBSD・illumos での使い回しと、FreeBSD・NetBSD での番号の直接の観測
+- illumos での使い回しと、BSD での番号の直接の観測
 - 古いカーネル (時刻の粒度が粗い) での birth time / ctime の衝突
