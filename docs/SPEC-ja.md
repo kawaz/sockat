@@ -97,7 +97,7 @@ bind:
 | 名前 | 中身 | OS | 失うもの |
 |---|---|---|---|
 | [standard](#standard) | 標準にそのまま渡す | 全部 | 相対パスなら `cwd-relative` |
-| [symlink-file](#symlink-file) | 置き場にソケットのファイルを指す symlink を作り、`<置き場>/sockat.XXXXXXXXXX` | Linux / Android 以外 (使えるのは bind が最後の要素の symlink を辿る OS だけで、実行時に見分ける) | `respelled` |
+| [symlink-file](#symlink-file) | 置き場にソケットのファイルを指す symlink を作り、`<置き場>/sockat.XXXXXXXXXX` | Apple の OS、NetBSD、未確認の OS (bind が最後の要素の symlink を辿ると実測したのは macOS と NetBSD。辿らないと実測した OS (Linux / Android、FreeBSD、OpenBSD、illumos) では試さない。未確認の OS では実行時に見分ける) | `respelled` |
 | [thread-cwd](#thread-cwd) | 使い捨てのスレッドの cwd を D に移し、`R/<ファイル名>` | Linux / Android / Apple の OS | `respelled` |
 | [at](#at) | `bindat(Dfd, R/<ファイル名>)` | FreeBSD | `respelled` |
 | [proc](#proc) | `/proc/self/fd/<Dfd>/R/<ファイル名>` | `/proc` を使える Linux / Android | `respelled` |
@@ -178,13 +178,13 @@ bind:
 | 順 | bind |
 |---|---|
 | 1 | [standard](#standard) (標準に渡す長さ以下) |
-| 2 | [symlink-file](#symlink-file) (Linux / Android 以外) |
+| 2 | [symlink-file](#symlink-file) (Apple の OS、NetBSD、未確認の OS) |
 | 3 | [thread-cwd](#thread-cwd) (FreeBSD は [at](#at)) |
 | 4 | [proc](#proc) |
 | 5 | [fork-cwd](#fork-cwd) |
 | 6 | `ENAMETOOLONG` |
 
-- bind の symlink-file は、辿らないことを実測した Linux / Android では試さない。他の OS では、bind が失敗した時に元のパスを `lstat` し、物があればそのエラー (`EADDRINUSE` 等) を返し、無いか確かめられなければ、辿らなかったとみなしてこの経路を使えないとして次へ進む (本当の失敗なら次の経路でも同じ失敗になり、そこで返る) ([DR-0016](decisions/DR-0016-bind-through-file-symlink.md))。macOS の bind の順は standard → symlink-file → thread-cwd → fork-cwd
+- bind の symlink-file は、辿らないと実測した OS (Linux / Android、FreeBSD、OpenBSD、illumos) では試さない (実測 2026-11-19: 辿るのは macOS と NetBSD)。他の OS では、bind が失敗した時に元のパスを `lstat` し、物があればそのエラー (`EADDRINUSE` 等) を返し、無いか確かめられなければ、辿らなかったとみなしてこの経路を使えないとして次へ進む (本当の失敗なら次の経路でも同じ失敗になり、そこで返る) ([DR-0016](decisions/DR-0016-bind-through-file-symlink.md))。macOS の bind の順は standard → symlink-file → thread-cwd → fork-cwd
 - bind の fork-cwd は、thread-cwd・proc がスレッド cwd / `/proc` を使えない、または proc の綴りに収まらない時に試す。D をどこにも作れない時は、3〜5 を D 無しの形で試す ([thread-cwd-sockdir](#thread-cwd-sockdir) (FreeBSD は [at-sockdir](#at-sockdir)) → [proc-sockdir](#proc-sockdir) → [fork-cwd-sockdir](#fork-cwd-sockdir))。綴りが sockaddr に入らない時は試さず `ENAMETOOLONG`
 - bind は [proc-direct](#proc-direct)・[relative](#relative)・[widened](#widened)・[symlink-dir](#symlink-dir) を使わない (綴りが後で無関係なファイルに当たるか、アドレスが途中で切れて読む側を壊すか、D を通す経路で足りる)。最終手段を使う `bind_ex` だけは、何かを失ってでも届かせるため、最後に [symlink-dir](#symlink-dir) を試す ([DR-0015](decisions/DR-0015-ex-with-last-resort-and-diagnostics.md))
 
@@ -326,7 +326,7 @@ connect:
 - やり方: 安全な置き場に、ソケットのファイルの綴り (相対パスなら cwd を前に付ける) を指す symlink `<置き場>/sockat.XXXXXXXXXX` を作り、その綴りで bind / connect して、すぐ消す。消すのは成功でも失敗でも ([symlink の置き場と名前](#symlink-の置き場と名前))
 - bind の使える条件: bind が最後の要素の symlink を辿る OS (macOS で実測。Linux は辿らない。他の OS は未確認)。[standard](#standard) の次に試し、辿るかは実行時に見分ける
 - bind の使えない時: どの候補も、綴りが sockaddr に入らない・置き場が安全でない・symlink を作れない。カーネルが symlink を辿らなかった
-- 辿るかの見分け方: Linux / Android では試さない。他の OS では、bind が失敗した時 (エラーを問わない) に元のパスを `lstat` する。物があればそのエラーを返し、次を試さない ([経路の失敗の扱い](#経路の失敗の扱い))。無いか確かめられなければ、カーネルが辿らなかったとみなし、この経路を使えないとして次の経路へ進む (`skipped` に入る。本当の失敗なら次の経路でも同じ失敗になり、そこで返る)
+- 辿るかの見分け方: 辿らないと実測した OS (Linux / Android、FreeBSD、OpenBSD、illumos) では試さない。他の OS では、bind が失敗した時 (エラーを問わない) に元のパスを `lstat` する。物があればそのエラーを返し、次を試さない ([経路の失敗の扱い](#経路の失敗の扱い))。無いか確かめられなければ、カーネルが辿らなかったとみなし、この経路を使えないとして次の経路へ進む (`skipped` に入る。本当の失敗なら次の経路でも同じ失敗になり、そこで返る)
 - connect の使える条件: connect 系。FreeBSD 以外。「[connect の順](#connect-の順)」の最後 (最終手段を使う `connect_ex` 系はその後に [fork-cwd-direct](#fork-cwd-direct))
 - connect の使えない時: どの候補も、綴りが sockaddr に入らない・置き場が安全でない・symlink を作れない
 - 届くファイル名: 綴り `<置き場>/sockat.XXXXXXXXXX` にファイル名が出ないので、ファイル名の長さによらない (綴りが sockaddr に入る長さ以内。元のパス全体は PATH_MAX まで)
@@ -494,10 +494,11 @@ D をどこにも作れない時の bind が使う。[thread-cwd-sockdir](#threa
 | Linux / Android (`/proc` 無し) | ファイル名 > 96 | [thread-cwd](#thread-cwd) が使えず (ファイル名 > 96 かスレッド cwd が使えない)、[relative](#relative) > 107、[symlink-file](#symlink-file) も使えない | ファイル名 > 107、symlink-file も使えない |
 | FreeBSD | ファイル名 > 92 | ファイル名 > 103 | ファイル名 > 103 |
 | macOS / iOS 等 Apple の OS | macOS: 届く ([symlink-file](#symlink-file))。symlink-file が使えない時はファイル名 > 92<br>他の Apple の OS: ファイル名 > 92 | [thread-cwd](#thread-cwd) が使えず (ファイル名 > 92 かスレッド cwd が使えない)、元のパスも相対パスも > 253、symlink-file も使えない | ファイル名 > 253、symlink-file も使えない |
-| NetBSD / OpenBSD / その他の BSD | ファイル名 > 92 | relative > 103、symlink-file も使えない | ファイル名 > 103、symlink-file も使えない |
+| NetBSD | 届く ([symlink-file](#symlink-file))。symlink-file が使えない時はファイル名 > 92 | relative > 103、symlink-file も使えない | ファイル名 > 103、symlink-file も使えない |
+| OpenBSD / その他の BSD | ファイル名 > 92 | relative > 103、symlink-file も使えない | ファイル名 > 103、symlink-file も使えない |
 | illumos | ファイル名 > 96 | relative > 107、symlink-file も使えない | ファイル名 > 107、symlink-file も使えない |
 
-- bind の欄で [symlink-file](#symlink-file) を数えているのは macOS だけ。Linux は bind が symlink を辿らないので使えない。他の OS は辿るかが未確認で、欄は symlink-file を数えていない
+- bind の欄で [symlink-file](#symlink-file) を数えているのは、bind が symlink を辿ると実測した macOS と NetBSD だけ (2026-11-19)。Linux・FreeBSD・OpenBSD・illumos は辿らない。他の OS は未確認で、欄は symlink-file を数えていない
 - Linux で thread-cwd が使えない時、bind はファイル名およそ 79 バイトまで [proc](#proc)、その先 96 までは [fork-cwd](#fork-cwd)
 - D をどこにも作れない時、bind は `-sockdir` の経路でファイル名 88 (Apple の OS / BSD 84、[proc-sockdir](#proc-sockdir) だけならおよそ 72) まで届く (ソケットのディレクトリに R を作れる時)。connect 系は「[connect の順](#connect-の順)」のうち D を使わない経路 ([proc-direct](#proc-direct)・[relative](#relative)・[widened](#widened)・[symlink-file](#symlink-file)・[at-direct](#at-direct)) の分だけ届く ([proc-held](#proc-held) も使えない)
 - 最終手段を使う `bind_ex` は、bind の列で `ENAMETOOLONG` になる所でも、[symlink-dir](#symlink-dir) の綴り (`<置き場>/sockat.XXXXXXXXXX/<ファイル名>`) が sockaddr に入れば届く
@@ -575,7 +576,7 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 | D の置き場 | `TMPDIR` に作れない時は `/tmp`、それも作れない時はソケットのディレクトリに `.sockat.` の名前で作る。相対パスや深い `TMPDIR` でも使える。どこにも作れない時、bind は D 無しの形 (thread-cwd-sockdir → proc-sockdir → fork-cwd-sockdir の順)、connect 系は「[connect の順](#connect-の順)」の次の経路 |
 | 手段が使えない時 | thread-cwd を使えなくして、`/proc` を使える Linux は proc に進む。それも使えない時、bind は fork-cwd (peer は親)、connect 系は「[connect の順](#connect-の順)」の次の経路 ([proc-held](#proc-held)) に進む |
 | connect の経路 | [proc-direct](#proc-direct)・[proc-held](#proc-held)・[relative](#relative)・[widened](#widened)・[symlink-file](#symlink-file)・[at-direct](#at-direct) を 1 つずつ強制して、ソケットに届き、置き場に何も残らない。symlink-file は安全でない置き場を飛ばす、深すぎる `TMPDIR` で `/tmp` に回る、名前の衝突を飛ばし 16 回で打ち切る |
-| symlink-file の bind | bind が symlink を辿る OS で通り、`losses` が `respelled` だけ。Linux / Android では試さない。辿らない OS (未確認の OS で辿らなかった時) で `skipped` に入り、何も残らない。元のパスに物がある時はそのエラー (`EADDRINUSE`) を返し、次を試さない |
+| symlink-file の bind | bind が symlink を辿る OS で通り、`losses` が `respelled` だけ。辿らないと実測した OS (Linux / Android、FreeBSD、OpenBSD、illumos) では試さない。辿らない OS (未確認の OS で辿らなかった時) で `skipped` に入り、何も残らない。元のパスに物がある時はそのエラー (`EADDRINUSE`) を返し、次を試さない |
 | 失敗をやり直さない | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` を返し、後の経路・置き場に何も作らない |
 | connect と fork | `connect` 系と最終手段を使わない `connect_ex` 系は fork-cwd-direct でしか届かない時に `ENAMETOOLONG`、最終手段を使う `connect_ex` 系は届いて `losses` が `forked` だけ |
 | 最終手段を使う `bind_ex` | 既定の bind が `ENAMETOOLONG` になる所で symlink-dir を通って届く。持ち主だけが書ける置き場があればそこを使って `losses` が `respelled` だけ、共有の置き場しか無ければ `losses` が `respelled` と `recreatable-spelling`。置き場に何も残らない。既定の経路で届く所では `losses` がその経路のもの |
