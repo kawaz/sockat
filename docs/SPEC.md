@@ -96,7 +96,7 @@ bind:
 | Name | What it does | OS | What is lost |
 |---|---|---|---|
 | [standard](#standard) | hand the path to the standard unchanged | all | `cwd-relative` for a relative path |
-| [symlink-file](#symlink-file) | create in a base a symlink to the socket file and use `<base>/sockat.XXXXXXXXXX` | all (usable only on an OS whose bind follows a symlink in the last component, told apart at run time) | `respelled` |
+| [symlink-file](#symlink-file) | create in a base a symlink to the socket file and use `<base>/sockat.XXXXXXXXXX` | all but Linux / Android (usable only on an OS whose bind follows a symlink in the last component, told apart at run time) | `respelled` |
 | [thread-cwd](#thread-cwd) | move a throwaway thread's cwd into D, then `R/<file name>` | Linux / Android / Apple OSes | `respelled` |
 | [at](#at) | `bindat(Dfd, R/<file name>)` | FreeBSD | `respelled` |
 | [proc](#proc) | `/proc/self/fd/<Dfd>/R/<file name>` | Linux / Android with `/proc` usable | `respelled` |
@@ -177,13 +177,13 @@ bind:
 | Step | bind |
 |---|---|
 | 1 | [standard](#standard) (up to the standard length) |
-| 2 | [symlink-file](#symlink-file) (an OS whose bind follows a symlink in the last component) |
+| 2 | [symlink-file](#symlink-file) (all but Linux / Android) |
 | 3 | [thread-cwd](#thread-cwd) ([at](#at) on FreeBSD) |
 | 4 | [proc](#proc) |
 | 5 | [fork-cwd](#fork-cwd) |
 | 6 | `ENAMETOOLONG` |
 
-- symlink-file tells apart at run time whether the bind follows a symlink in the last component; on an OS where it does not (Linux etc.) it is not usable and the next is tried ([DR-0016](decisions/DR-0016-bind-through-file-symlink.md), Japanese). The bind order on macOS is standard → symlink-file → thread-cwd → fork-cwd
+- A bind's symlink-file is not tried on Linux / Android, where it was measured not to follow. On the other OSes, when the bind fails, `lstat` the original path: if something is there, return that error (`EADDRINUSE` etc.); if nothing is there or it cannot be checked, take it that the bind did not follow, treat this route as unusable and try the next (if it was a real failure, the next route fails the same way and that is what is returned) ([DR-0016](decisions/DR-0016-bind-through-file-symlink.md), Japanese). The bind order on macOS is standard → symlink-file → thread-cwd → fork-cwd
 - A bind's fork-cwd is tried when thread-cwd and proc cannot use the thread cwd / `/proc`, or the proc spelling does not fit. When D can be created nowhere, steps 3 to 5 are tried in the form without D ([thread-cwd-sockdir](#thread-cwd-sockdir) ([at-sockdir](#at-sockdir) on FreeBSD) → [proc-sockdir](#proc-sockdir) → [fork-cwd-sockdir](#fork-cwd-sockdir)). When the spelling does not fit the sockaddr, it is not tried and the result is `ENAMETOOLONG`
 - A bind never uses [proc-direct](#proc-direct), [relative](#relative), [widened](#widened), or [symlink-dir](#symlink-dir) (the spelling would hit an unrelated file later, the address would be cut short and break whoever reads it, or the routes through D suffice). Only `bind_ex` with the last resort tries [symlink-dir](#symlink-dir) last, to reach even by losing something ([DR-0015](decisions/DR-0015-ex-with-last-resort-and-diagnostics.md), Japanese)
 
@@ -478,7 +478,7 @@ Used by [symlink-file](#symlink-file) and [symlink-dir](#symlink-dir).
   - in proc-held, D or `s` cannot be created
   - in widened, the kernel refuses the widened sockaddr
   - in symlink-file and symlink-dir, the base is unsafe or the symlink cannot be created
-  - in a bind through symlink-file, the kernel did not follow the symlink (the bind answers `EADDRINUSE` and `lstat` of the original path gives `ENOENT`)
+  - in a bind through symlink-file, the bind fails and nothing is at the original path or it cannot be checked (taken as the kernel not following the symlink)
   - in relative, the directory of the spelling built does not match the original by `(st_dev, st_ino)`, or the cwd has already changed
 - A missing directory is `ENOENT` on every OS. The directory is looked up first, so this is settled before the length is judged
 - `connect` / `connect_nonblocking` and the `connect_ex` variants without the last resort return `ENAMETOOLONG` instead of trying [fork-cwd-direct](#fork-cwd-direct)
@@ -529,7 +529,7 @@ Ways of using sockat that remove an unrelated file or fail to remove the file. E
 | Point | Detail |
 |---|---|
 | address the kernel reports | the bound side's `getsockname` and the connecting side's `getpeername` return `R/<file name>` (`/proc/self/fd/<fd>/R/<file name>` for [proc](#proc)). R no longer exists, so normally it hits nothing when resolved later (if the process's cwd is a place others can write to, other users can see and recreate the spelling; `respelled` in "[What is lost](#what-is-lost)"). A bind through [symlink-file](#symlink-file) returns the symlink's spelling `<base>/sockat.XXXXXXXXXX` (unlinking by it only removes the entry in the base). [symlink-dir](#symlink-dir) of `bind_ex` with the last resort returns `<base>/sockat.XXXXXXXXXX/<file name>`, which in a shared base other users can recreate. In a language where the address accessors of the standard types can be replaced (Python), they return the original path (Python's asyncio `stat`s / unlinks the listener's `getsockname` spelling). Where they cannot be replaced, the caller keeps the original path |
-| directory looked up first | the routes that use R (those through D and the form without D) resolve the socket's directory with realpath when they create R. [proc-direct](#proc-direct), [relative](#relative), [at-direct](#at-direct) and [fork-cwd-direct](#fork-cwd-direct) look up the directory, then pass the file name. A rename or symlink swap in between is not reflected. [widened](#widened) and [symlink-file](#symlink-file) behave as the standard |
+| directory looked up first | the routes that use R (those through D and the form without D) and [symlink-dir](#symlink-dir) resolve the socket's directory with realpath when they create the symlink. [proc-direct](#proc-direct), [relative](#relative), [at-direct](#at-direct) and [fork-cwd-direct](#fork-cwd-direct) look up the directory, then pass the file name. A rename or symlink swap in between is not reflected. [widened](#widened) and [symlink-file](#symlink-file) behave as the standard |
 | how operations tools show it | the address shown by `ss -x`, `lsof`, `/proc/net/unix` etc. is the kernel's spelling (`R/<file name>` etc.), so the socket is hard to tell apart by its original path. The file name stays at the end of the spelling (the spelling of a bind through [symlink-file](#symlink-file) has no file name) |
 | another thread's chdir | relative returns a generic error if the cwd stayed changed in between. A change and change back is not seen |
 | a socket's directory others can write to | in a socket's directory that is not sticky and that others can write to, the R of the form without D can be replaced between its creation and the bind, so the bind may land in another directory (if that name already exists there, `EADDRINUSE`; nothing is overwritten). The R inside D cannot be replaced, since D is 0700 |
@@ -574,7 +574,7 @@ Ways of using sockat that remove an unrelated file or fail to remove the file. E
 | where D is created | when D cannot be created in `TMPDIR`, `/tmp` is used, and failing that the socket's directory with a `.sockat.` name. A relative or deep `TMPDIR` works. When it can be created nowhere, a bind takes the form without D (thread-cwd-sockdir → proc-sockdir → fork-cwd-sockdir) and the connect variants the next route in "[Connect order](#connect-order)" |
 | ways not usable | with thread-cwd made unusable, Linux with `/proc` goes on to proc. When that is not usable either, a bind goes on to fork-cwd (the peer is the parent) and the connect variants to the next route in "[Connect order](#connect-order)" ([proc-held](#proc-held)) |
 | connect routes | with each of [proc-direct](#proc-direct), [proc-held](#proc-held), [relative](#relative), [widened](#widened), [symlink-file](#symlink-file) and [at-direct](#at-direct) forced in turn, the socket is reached and nothing remains in the base. For symlink-file, an unsafe base is skipped, a too deep `TMPDIR` falls back to `/tmp`, colliding names are skipped and the attempts stop at 16 |
-| bind through symlink-file | on an OS whose bind follows the symlink it gets through and `losses` is `respelled` only. On an OS that does not follow it, it goes into `skipped` and nothing remains. When something is already at the original path, `EADDRINUSE` is returned and nothing further is tried |
+| bind through symlink-file | on an OS whose bind follows the symlink it gets through and `losses` is `respelled` only. It is not tried on Linux / Android. On an OS that does not follow it (when an OS not yet checked did not follow), it goes into `skipped` and nothing remains. When something is at the original path, that error (`EADDRINUSE`) is returned and nothing further is tried |
 | no retry on failure | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` are returned and nothing is created on later routes or bases |
 | connect and fork | the `connect` variants and the `connect_ex` variants without the last resort return `ENAMETOOLONG` when only fork-cwd-direct reaches; the `connect_ex` variants with the last resort reach and `losses` is `forked` only |
 | `bind_ex` with the last resort | where the default bind gives `ENAMETOOLONG` it reaches through symlink-dir. With a base only the owner can write to, that base is used and `losses` is `respelled` only; with only a shared base, `losses` is `respelled` and `recreatable-spelling`. Nothing remains in the base. Where a default route reaches, `losses` is that route's |
