@@ -27,6 +27,7 @@
 3. D の中に、ソケットのディレクトリの realpath を指す乱数の名前 (62 種 10 文字) の symlink R を `symlinkat` で作る。D の中に他のディレクトリは挟まない
 4. D の fd を基準に `R/<ファイル名>` で bind / connect する
 5. R は自分が作れた時だけ消す。D は手順 2 の確認が通り、名前の `(st_dev, st_ino)` が fd と一致する時だけ消す。成功でも失敗でも片付ける。作った直後の D を開けない時 (umask が持ち主の権限を削った時) は、名前で `fstatat(AT_SYMLINK_NOFOLLOW)` して手順 2 と同じ条件なら `unlinkat(AT_REMOVEDIR)` で消す (空のディレクトリしか消えないので、すり替えられても最悪は他人の空のディレクトリが 1 つ消えるだけ。残すと呼ぶたびに積もる。kawaz 裁定 2026-11-19)
+6. D は 1 回の呼び出しで 1 度だけ作り、D を使う経路 (スレッド cwd・/proc 版・fork・fd で掴む形) で共有する。どこにも作れなかったら、D を使う経路はどれも使えないとして飛ばし、作り直さない
 
 | D の fd を基準にする手段 | OS |
 |---|---|
@@ -48,30 +49,34 @@
 | 3 | ソケットのディレクトリ (2 でも作れない時だけ。名前は `.sockat.XXXXXXXXXX`) |
 
 - 置き場の安全と長さは問わない
-- どこにも作れない時、bind は D 無しの形 (ソケットのディレクトリに R `.sockat.XXXXXXXXXX` を作り、ソケットのディレクトリの fd を基準に `.sockat.XXXXXXXXXX/<ファイル名>`) で、D と同じく「スレッド cwd (FreeBSD は bindat) → /proc 版 → fork」の順に試す。R も作れなければ `ENAMETOOLONG`。connect 系は予備の経路へ
+- どこにも作れない時、bind は D 無しの形 (ソケットのディレクトリに R `.sockat.XXXXXXXXXX` を作り、ソケットのディレクトリの fd を基準に `.sockat.XXXXXXXXXX/<ファイル名>`) で、D と同じく「スレッド cwd (FreeBSD は bindat) → /proc 版 → fork」の順に試す。R も作れなければ `ENAMETOOLONG`。connect 系は connect の順のうち D を使わない経路だけを試す
 - ソケットのディレクトリに作る物 (D と D 無しの形の R) は名前の先頭にドットを付ける。利用者のディレクトリなので、残っても sockat の物と分かり目立たない (kawaz 裁定)
 - 置き場の 3 番目と、どこにも作れない時に D 無しの形で fork の前にスレッド cwd と /proc 版を試すことは kawaz 裁定 (2026-11-19。fork は最終手段)
 
 ### 試す順番
 
-| 順 | bind | `connect` / `connect_nonblocking` | `connect_any` 系 |
-|---|---|---|---|
-| 1 | 標準に渡す長さ以下なら標準にそのまま | 同じ | 同じ |
-| 2 | 中心の経路 (スレッド cwd。FreeBSD は bindat) | 中心の経路 (スレッド cwd。FreeBSD は connectat) | 同左 |
-| 3 | 中心の経路の /proc 版 (`/proc` を使える Linux / Android) | 同左 | 同左 |
-| 4 | 中心の経路を fork で | 予備の経路 | 予備の経路 |
-| 5 | `ENAMETOOLONG` | `ENAMETOOLONG` | fork (ソケットのディレクトリの fd とファイル名) |
+bind:
 
-| OS | connect 系の予備の経路 |
+| 順 | bind |
 |---|---|
-| Linux / Android (`/proc` あり) | /proc → fd で掴む形 (D の中のファイルを指す symlink) → symlink |
-| Linux / Android (`/proc` 無し) | 相対パス → symlink |
-| Apple の OS | 相対パス → 広げた sockaddr → symlink |
-| FreeBSD | connectat (ソケットのディレクトリの fd とファイル名) |
-| NetBSD / OpenBSD / illumos | 相対パス → symlink |
+| 1 | 標準に渡す長さ以下なら標準にそのまま |
+| 2 | 中心の経路 (スレッド cwd。FreeBSD は bindat) |
+| 3 | 中心の経路の /proc 版 (`/proc` を使える Linux / Android) |
+| 4 | 中心の経路を fork で |
+| 5 | `ENAMETOOLONG` |
+
+connect は、書き込みもスレッドも要らない経路を先に、D を作る経路とスレッドを立てる経路をその後にする (kawaz 裁定 2026-11-19)。標準に渡す長さ以下なら標準にそのまま、その後は OS ごとに次の順。`connect_any` 系は最後に fork (ソケットのディレクトリの fd とファイル名)。
+
+| OS | connect の順 |
+|---|---|
+| Linux / Android (`/proc` あり) | R を通さない /proc → スレッド cwd → 中心の経路の /proc 版 → fd で掴む形 (D の中のファイルを指す symlink) → symlink |
+| Linux / Android (`/proc` 無し) | 相対パス → スレッド cwd → symlink |
+| Apple の OS | 相対パス → 広げた sockaddr → スレッド cwd → symlink |
+| FreeBSD | connectat (ソケットのディレクトリの fd とファイル名) → connectat (D の fd と `R/<ファイル名>`) |
+| NetBSD / OpenBSD / illumos / その他の Unix | 相対パス → symlink |
 
 - bind は R を通さない /proc (`/proc/self/fd/<fd>/<ファイル名>`)・相対パス・広げた sockaddr・置き場の symlink を使わない
-- connect の予備の経路は綴りにランダムな部品を挟まない (connect した側のソケットは bind されず、綴りが相手に残らない)
+- connect の綴りは相手に残らない (connect した側のソケットは bind されない) ので、R を挟む理由が無い。どの経路でも失うものは無い。書き込み (D・R・symlink を作る) もスレッドも要らない経路が速く、相対パスや広げた sockaddr は中心の経路より遠くまで届く場面がある。相対パスの経路は途中で cwd が変わると一般のエラーになる (事後に確かめるので、別の所へ届くことは無い)
 
 理由:
 
@@ -106,12 +111,12 @@
 
 ## Consequences
 
-- 試験 (中心の経路を強制して): プロセスの cwd が変わらない、元のパスにソケットができ届く、返る綴りを unlink / stat しても無関係なファイルに当たらない、片付けの後に置き場に何も残らない、差し替えたディレクトリを使わず中身も消さない、`TMPDIR` に作れない時は `/tmp`、それも作れない時はソケットのディレクトリ、スレッド cwd が使えない時は /proc 版、それも使えない時は bind は fork・connect は予備の経路
+- 試験 (中心の経路を強制して): プロセスの cwd が変わらない、元のパスにソケットができ届く、返る綴りを unlink / stat しても無関係なファイルに当たらない、片付けの後に置き場に何も残らない、差し替えたディレクトリを使わず中身も消さない、`TMPDIR` に作れない時は `/tmp`、それも作れない時はソケットのディレクトリ、スレッド cwd が使えない時は /proc 版、それも使えない時は bind は fork・connect は connect の順の次の経路
 - 各言語の実装は経路を作り直す (bind の /proc・symlink・相対パスの経路を外し、中心の経路を足す)
 
-### connect の fork と FreeBSD の connect の予備は D を通さない
+### connect の fork と FreeBSD の connectat (ソケットのディレクトリの fd) は D を通さない
 
-- `connect_any` 系の fork と FreeBSD の connect の予備の経路 (connectat) は、ソケットのディレクトリの fd とファイル名で connect する (kawaz 裁定 2026-11-19)
+- `connect_any` 系の fork と FreeBSD の connectat (connect の順の最初) は、ソケットのディレクトリの fd とファイル名で connect する (kawaz 裁定 2026-11-19)
 - connect した側のソケットは bind されないので、connect の綴りはどこにも残らない。R を挟む理由が無く、挟むと届くファイル名が 11 バイト短くなるだけ
 
 ## 関連
