@@ -25,7 +25,8 @@
 
 - bind の既定の順で、standard の次に symlink-file を試す。macOS の bind の順は standard → symlink-file → thread-cwd → fork-cwd。D をどこにも作れない時の `-sockdir` の流れは今のまま
 - やり方: 安全な置き場 (connect の symlink-file と同じ候補と条件) に、元のパスのソケットのファイルの綴り (相対パスなら cwd を前に付ける) を指す symlink `<置き場>/sockat.XXXXXXXXXX` を作り、その綴りで bind して、すぐ消す。消すのは成功でも失敗でも
-- 辿るかどうかは実行時に見分ける: bind が `EADDRINUSE` を返した時に元のパスを `lstat` し、無ければ (`ENOENT`) カーネルが辿らなかったとみなして、この経路を使えないとして次へ進む (`skipped` に入る)。あれば本当の `EADDRINUSE` として返す (経路の失敗の扱いどおり、次は試さない)
+- 辿らないことを実測した Linux / Android では試さない (長いパスの bind のたびに symlink を作って断られるだけになるため)
+- 他の OS では実行時に見分ける: bind が失敗した時に元のパスを `lstat` し、物があればそのエラー (`EADDRINUSE` 等) を返して次は試さない。無いか確かめられなければ、カーネルが辿らなかったとみなして、この経路を使えないとして次へ進む (`skipped` に入る)。本当の失敗なら次の経路でも同じ失敗になり、そこで返る (未確認の OS が辿らない時に `EADDRINUSE` 以外を返しても、bind 全体を落とさない)
 - 届く長さ: 綴りは `<置き場>/sockat.XXXXXXXXXX` で、ファイル名が出ないので、ファイル名の長さによらない (元のパス全体は PATH_MAX まで)
 - 失うもの: `respelled` だけ。カーネルが返すアドレスは symlink の綴り。その綴りで unlink しても、最後の要素の symlink は辿られず置き場の中の項目が消えるだけ (共有の sticky な置き場では他人の項目は消せない) なので、ディレクトリを指す symlink-dir と違い、無関係なファイルを消させない。`recreatable-spelling` は付かない
 - 元のパスの最後の要素に bind の前から symlink が置かれていた時に bind がそれを辿るのは標準の bind の性質で、sockat は確かめない (責務外。kawaz 2026-11-19)。SPEC の「長いパスで標準と違う点」には書かない

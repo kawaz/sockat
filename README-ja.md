@@ -28,6 +28,7 @@
 - 長いパスでも、ソケットファイルは渡したパスにできる
 - 長いパスは、sockat 専用のディレクトリを作って fd で掴み、その中に置いた乱数の名前の symlink を通す短い綴りで bind / connect し、終わったら片付ける
 - そのディレクトリの fd を基準にする手段は、OS ごとに決まった順に試す (スレッド cwd、bindat / connectat、/proc、fork)。connect は、書き込みもスレッドも要らない経路 (/proc、相対パス、広げた sockaddr) を先に試す
+- bind が最後の要素の symlink を辿る OS (macOS 等) では、ソケットのファイルを指す symlink を通して bind し、ファイル名の長さの上限が無い
 - どの経路も呼び出し元のプロセスとスレッドの cwd を変えない
 - `connect` は fork しない。fork するのは `bind` と、最終手段を使う `connect_ex` 系だけで、他の手段が使えない時の最後の手
 - 経路が実際に bind / connect して失敗したら、そのエラーを返し、次の経路でやり直さない

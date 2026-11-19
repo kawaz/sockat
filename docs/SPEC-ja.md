@@ -96,7 +96,7 @@ bind:
 | 名前 | 中身 | OS | 失うもの |
 |---|---|---|---|
 | [standard](#standard) | 標準にそのまま渡す | 全部 | 相対パスなら `cwd-relative` |
-| [symlink-file](#symlink-file) | 置き場にソケットのファイルを指す symlink を作り、`<置き場>/sockat.XXXXXXXXXX` | 全部 (使えるのは bind が最後の要素の symlink を辿る OS だけで、実行時に見分ける) | `respelled` |
+| [symlink-file](#symlink-file) | 置き場にソケットのファイルを指す symlink を作り、`<置き場>/sockat.XXXXXXXXXX` | Linux / Android 以外 (使えるのは bind が最後の要素の symlink を辿る OS だけで、実行時に見分ける) | `respelled` |
 | [thread-cwd](#thread-cwd) | 使い捨てのスレッドの cwd を D に移し、`R/<ファイル名>` | Linux / Android / Apple の OS | `respelled` |
 | [at](#at) | `bindat(Dfd, R/<ファイル名>)` | FreeBSD | `respelled` |
 | [proc](#proc) | `/proc/self/fd/<Dfd>/R/<ファイル名>` | `/proc` を使える Linux / Android | `respelled` |
@@ -177,13 +177,13 @@ bind:
 | 順 | bind |
 |---|---|
 | 1 | [standard](#standard) (標準に渡す長さ以下) |
-| 2 | [symlink-file](#symlink-file) (bind が最後の要素の symlink を辿る OS) |
+| 2 | [symlink-file](#symlink-file) (Linux / Android 以外) |
 | 3 | [thread-cwd](#thread-cwd) (FreeBSD は [at](#at)) |
 | 4 | [proc](#proc) |
 | 5 | [fork-cwd](#fork-cwd) |
 | 6 | `ENAMETOOLONG` |
 
-- symlink-file は、bind が最後の要素の symlink を辿るかを実行時に見分け、辿らない OS (Linux 等) では使えないとして次へ進む ([DR-0016](decisions/DR-0016-bind-through-file-symlink.md))。macOS の bind の順は standard → symlink-file → thread-cwd → fork-cwd
+- bind の symlink-file は、辿らないことを実測した Linux / Android では試さない。他の OS では、bind が失敗した時に元のパスを `lstat` し、物があればそのエラー (`EADDRINUSE` 等) を返し、無いか確かめられなければ、辿らなかったとみなしてこの経路を使えないとして次へ進む (本当の失敗なら次の経路でも同じ失敗になり、そこで返る) ([DR-0016](decisions/DR-0016-bind-through-file-symlink.md))。macOS の bind の順は standard → symlink-file → thread-cwd → fork-cwd
 - bind の fork-cwd は、thread-cwd・proc がスレッド cwd / `/proc` を使えない、または proc の綴りに収まらない時に試す。D をどこにも作れない時は、3〜5 を D 無しの形で試す ([thread-cwd-sockdir](#thread-cwd-sockdir) (FreeBSD は [at-sockdir](#at-sockdir)) → [proc-sockdir](#proc-sockdir) → [fork-cwd-sockdir](#fork-cwd-sockdir))。綴りが sockaddr に入らない時は試さず `ENAMETOOLONG`
 - bind は [proc-direct](#proc-direct)・[relative](#relative)・[widened](#widened)・[symlink-dir](#symlink-dir) を使わない (綴りが後で無関係なファイルに当たるか、アドレスが途中で切れて読む側を壊すか、D を通す経路で足りる)。最終手段を使う `bind_ex` だけは、何かを失ってでも届かせるため、最後に [symlink-dir](#symlink-dir) を試す ([DR-0015](decisions/DR-0015-ex-with-last-resort-and-diagnostics.md))
 
@@ -478,7 +478,7 @@ D をどこにも作れない時の bind が使う。[thread-cwd-sockdir](#threa
   - proc-held で D か `s` を作れない
   - widened でカーネルが広げた sockaddr を受け付けない
   - symlink-file・symlink-dir で置き場が安全でない・symlink を作れない
-  - symlink-file の bind でカーネルが symlink を辿らなかった (bind が `EADDRINUSE` を返し、元のパスの `lstat` が `ENOENT`)
+  - symlink-file の bind が失敗し、元のパスに物が無いか確かめられない (カーネルが symlink を辿らなかったとみなす)
   - relative で、作った綴りのディレクトリが元と `(st_dev, st_ino)` で一致しない、または cwd が既に変わっている
 - ディレクトリが無い時はどの OS でも `ENOENT`。ディレクトリを先に引くので、長さの判定より前に決まる
 - `connect` / `connect_nonblocking` と最終手段を使わない `connect_ex` 系は [fork-cwd-direct](#fork-cwd-direct) を試さずに `ENAMETOOLONG` を返す
@@ -529,7 +529,7 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 | 点 | 内容 |
 |---|---|
 | カーネルが返すアドレス | bind した側の `getsockname` と、そこへ connect した側の `getpeername` は `R/<ファイル名>` ([proc](#proc) は `/proc/self/fd/<fd>/R/<ファイル名>`) を返す。R はもう無いので、後で解決しても普段は何にも当たらない (プロセスの cwd が他人も書ける場所だと、他の利用者が綴りを見て作り直せる。「[失うもの](#失うもの)」の `respelled`)。[symlink-file](#symlink-file) の bind は symlink の綴り `<置き場>/sockat.XXXXXXXXXX` を返す (その綴りで unlink しても置き場の中の項目が消えるだけ)。最終手段を使う `bind_ex` の [symlink-dir](#symlink-dir) は `<置き場>/sockat.XXXXXXXXXX/<ファイル名>` を返し、共有の置き場では他の利用者がそれを作り直せる。標準の型でアドレスを返す口を差し替えられる言語 (Python) は元のパスを返す (Python の asyncio は listener の `getsockname` の綴りを `stat` / unlink する)。差し替えられない言語は元のパスを呼び出し元が持つ |
-| ディレクトリを先に引く | R を使う経路 (D を通す経路と D 無しの形) は R を作る時にソケットのディレクトリを realpath で引く。[proc-direct](#proc-direct)・[relative](#relative)・[at-direct](#at-direct)・[fork-cwd-direct](#fork-cwd-direct) はディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない。[widened](#widened) と [symlink-file](#symlink-file) は標準と同じ |
+| ディレクトリを先に引く | R を使う経路 (D を通す経路と D 無しの形) と [symlink-dir](#symlink-dir) は、symlink を作る時にソケットのディレクトリを realpath で引く。[proc-direct](#proc-direct)・[relative](#relative)・[at-direct](#at-direct)・[fork-cwd-direct](#fork-cwd-direct) はディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない。[widened](#widened) と [symlink-file](#symlink-file) は標準と同じ |
 | 運用の道具での見え方 | `ss -x`・`lsof`・`/proc/net/unix` 等に出るアドレスがカーネルの綴り (`R/<ファイル名>` 等) になり、元のパスでどのソケットか見分けにくい。ファイル名は綴りの最後に残る ([symlink-file](#symlink-file) の bind の綴りにはファイル名が出ない) |
 | 他のスレッドの chdir | relative は、間に cwd が変わったままなら一般のエラー。変えて戻した場合は見えない |
 | 他人も書けるソケットのディレクトリ | sticky でなく他人も書けるソケットのディレクトリでは、D 無しの形の R を作ってから bind するまでの間に R を差し替えられ、別のディレクトリに bind しうる (そこに同じ名前が既にあれば `EADDRINUSE` で、上書きはしない)。D の中の R は D が 0700 なので差し替えられない |
@@ -574,7 +574,7 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 | D の置き場 | `TMPDIR` に作れない時は `/tmp`、それも作れない時はソケットのディレクトリに `.sockat.` の名前で作る。相対パスや深い `TMPDIR` でも使える。どこにも作れない時、bind は D 無しの形 (thread-cwd-sockdir → proc-sockdir → fork-cwd-sockdir の順)、connect 系は「[connect の順](#connect-の順)」の次の経路 |
 | 手段が使えない時 | thread-cwd を使えなくして、`/proc` を使える Linux は proc に進む。それも使えない時、bind は fork-cwd (peer は親)、connect 系は「[connect の順](#connect-の順)」の次の経路 ([proc-held](#proc-held)) に進む |
 | connect の経路 | [proc-direct](#proc-direct)・[proc-held](#proc-held)・[relative](#relative)・[widened](#widened)・[symlink-file](#symlink-file)・[at-direct](#at-direct) を 1 つずつ強制して、ソケットに届き、置き場に何も残らない。symlink-file は安全でない置き場を飛ばす、深すぎる `TMPDIR` で `/tmp` に回る、名前の衝突を飛ばし 16 回で打ち切る |
-| symlink-file の bind | bind が symlink を辿る OS で通り、`losses` が `respelled` だけ。辿らない OS で `skipped` に入り、何も残らない。元のパスに物がある時は `EADDRINUSE` を返し、次を試さない |
+| symlink-file の bind | bind が symlink を辿る OS で通り、`losses` が `respelled` だけ。Linux / Android では試さない。辿らない OS (未確認の OS で辿らなかった時) で `skipped` に入り、何も残らない。元のパスに物がある時はそのエラー (`EADDRINUSE`) を返し、次を試さない |
 | 失敗をやり直さない | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` を返し、後の経路・置き場に何も作らない |
 | connect と fork | `connect` 系と最終手段を使わない `connect_ex` 系は fork-cwd-direct でしか届かない時に `ENAMETOOLONG`、最終手段を使う `connect_ex` 系は届いて `losses` が `forked` だけ |
 | 最終手段を使う `bind_ex` | 既定の bind が `ENAMETOOLONG` になる所で symlink-dir を通って届く。持ち主だけが書ける置き場があればそこを使って `losses` が `respelled` だけ、共有の置き場しか無ければ `losses` が `respelled` と `recreatable-spelling`。置き場に何も残らない。既定の経路で届く所では `losses` がその経路のもの |

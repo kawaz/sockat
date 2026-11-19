@@ -17,7 +17,7 @@ kawaz が iOS で何かする機会ができた時に、実機で確かめて決
 | thread-cwd (`pthread_fchdir_np`) | 非公開 API。App Store の審査で弾かれる危険がある (外部の指摘) |
 | proc | `/proc` が無い |
 | fork | サンドボックスで禁止 |
-| 置き場の symlink (`<置き場>/sockat.XXXXXXXXXX/<ファイル名>`) | 手段が要らず、綴りは絶対パス。サンドボックスで他のアプリから見えず作り直されないので、失うのは `respelled` だけ。既定の経路にできる見込み |
+| symlink-dir (`<置き場>/sockat.XXXXXXXXXX/<ファイル名>`) | 手段が要らず、綴りは絶対パス。サンドボックスで他のアプリから見えず作り直されないので、失うのは `respelled` だけ。既定の経路にできる見込み |
 | 広げた sockaddr の bind | 253 バイトまで届くが、返るアドレスが途中で切れて読む側 (CPython、Go の `net.FileConn` 等) を壊す。失うものとして `truncated-address` (仮) を足し、`_ex` の最終手段にする案 |
 
 ## 確かめること

@@ -55,7 +55,7 @@
 
 ### 試す順番
 
-bind:
+bind (bind が最後の要素の symlink を辿る OS では、standard の次に symlink-file を試す。[DR-0016](DR-0016-bind-through-file-symlink.md)):
 
 | 順 | bind |
 |---|---|
