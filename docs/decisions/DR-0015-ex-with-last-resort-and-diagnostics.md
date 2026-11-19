@@ -99,6 +99,8 @@
 - 失敗した時こそ、なぜ届かなかったかを知りたい (kawaz 裁定 2026-11-19)
 - `discard` が消すだけなら 3 言語でそろい、listener を他のライブラリに渡した後で二重に閉じることが起きない
 
+- 相対パスの時は、realpath を引く前と bind の後でプロセスの cwd の `(st_dev, st_ino)` を比べ、違えば覚えられない時と同じに扱う (間の cwd の変更で、元の cwd の無関係なファイルを覚えて消さないため。sockat-go の指摘 2026-11-19。入口で絶対パスにする案は、短い相対パスが標準と違う経路に回り振る舞いが変わるので採らない)
+
 ## Alternatives Considered
 
 - 案 A: any 系を別の関数・別のパッケージで置く (`bind_any`、`connect_any` 系、Rust の feature `any`、Python の `sockat.any`、Go の `atanycost`)
