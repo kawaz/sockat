@@ -1,5 +1,5 @@
 {
-  "rs": { "cwd": "../../sockat-rs/main", "cmd": null },
-  "py": { "cwd": "../../sockat-py/main", "cmd": null },
-  "go": { "cwd": "../../sockat-go/main", "cmd": null }
+  "rs": {"cwd": "../../sockat-rs/main", "cmd": null},
+  "py": {"cwd": "../../sockat-py/main", "cmd": null},
+  "go": {"cwd": "../../sockat-go/main", "cmd": ["tmp.local/bin/sockat-conform"], "build": ["just", "build-conform"]}
 }
