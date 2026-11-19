@@ -88,7 +88,7 @@ bind:
 
 | Name | What it does | OS | What is lost |
 |---|---|---|---|
-| [standard](#standard) | hand the path to the standard unchanged | all | nothing |
+| [standard](#standard) | hand the path to the standard unchanged | all | `cwd-relative` for a relative path |
 | [thread-cwd](#thread-cwd) | move a throwaway thread's cwd into D, then `R/<file name>` | Linux / Android / Apple OSes | `respelled` |
 | [at](#at) | `bindat(Dfd, R/<file name>)` | FreeBSD | `respelled` |
 | [proc](#proc) | `/proc/self/fd/<Dfd>/R/<file name>` | Linux / Android with `/proc` usable | `respelled` |
@@ -127,6 +127,7 @@ What taking the route loses compared to the standard. The any family's `losses` 
 | Name | What is lost | Attached when |
 |---|---|---|
 | `respelled` | the address the kernel reports is not the original path ("[What differs from the standard for a long path](#what-differs-from-the-standard-for-a-long-path)"). Even in a language whose standard removes the file when the listener is closed (Go's standard etc.) it is not removed; the file at the original path has to be removed by the caller (`_ex`'s `discard()` etc.). The random name (R) in the spelling has been removed, so normally it hits nothing, but the spelling may be visible to other users (Linux's `/proc/net/unix`); if the process's cwd is a place others can write to (`/tmp` etc.), after another user sees and recreates it, unlinking by that spelling may remove a same-named file in a directory that user chose. Removing by the original path hits nothing | a bind took a route other than standard |
+| `cwd-relative` | the spelling the kernel keeps is relative to the cwd (the given path went to the standard unchanged). Unlinking / `stat`ing by that spelling after the cwd changes hits another place. A hazard the standard already has rather than one a route introduced, but it is reported. Removing by the original path made absolute hits nothing | a bind took [standard](#standard) with a relative path |
 | `forked` | the side effects of forking ("[Side effects of the fork route](#side-effects-of-the-fork-route)") | [fork](#fork), [fork-sockdir](#fork-sockdir) or [fork-direct](#fork-direct) was taken |
 | `recreatable-spelling` | the spelling the kernel reports goes through a shared base (`/tmp` etc.). The name is random, so it cannot be guessed in advance, but after the bind other users may see it (Linux's `/proc/net/unix`). If another user recreates it and then it is unlinked by that spelling, a same-named file in a directory the other user chose may be removed. Removing by the original path (`discard()` etc.) hits nothing. The name's length is not the defense (the name is visible after the bind) | `bind_any` took the [symlink](#symlink) in a shared base |
 
@@ -160,8 +161,8 @@ Numbers are in bytes.
 - Usable when: the path is up to the standard length
 - Not usable when: the path is over the standard length
 - Reach: the whole path up to the standard length
-- What is lost: nothing
-- The same for bind and connect
+- What is lost: for a bind, `cwd-relative` with a relative path, otherwise nothing; for a connect, nothing
+- Apart from what is lost, the same for bind and connect
 
 #### thread-cwd
 

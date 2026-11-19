@@ -88,7 +88,7 @@ bind:
 
 | 名前 | 中身 | OS | 失うもの |
 |---|---|---|---|
-| [standard](#standard) | 標準にそのまま渡す | 全部 | 無し |
+| [standard](#standard) | 標準にそのまま渡す | 全部 | 相対パスなら `cwd-relative` |
 | [thread-cwd](#thread-cwd) | 使い捨てのスレッドの cwd を D に移し、`R/<ファイル名>` | Linux / Android / Apple の OS | `respelled` |
 | [at](#at) | `bindat(Dfd, R/<ファイル名>)` | FreeBSD | `respelled` |
 | [proc](#proc) | `/proc/self/fd/<Dfd>/R/<ファイル名>` | `/proc` を使える Linux / Android | `respelled` |
@@ -127,6 +127,7 @@ connect:
 | 名前 | 失うもの | 付く時 |
 |---|---|---|
 | `respelled` | カーネルが返すアドレスが元のパスでない (「[長いパスで標準と違う点](#長いパスで標準と違う点)」)。標準が listener を閉じる時に消す言語 (Go の標準等) でも消えず、元のパスのファイルは自分で消す (`_ex` の `discard()` 等)。綴りの中の乱数の名前 (R) は消してあるので普段は何にも当たらないが、綴りは他の利用者に見えうる (Linux の `/proc/net/unix`) ので、プロセスの cwd が他人も書ける場所 (`/tmp` 等) だと、相手が見て作り直した後にその綴りで unlink すると、相手の選んだディレクトリの同じ名前のファイルを消しうる。元のパスで消せば当たらない | bind が標準以外の経路を通った |
+| `cwd-relative` | カーネルが覚えた綴りが cwd からの相対パス (渡したパスがそのまま標準に渡った)。cwd を変えた後にその綴りで unlink / stat すると別の場所に当たる。sockat が経路で失わせたものでなく標準が元から持つ危険だが、知らせる。元のパスを絶対パスにして消せば当たらない | 相対パスで bind が [standard](#standard) を通った |
 | `forked` | fork の副作用 (「[fork の副作用](#fork-の副作用)」) | [fork](#fork)・[fork-sockdir](#fork-sockdir)・[fork-direct](#fork-direct) を通った |
 | `recreatable-spelling` | カーネルが返す綴りが共有の置き場 (`/tmp` 等) を通る。名前は乱数なので事前には当てられないが、bind の後は他の利用者に見えうる (Linux の `/proc/net/unix`)。他の利用者がそれを作り直した後にその綴りで unlink すると、相手の選んだディレクトリの同じ名前のファイルを消しうる。元のパス (`discard()` 等) で消せば当たらない。名前の長さは防御でない (名前は bind の後に見える) | `bind_any` が共有の置き場の [symlink](#symlink) を通った |
 
@@ -160,8 +161,8 @@ connect:
 - 使える条件: パスが標準に渡す長さ以下
 - 使えない時: パスが標準に渡す長さを超える
 - 届く長さ: パス全体が標準に渡す長さ以下
-- 失うもの: 無し
-- bind と connect で同じ
+- 失うもの: bind は相対パスなら `cwd-relative`、他は無し。connect は無し
+- 失うもの以外は bind と connect で同じ
 
 #### thread-cwd
 

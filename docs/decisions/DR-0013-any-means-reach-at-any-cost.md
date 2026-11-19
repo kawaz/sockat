@@ -50,6 +50,7 @@ any 系は、標準の型 (listener / stream) と一緒に、次の 3 つを返�
 | 失ったものの名前 | 失ったもの | 付く時 |
 |---|---|---|
 | `respelled` | カーネルが返すアドレスが元のパスでない。標準が listener を閉じる時に消す言語でも消えず、元のパスで消す必要がある (`_ex` の `discard()` 等) | bind が標準以外の経路を通った |
+| `cwd-relative` | カーネルが覚えた綴りが cwd からの相対パス (渡したパスがそのまま標準に渡った)。cwd を変えた後にその綴りで unlink / stat すると別の場所に当たる。sockat が経路で失わせたものでなく標準が元から持つ危険だが、any 系を選んだ利用者は何を失ったかを知りたいので知らせる (kawaz 裁定 2026-11-19) | 相対パスで bind が standard を通った |
 | `forked` | fork の副作用 (子が fd の複製を持つ、`SIGCHLD`、`pthread_atfork` 等) | fork・fork-sockdir・fork-direct を通った |
 | `recreatable-spelling` | カーネルが返す綴りが共有の置き場 (`/tmp` 等) を通る。名前は乱数なので事前には当てられないが、bind の後は他の利用者に見えうる (Linux の `/proc/net/unix`)。他の利用者がそれを作り直した後にその綴りで unlink すると、相手の選んだディレクトリの同じ名前のファイルを消しうる。元のパス (`discard()` 等) で消せば当たらない。名前の長さは防御でない (名前は bind の後に見える) | `bind_any` が共有の置き場の symlink を通った |
 
