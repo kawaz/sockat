@@ -65,17 +65,17 @@ bind:
 | 4 | 中心の経路を fork で |
 | 5 | `ENAMETOOLONG` |
 
-connect は、書き込みもスレッドも要らない経路を先に、D を作る経路とスレッドを立てる経路をその後にする (kawaz 裁定 2026-11-19)。標準に渡す長さ以下なら標準にそのまま、その後は OS ごとに次の順。最終手段を使う `connect_ex` 系は最後に fork (ソケットのディレクトリの fd とファイル名)。
+connect は、書き込みもスレッドも要らない経路を先に、D を作る経路とスレッドを立てる経路をその後にする (kawaz 裁定 2026-11-19)。標準に渡す長さ以下なら標準にそのまま、その後は OS ごとに次の順。最終手段を使う `connect_ex` 系は最後に fork-cwd-direct (ソケットのディレクトリの fd とファイル名)。
 
 | OS | connect の順 |
 |---|---|
-| Linux / Android (`/proc` あり) | R を通さない /proc → スレッド cwd → 中心の経路の /proc 版 → fd で掴む形 (D の中のファイルを指す symlink) → symlink |
-| Linux / Android (`/proc` 無し) | 相対パス → スレッド cwd → symlink |
-| Apple の OS | 相対パス → 広げた sockaddr → スレッド cwd → symlink |
+| Linux / Android (`/proc` あり) | R を通さない /proc → スレッド cwd → 中心の経路の /proc 版 → fd で掴む形 (D の中のファイルを指す symlink) → symlink-file |
+| Linux / Android (`/proc` 無し) | 相対パス → スレッド cwd → symlink-file |
+| Apple の OS | 相対パス → 広げた sockaddr → スレッド cwd → symlink-file |
 | FreeBSD | connectat (ソケットのディレクトリの fd とファイル名) → connectat (D の fd と `R/<ファイル名>`) |
-| NetBSD / OpenBSD / illumos / その他の Unix | 相対パス → symlink |
+| NetBSD / OpenBSD / illumos / その他の Unix | 相対パス → symlink-file |
 
-- bind は R を通さない /proc (`/proc/self/fd/<fd>/<ファイル名>`)・相対パス・広げた sockaddr・置き場の symlink を使わない
+- bind は R を通さない /proc (`/proc/self/fd/<fd>/<ファイル名>`)・相対パス・広げた sockaddr・置き場の symlink-dir を使わない
 - connect の綴りは相手に残らない (connect した側のソケットは bind されない) ので、R を挟む理由が無い。どの経路でも失うものは無い。書き込み (D・R・symlink を作る) もスレッドも要らない経路が速く、相対パスや広げた sockaddr は中心の経路より遠くまで届く場面がある。相対パスの経路は途中で cwd が変わると一般のエラーになる (事後に確かめるので、別の所へ届くことは無い)
 
 理由:
@@ -85,7 +85,7 @@ connect は、書き込みもスレッドも要らない経路を先に、D を�
 - スレッド cwd と /proc 版は副作用が無い (sockat-go の実測: peer の pid は呼び出し元のまま、fd の複製も無い、並行する `getcwd` は変わらない)。`connect` も fork 無しで届く
 - seccomp の filter はプロセスの kill (SIGSYS) で `unshare` を断ることがある (systemd の `SystemCallFilter=` の既定) ので、filter が掛かっていれば呼ばない
 - `pthread_fchdir_np(-1)` で戻す形は、呼び出し元がスレッドに付けた cwd を消しうる。使い捨てのスレッドなら触らずに済む
-- bind が使わない経路は、綴りが後で無関係なファイルに当たる (/proc、相対パス)、アドレスが切れて読む側を壊す (広げた sockaddr)、中心の経路で足りる (置き場の symlink)
+- bind が使わない経路は、綴りが後で無関係なファイルに当たる (/proc、相対パス)、アドレスが切れて読む側を壊す (広げた sockaddr)、中心の経路で足りる (置き場の symlink-dir)
 
 悪い面:
 
@@ -112,11 +112,11 @@ connect は、書き込みもスレッドも要らない経路を先に、D を�
 ## Consequences
 
 - 試験 (中心の経路を強制して): プロセスの cwd が変わらない、元のパスにソケットができ届く、返る綴りを unlink / stat しても無関係なファイルに当たらない、片付けの後に置き場に何も残らない、差し替えたディレクトリを使わず中身も消さない、`TMPDIR` に作れない時は `/tmp`、それも作れない時はソケットのディレクトリ、スレッド cwd が使えない時は /proc 版、それも使えない時は bind は fork・connect は connect の順の次の経路
-- 各言語の実装は経路を作り直す (bind の /proc・symlink・相対パスの経路を外し、中心の経路を足す)
+- 各言語の実装は経路を作り直す (bind の /proc・symlink-dir・相対パスの経路を外し、中心の経路を足す)
 
 ### connect の fork と FreeBSD の connectat (ソケットのディレクトリの fd) は D を通さない
 
-- 最終手段の fork (fork-direct) と FreeBSD の connectat (connect の順の最初) は、ソケットのディレクトリの fd とファイル名で connect する (kawaz 裁定 2026-11-19)
+- 最終手段の fork (fork-cwd-direct) と FreeBSD の connectat (connect の順の最初) は、ソケットのディレクトリの fd とファイル名で connect する (kawaz 裁定 2026-11-19)
 - connect した側のソケットは bind されないので、connect の綴りはどこにも残らない。R を挟む理由が無く、挟むと届くファイル名が 11 バイト短くなるだけ
 
 ## 関連

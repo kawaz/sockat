@@ -1,9 +1,11 @@
 ---
 title: ファイルを指す symlink を通した bind でファイル名の上限を無くす
-status: open
+status: resolved
 category: task
 created: 2026-11-19
 origin: 自リポ TODO
+close_reason: documented
+close_ref: docs/decisions/DR-0016-bind-through-file-symlink.md
 ---
 
 # ファイルを指す symlink を通した bind でファイル名の上限を無くす

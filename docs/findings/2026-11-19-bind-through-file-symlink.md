@@ -1,6 +1,6 @@
 # ファイルを指す symlink を通した bind の実測 (macOS / Linux)
 
-2026-11-19。[docs/issue/2026-11-19-bind-through-file-symlink.md](../issue/2026-11-19-bind-through-file-symlink.md) の「確かめること」のうち、手元の macOS と Linux (docker) で確かめられるものを実測した。
+2026-11-19。[docs/issue/archive/2026-11-19-bind-through-file-symlink.md](../issue/archive/2026-11-19-bind-through-file-symlink.md) の「確かめること」のうち、手元の macOS と Linux (docker) で確かめられるものを実測した。
 
 ## 目的
 
