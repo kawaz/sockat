@@ -325,7 +325,7 @@ connect:
 - やり方: 安全な置き場に、ソケットのファイルの綴り (相対パスなら cwd を前に付ける) を指す symlink `<置き場>/sockat.XXXXXXXXXX` を作り、その綴りで bind / connect して、すぐ消す。消すのは成功でも失敗でも ([symlink の置き場と名前](#symlink-の置き場と名前))
 - bind の使える条件: bind が最後の要素の symlink を辿る OS (macOS で実測。Linux は辿らない。他の OS は未確認)。[standard](#standard) の次に試し、辿るかは実行時に見分ける
 - bind の使えない時: どの候補も、綴りが sockaddr に入らない・置き場が安全でない・symlink を作れない。カーネルが symlink を辿らなかった
-- 辿るかの見分け方: bind が `EADDRINUSE` を返した時に元のパスを `lstat` する。無ければ (`ENOENT`) カーネルが辿らなかったとみなし、この経路を使えないとして次の経路へ進む (`skipped` に入る)。あれば本当の `EADDRINUSE` として返し、次を試さない ([経路の失敗の扱い](#経路の失敗の扱い))
+- 辿るかの見分け方: Linux / Android では試さない。他の OS では、bind が失敗した時 (エラーを問わない) に元のパスを `lstat` する。物があればそのエラーを返し、次を試さない ([経路の失敗の扱い](#経路の失敗の扱い))。無いか確かめられなければ、カーネルが辿らなかったとみなし、この経路を使えないとして次の経路へ進む (`skipped` に入る。本当の失敗なら次の経路でも同じ失敗になり、そこで返る)
 - connect の使える条件: connect 系。FreeBSD 以外。「[connect の順](#connect-の順)」の最後 (最終手段を使う `connect_ex` 系はその後に [fork-cwd-direct](#fork-cwd-direct))
 - connect の使えない時: どの候補も、綴りが sockaddr に入らない・置き場が安全でない・symlink を作れない
 - 届くファイル名: 綴り `<置き場>/sockat.XXXXXXXXXX` にファイル名が出ないので、ファイル名の長さによらない (綴りが sockaddr に入る長さ以内。元のパス全体は PATH_MAX まで)
