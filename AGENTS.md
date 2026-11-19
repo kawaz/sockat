@@ -1,6 +1,6 @@
 # AGENTS.md — sockat (ハブ) の作業ルール
 
-sockat は、`sun_path` の上限を超えるパスでも Unix domain socket を bind / connect できるライブラリ。このリポは言語によらない仕様の正本と、言語ごとの実装 (`kawaz/sockat-<言語>`) への入口。コードは置かない。
+sockat は、`sun_path` の上限を超えるパスでも Unix domain socket を bind / connect できるライブラリ。このリポは言語によらない仕様の正本と、言語ごとの実装 (`kawaz/sockat-<言語>`) への入口。ライブラリのコードは置かない。言語によらない適合試験 (`conformance/` の表と、それを各言語の試験用 CLI に流して突き合わせるスクリプト) は置く ([docs/design/conformance.md](docs/design/conformance.md))。
 
 ## 必読
 
@@ -16,6 +16,8 @@ sockat は、`sun_path` の上限を超えるパスでも Unix domain socket を
 | `docs/SPEC-ja.md` / `docs/SPEC.md` | 言語によらない仕様 |
 | `docs/decisions/` | このリポの構成の判断 (DR) |
 | `docs/research/` | 他言語への移植等の調査 |
+| `docs/design/conformance.md` | 適合試験の決まり (各言語の試験用 CLI の入出力、表の書き方) |
+| `conformance/` | 適合試験の表と、それを流して突き合わせるスクリプト |
 
 ## 守ること
 
