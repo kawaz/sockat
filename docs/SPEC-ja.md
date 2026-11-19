@@ -48,7 +48,7 @@
   - `skipped` に入るのは、その呼び出しで試す順に並ぶ経路 (「[試す順番](#試す順番)」と、OS と実行時の状態 (`/proc` を使えるか等) で決まる「[予備の経路 (connect 系)](#予備の経路-connect-系)」の 1 つの列) のうち使えなかったもの全部。長いパスの [standard](#standard) も入る (理由はパスが長い)。D をどこにも作れず `-sockdir` の経路に進んだ時は、D を通す経路も `-sockdir` の経路も入る。その OS や状態の列に無い経路は入れない。1 つの経路で置き場の候補を複数試した時も 1 件にする
   - `route`・`skipped` の名前と `reason` は診断用で、中身を約束しない (経路は増えたり変わったりする)
   - 項目と型の名前は各言語の慣習で決める。失うものの名前は各言語の慣習 (enum 等) で表してよいが、文字列にした時は SPEC の名前と同じにする
-- any 系が失敗した時も、エラーに `skipped` を付ける。実際に bind / connect して失敗した経路があれば、その名前 (`route`) も付ける (短いパスで標準が失敗した時は `standard`。経路を試す前の失敗 (ディレクトリが無い等) と、全部が使えなかった `ENAMETOOLONG` では無い) ([DR-0013](decisions/DR-0013-any-means-reach-at-any-cost.md))
+- any 系が失敗した時も、エラーに `skipped` を付ける。実際に bind / connect して失敗した経路があれば、その名前 (`route`) も付ける (短いパスで標準が失敗した時は `standard`。経路を試す前の失敗 (ディレクトリが無い等) と、全部が使えなかった `ENAMETOOLONG` では無い)。経路を試す前の失敗では `skipped` も空 (長さの判定はソケットのディレクトリを引いた後なので、`standard` もまだ試していない) ([DR-0013](decisions/DR-0013-any-means-reach-at-any-cost.md))
   - 付け方は各言語の慣習に従う。OS のエラーの errno は取り出せる形を保つ ([エラー](#エラー))
 - any 系は既定の API に出さず、使う人が選んで有効にする仕組みの後ろに置く (Rust は feature `any`)。`connect_any` 系は fork の経路を作れない言語では既定の connect と変わらないので出さず、README の表に「fork の経路なし」と書く ([DR-0002](decisions/DR-0002-no-connect-any-without-fork.md))。`bind_any` は fork の有無によらず出す
 - 標準の connect が元から待たない言語 (Node.js 等) は、標準と同じ形の connect を 1 つだけ出す ([DR-0003](decisions/DR-0003-single-connect-when-standard-never-blocks.md))
