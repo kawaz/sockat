@@ -387,6 +387,7 @@ def main():
     ap.add_argument("--langs", help="流す言語 (カンマ区切り。既定は langs.json の全部)")
     ap.add_argument("--case", action="append", help="流す場面の名前 (カンマ区切り、繰り返し可。既定は全部)")
     ap.add_argument("--keep", action="store_true", help="場面の一時ディレクトリを消さずに残す")
+    ap.add_argument("--no-build", action="store_true", help="流す前に各言語の CLI を作り直さない (langs.json の build を走らせない)")
     args = ap.parse_args()
 
     cases = load_cases()
@@ -404,6 +405,19 @@ def main():
         if unknown:
             fail_usage(f"cases.json に無い場面: {', '.join(unknown)}")
         cases = [c for c in cases if c["name"] in wanted]
+
+    if not args.no_build:
+        # 各言語の CLI を流す前に作り直す (古いビルドのまま比べると、言語の差でなく作り忘れが差に出るため)。
+        for l, spec in langs.items():
+            build = spec.get("build")
+            repo = (HUB / spec["cwd"]).resolve() if spec.get("cwd") else None
+            if not build or spec.get("cmd") is None or repo is None or not repo.is_dir():
+                continue
+            build = [str(a).replace("{repo}", str(repo)) for a in build]
+            r = subprocess.run(build, cwd=repo, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            if r.returncode != 0:
+                print(f"{l}: build に失敗した ({' '.join(build)})\n{r.stderr[-2000:]}", file=sys.stderr)
+                sys.exit(1)
 
     commands = {l: lang_command(spec) for l, spec in langs.items()}
     base = tempfile.mkdtemp(prefix="conformance.", dir=os.environ.get("TMPDIR") or None)
