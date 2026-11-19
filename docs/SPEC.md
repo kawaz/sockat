@@ -371,6 +371,7 @@ Used by a bind when D can be created nowhere. [thread-cwd-sockdir](#thread-cwd-s
 - Create an R in the socket's directory (named `.sockat.XXXXXXXXXX`, pointing to the socket's directory's realpath) and, resolving against the socket's directory fd instead of D's, bind by `.sockat.XXXXXXXXXX/<file name>`
 - The means are tried in the same order as with D (thread-cwd-sockdir (at-sockdir on FreeBSD) → proc-sockdir → fork-sockdir)
 - The spelling is 19 bytes + the file name
+- The `-sockdir` routes are tried only when an attempt to create D failed everywhere. When no route through D was usable (by length or means) and D was not created, they are not tried (their spelling is longer, so a route unusable by length is unusable as `-sockdir` too; likewise when no means exists). `skipped` then holds no `-sockdir` route
 - Cleanup: `unlinkat(<socket's directory fd>, R)` only if this call created R. On success and on failure. A failure to remove is ignored (as in step 5 of [D and R](#d-and-r))
 - If the socket's directory cannot be opened or R cannot be created either, `ENAMETOOLONG`
 

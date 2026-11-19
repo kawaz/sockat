@@ -371,6 +371,7 @@ D をどこにも作れない時の bind が使う。[thread-cwd-sockdir](#threa
 - ソケットのディレクトリに R (名前は `.sockat.XXXXXXXXXX`、ソケットのディレクトリの realpath を指す) を作り、D の fd の代わりにソケットのディレクトリの fd を基準にして、`.sockat.XXXXXXXXXX/<ファイル名>` で bind する
 - 手段は D と同じ順 (thread-cwd-sockdir (FreeBSD は at-sockdir) → proc-sockdir → fork-sockdir)
 - 綴りは 19 バイト + ファイル名
+- `-sockdir` の経路は、D を作ろうとしてどこにも作れなかった時だけ試す。D を通す経路がどれも使えず (長さか手段) D を作らなかった時は試さない (`-sockdir` は綴りが長いので、長さで使えなかった経路は `-sockdir` でも使えない。手段が無い時も同じ)。その時の `skipped` に `-sockdir` は入らない
 - 片付け: R は自分が作れた時だけ `unlinkat(<ソケットのディレクトリの fd>, R)`。成功でも失敗でもする。消す失敗は無視する ([D と R](#d-と-r) の手順 5 と同じ)
 - ソケットのディレクトリを開けない、R も作れない時は `ENAMETOOLONG`
 

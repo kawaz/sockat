@@ -111,7 +111,9 @@ class Env:
         self.root.mkdir()
         self.tmp.mkdir()
         self.xdg.mkdir(mode=0o700)
-        long = self.root
+        # {long} は必ず {root} から 1 段以上降りる ($TMPDIR が深いと {root} だけで長さを満たし、
+        # {long} が既にある {root} と同じになって「ディレクトリが無い」場面が作れなくなるため)。
+        long = self.root / LONG_SEGMENT
         while len(os.fsencode(str(long))) < LONG_MIN_BYTES:
             long = long / LONG_SEGMENT
         self.long = long

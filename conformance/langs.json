@@ -1,5 +1,5 @@
 {
-  "rs": {"cwd": "../../sockat-rs/main", "cmd": null},
+  "rs": {"cwd": "../../sockat-rs/main", "cmd": ["just", "--justfile", "{repo}/justfile", "conformance"], "build": ["just", "--justfile", "{repo}/justfile", "conformance-build"]},
   "py": {"cwd": "../../sockat-py/main", "cmd": ["{repo}/.venv/bin/python", "{repo}/conformance/cli.py"], "build": ["uv", "sync"]},
   "go": {"cwd": "../../sockat-go/main", "cmd": ["tmp.local/bin/sockat-conform"], "build": ["just", "build-conform"]}
 }
