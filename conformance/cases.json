@@ -21,7 +21,7 @@
     "path": "{long}/s.sock",
     "cwd": "{root}",
     "setup": ["mkdir {long}"],
-    "expect": { "ok": true, "error": null, "losses": ["respelled"], "file": true, "residue": [] }
+    "expect": { "ok": true, "error": null, "file": true, "residue": [] }
   },
   {
     "name": "long-bind-no-directory",
@@ -110,5 +110,57 @@
     "cwd": "{root}",
     "setup": ["mkdir {long}"],
     "expect": { "ok": false, "error": "invalid-argument", "route": null, "losses": [], "skipped": [], "created": [] }
+  },
+  {
+    "name": "long-absolute-bind-last-resort",
+    "op": "bind",
+    "last_resort": true,
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "expect": { "ok": true, "error": null, "file": true, "residue": [] }
+  },
+  {
+    "name": "long-filename-bind",
+    "op": "bind",
+    "path": "{long}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "expect": { "residue": [] }
+  },
+  {
+    "name": "long-filename-bind-last-resort",
+    "op": "bind",
+    "last_resort": true,
+    "path": "{long}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "expect": { "residue": [] }
+  },
+  {
+    "name": "long-connect-last-resort",
+    "op": "connect",
+    "last_resort": true,
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}", "listen {long}/s.sock"],
+    "expect": { "ok": true, "error": null, "losses": [], "received": "x", "residue": [] }
+  },
+  {
+    "name": "long-filename-connect",
+    "op": "connect",
+    "path": "{long}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}", "listen {long}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.sock"],
+    "expect": { "ok": true, "error": null, "losses": [], "received": "x", "residue": [] }
+  },
+  {
+    "name": "long-filename-connect-last-resort",
+    "op": "connect",
+    "last_resort": true,
+    "path": "{long}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}", "listen {long}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.sock"],
+    "expect": { "ok": true, "error": null, "losses": [], "received": "x", "residue": [] }
   }
 ]

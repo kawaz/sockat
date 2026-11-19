@@ -87,6 +87,8 @@ def load_cases():
                 fail_usage(f"cases.json: 場面 {c.get('name')!r} に {key} が無い")
         if c["op"] not in ("bind", "connect"):
             fail_usage(f"cases.json: 場面 {c['name']!r} の op は bind か connect")
+        if not isinstance(c.get("last_resort", False), bool):
+            fail_usage(f"cases.json: 場面 {c['name']!r} の last_resort は true か false")
         unknown = set(c["expect"]) - set(FIELDS)
         if unknown:
             fail_usage(f"cases.json: 場面 {c['name']!r} の expect に知らない項目 {sorted(unknown)}")
@@ -97,7 +99,12 @@ def load_cases():
 
 
 def load_langs():
-    return json.loads((CONFORMANCE / "langs.json").read_text(encoding="utf-8"))
+    langs = json.loads((CONFORMANCE / "langs.json").read_text(encoding="utf-8"))
+    for name, spec in langs.items():
+        lacks = spec.get("lacks") if isinstance(spec, dict) else None
+        if not isinstance(lacks, list) or not all(isinstance(r, str) for r in lacks):
+            fail_usage(f"langs.json: 言語 {name!r} の lacks は経路の名前の並び")
+    return langs
 
 
 class Env:
@@ -274,7 +281,10 @@ def run_one(case, argv, base, keep):
         before_tree = env.tree()
         before_tmp = tmp_sockat_entries()
         try:
-            proc = subprocess.run(argv, input=json.dumps({"op": case["op"], "path": path}),
+            request = {"op": case["op"], "path": path}
+            if "last_resort" in case:
+                request["last_resort"] = case["last_resort"]
+            proc = subprocess.run(argv, input=json.dumps(request),
                                   cwd=cwd, env=child_env, umask=0o022, capture_output=True,
                                   text=True, timeout=CLI_TIMEOUT_SEC)
         except (FileNotFoundError, PermissionError) as e:
@@ -325,8 +335,44 @@ def implicit_expect(case, result):
     return exp
 
 
-def judge(case, outcomes):
-    """場面の判定。戻り値: (言語ごとの状態, 項目ごとの詳細の行)。"""
+def lack_groups(outcomes, lacks):
+    """比べる組。ある言語の route が別の言語の lacks に入っている場面だけ組を分ける。
+
+    戻り値: (組の並び, 組分けのきっかけになった経路の集まり)。分けない時は全言語で 1 組。
+    組は「lacks のうちきっかけの経路に当たる部分」が同じ言語どうし (それ以外の作れない経路は
+    この場面の結果に効かないので、組を分ける理由にしない)。
+    """
+    results = {l: o["result"] for l, o in outcomes.items() if o["status"] == "result"}
+    used = {r["route"] for l, r in results.items()
+            if any(r["route"] in lacks[m] for m in results if m != l)}
+    if not used:
+        return [set(results)], used
+    groups = {}
+    for l in results:
+        groups.setdefault(frozenset(lacks[l] & used), set()).add(l)
+    return list(groups.values()), used
+
+
+def odd_in(encoded):
+    """値の並びで、多数派と違う言語。多数派が決まらなければ全部。"""
+    distinct = set(encoded.values())
+    if len(distinct) <= 1:
+        return set()
+    counts = {v: list(encoded.values()).count(v) for v in distinct}
+    top = max(counts.values())
+    majority = [v for v, n in counts.items() if n == top]
+    if len(majority) == 1 and top > 1:
+        return {l for l, v in encoded.items() if v != majority[0]}
+    return set(encoded)
+
+
+def judge(case, outcomes, lacks):
+    """場面の判定。戻り値: (言語ごとの状態, 項目ごとの詳細の行, 分けた組 (分けなければ None))。
+
+    組を分けた時、場面の expect はきっかけの経路を作れる言語にだけ当て、作れない言語には
+    暗黙の期待と「作れないきっかけの経路が skipped に入っている」ことを当てる。
+    自分の lacks に入った経路を route にした言語は、どの場面でも期待違い。
+    """
     cells = {}
     detail = {}
     results = {l: o["result"] for l, o in outcomes.items() if o["status"] == "result"}
@@ -339,33 +385,43 @@ def judge(case, outcomes):
             cells[lang] = "準備失敗"
         else:
             cells[lang] = "一致"
+    groups, used = lack_groups(outcomes, lacks)
+    expects = {}
+    for l, r in results.items():
+        if lacks[l] & used:
+            expects[l] = implicit_expect({**case, "expect": {}}, r)
+        else:
+            expects[l] = implicit_expect(case, r)
     for field in FIELDS:
         values = {l: r[field] for l, r in results.items()}
         encoded = {l: json.dumps(v, ensure_ascii=False) for l, v in values.items()}
-        distinct = set(encoded.values())
         odd = set()
-        if len(distinct) > 1:
-            counts = {v: list(encoded.values()).count(v) for v in distinct}
-            top = max(counts.values())
-            majority = [v for v, n in counts.items() if n == top]
-            if len(majority) == 1 and top > 1:
-                odd = {l for l, v in encoded.items() if v != majority[0]}
-            else:
-                odd = set(values)
-            for l in odd:
-                if cells[l] == "一致":
-                    cells[l] = "差"
+        for g in groups:
+            odd |= odd_in({l: encoded[l] for l in g})
+        for l in odd:
+            if cells[l] == "一致":
+                cells[l] = "差"
         mismatch = set()
+        exp_values = set()
         for l, r in results.items():
-            exp = implicit_expect(case, r)
-            if field in exp and r[field] != exp[field]:
+            exp = expects[l]
+            if field in exp:
+                exp_values.add(json.dumps(exp[field], ensure_ascii=False))
+                if r[field] != exp[field]:
+                    mismatch.add(l)
+            if field == "route" and r["route"] in lacks[l]:
+                exp_values.add(f"{l} の lacks に無い経路")
                 mismatch.add(l)
-                cells[l] = "期待違い"
+            missing = lacks[l] & used
+            if field == "skipped" and missing:
+                exp_values.add(f"{l}: {' と '.join(sorted(missing))} を含む")
+                if not missing <= set(r["skipped"]):
+                    mismatch.add(l)
+        for l in mismatch:
+            cells[l] = "期待違い"
         if odd or mismatch:
-            exp_values = {json.dumps(implicit_expect(case, r).get(field), ensure_ascii=False)
-                          for r in results.values() if field in implicit_expect(case, r)}
             detail[field] = (encoded, odd, mismatch, exp_values)
-    return cells, detail
+    return cells, detail, (groups if used else None)
 
 
 def width(s):
@@ -420,11 +476,13 @@ def main():
                 sys.exit(1)
 
     commands = {l: lang_command(spec) for l, spec in langs.items()}
+    lacks = {l: set(spec["lacks"]) for l, spec in langs.items()}
     base = tempfile.mkdtemp(prefix="conformance.", dir=os.environ.get("TMPDIR") or None)
     rows = []
     details = []
     failed = False
     messages = []
+    splits = []
     try:
         for case in cases:
             outcomes = {}
@@ -433,7 +491,9 @@ def main():
                     outcomes[lang] = {"status": "unimplemented", "message": cmd}
                     continue
                 outcomes[lang] = run_one(case, cmd, base, args.keep)
-            cells, detail = judge(case, outcomes)
+            cells, detail, groups = judge(case, outcomes, lacks)
+            if groups:
+                splits.append((case["name"], groups))
             for lang, o in outcomes.items():
                 if o["status"] == "unimplemented":
                     commands[lang] = o["message"]
@@ -453,8 +513,13 @@ def main():
     if unimplemented:
         print("\n未実装 (差の判定から外した):")
         print("\n".join(unimplemented))
+    if splits:
+        print("\n作れない経路で組を分けて比べた場面:")
+        for name, groups in splits:
+            print(f"  {name}: " + " / ".join(",".join(l for l in langs if l in g) for g in groups))
     for case, detail in details:
-        print(f"\n== {case['name']}  ({case['op']} {json.dumps(case['path'], ensure_ascii=False)})")
+        lr = " last_resort" if case.get("last_resort") else ""
+        print(f"\n== {case['name']}  ({case['op']}{lr} {json.dumps(case['path'], ensure_ascii=False)})")
         header = ["項目"] + list(langs) + ["期待"]
         drows = []
         for field, (encoded, odd, mismatch, exp_values) in detail.items():
