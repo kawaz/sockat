@@ -17,26 +17,4 @@
 
 ## 裁定待ち
 
-### DS-Q1: `discard()` の同一性の判定 (閉じた後の inode 番号の使い回し)
-
-`discard()` は覚えた `(st_dev, st_ino)` と今のパスが同じ時だけ消す (SPEC「公開する操作」)。sockat-rs と sockat-py の release を止めている試験の失敗はこれが原因 (実測は [findings](findings/2026-11-19-inode-reuse-after-close.md))。
-
-| 場面 | ext4 | btrfs / tmpfs / overlay / APFS |
-|---|---|---|
-| listener を開いたまま置き換え | 見分ける | 見分ける |
-| listener を閉じてから置き換え | **同じ番号になり、置き換え先を消す** | 見分ける |
-| 閉じる前に `O_PATH` の fd でファイルを掴んでおく (Linux) | 見分ける | 未測 |
-
-- 理由: bind したソケットはカーネルがファイルの inode を参照し続ける。閉じると解放され、ext4 は次に作る物にすぐ同じ番号を渡す
-- 起きうる場面: 再起動で、古いプロセスが listener を閉じ (渡した先のライブラリが閉じることも)、新しいプロセスが古いファイルを消して bind し直した後に、古いプロセスが `discard()` を呼ぶ → 新しいプロセスの生きたソケットを消す
-- FreeBSD (UFS)・NetBSD・OpenBSD (FFS) も sockat-py の CI で同じ形で置き換え先を消した (番号の一致は結果からの推定)。illumos は未測
-- b で閉じた後も守れるのは `O_PATH` のある OS だけ。NetBSD・OpenBSD・illumos は a の約束のまま
-
-統括の推し: b。ext4 は Linux の既定で、上の再起動の場面は普通に起きる。a だけでは「閉じる前に呼ぶ」を利用者に求めることになるが、listener を他のライブラリに渡すと閉じる時期を利用者が決められない (DR-0015 の案 I を退けた理由と同じ)。
-
-- [ ] a: 約束を「listener を開いている間の置き換えは見分ける」に狭める。閉じた後の置き換えは、番号を使い回すファイルシステム (ext4 等) で見分けられないと SPEC と各言語の説明に書き、`discard()` は閉じる前に呼ぶよう勧める。実装は変えない。試験は開いたまま置き換える形にする
-- [ ] b: a に加えて、`O_PATH` のある OS (Linux。FreeBSD 14 以降もあるはずで未確認) では bind の直後にソケットのファイルを `O_PATH | O_NOFOLLOW` で開いて持ち、`fstat` の値を覚える。`discard()` か破棄で閉じる。閉じた後の置き換えもその OS では見分ける。代わりに fd を 1 つ多く持ち、OS で約束の範囲が違う。`discard()` を呼ばない利用者も、discard の口を捨てるまで fd を持ち続ける (Rust は Drop ですぐ閉じる。Python は参照が切れた時、Go は GC の時で、いつかは決まらない)。持っている間、listener を閉じた後もそのファイルシステムを umount できない
-- [ ] c: birth time も比べる。推さない: Linux は statx が要り Python 3.15 未満は標準で取れない、illumos・NFS には無い、時刻の粒度が tick 単位のカーネルで同じ tick に作り直すと見分けられない (未確認)
-- [ ] d: ctime も比べる。推さない: 利用者の chmod / chown で変わり、自分のファイルを消さなくなる
-
-inode の世代番号 (`st_gen`、`FS_IOC_GETVERSION`) は、root でないと見えない OS があり、ソケットのファイルを開いて ioctl できないので候補にしない。
+(なし)
