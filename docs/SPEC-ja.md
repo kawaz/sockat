@@ -316,6 +316,7 @@ D を通す経路 ([thread-cwd](#thread-cwd)・[at](#at)・[proc](#proc)・[fork
 5. 片付け: R は自分が作れた時だけ `unlinkat(Dfd, R)`。D は手順 2 の確認が通り、`fstatat(置き場の fd, D の名前, AT_SYMLINK_NOFOLLOW)` の `(st_dev, st_ino)` が fd と一致する時だけ `unlinkat(置き場の fd, D の名前, AT_REMOVEDIR)`。fd を閉じる。成功でも失敗でもする。消す失敗は無視する
 
 - 綴り `R/<ファイル名>` は 11 バイト + ファイル名
+- R を乱数の名前にするのは事故を防ぐため (後で綴りが解決された時に、cwd 等にたまたまある同じ名前の物に当たらない)。他の利用者への防御ではない (綴りは他の利用者に見えうる。「[失うもの](#失うもの)」の `respelled`)
 - 片付けた後は R がどこにも無いので、カーネルが返す綴りを後でプロセスの cwd 等の別の文脈で解決しても、無関係なファイルに当たらない
 - 確認に落ちた D は他人の物とみなし、中身も含めて触らない
 - 作った直後の D を開けない時 (umask が持ち主の権限を削った時。`O_SEARCH` / `O_RDONLY` で開く OS) は、`fstatat(置き場の fd, D の名前, AT_SYMLINK_NOFOLLOW)` が手順 2 と同じ条件 (ディレクトリ・持ち主が実効 uid・group と other に権限が無い) なら `unlinkat(置き場の fd, D の名前, AT_REMOVEDIR)` で消し、「作れない」として次の置き場へ。名前で確かめてから消すまでにすり替えられても、`AT_REMOVEDIR` は空のディレクトリしか消さない ([DR-0012](decisions/DR-0012-own-directory-and-thread-cwd.md))
