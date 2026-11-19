@@ -324,7 +324,7 @@ connect:
 #### symlink-file
 
 - やり方: 安全な置き場に、ソケットのファイルの綴り (相対パスなら cwd を前に付ける) を指す symlink `<置き場>/sockat.XXXXXXXXXX` を作り、その綴りで bind / connect して、すぐ消す。消すのは成功でも失敗でも ([symlink の置き場と名前](#symlink-の置き場と名前))
-- bind の使える条件: bind が最後の要素の symlink を辿る OS (macOS で実測。Linux は辿らない。他の OS は未確認)。[standard](#standard) の次に試し、辿るかは実行時に見分ける
+- bind の使える条件: bind が最後の要素の symlink を辿る OS (実測 2026-11-19: 辿るのは macOS と NetBSD、辿らないのは Linux / Android・FreeBSD・OpenBSD・illumos)。辿らないと実測した OS では試さず、他の OS では [standard](#standard) の次に試して辿るかを実行時に見分ける
 - bind の使えない時: どの候補も、綴りが sockaddr に入らない・置き場が安全でない・symlink を作れない。カーネルが symlink を辿らなかった
 - 辿るかの見分け方: 辿らないと実測した OS (Linux / Android、FreeBSD、OpenBSD、illumos) では試さない。他の OS では、bind が失敗した時 (エラーを問わない) に元のパスを `lstat` する。物があればそのエラーを返し、次を試さない ([経路の失敗の扱い](#経路の失敗の扱い))。無いか確かめられなければ、カーネルが辿らなかったとみなし、この経路を使えないとして次の経路へ進む (`skipped` に入る。本当の失敗なら次の経路でも同じ失敗になり、そこで返る)
 - connect の使える条件: connect 系。FreeBSD 以外。「[connect の順](#connect-の順)」の最後 (最終手段を使う `connect_ex` 系はその後に [fork-cwd-direct](#fork-cwd-direct))
@@ -530,7 +530,7 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 
 | 点 | 内容 |
 |---|---|
-| カーネルが返すアドレス | bind した側の `getsockname` と、そこへ connect した側の `getpeername` は `R/<ファイル名>` ([proc](#proc) は `/proc/self/fd/<fd>/R/<ファイル名>`) を返す。R はもう無いので、後で解決しても普段は何にも当たらない (プロセスの cwd が他人も書ける場所だと、他の利用者が綴りを見て作り直せる。「[失うもの](#失うもの)」の `respelled`)。[symlink-file](#symlink-file) の bind は symlink の綴り `<置き場>/sockat.XXXXXXXXXX` を返す (その綴りで unlink しても置き場の中の項目が消えるだけ)。最終手段を使う `bind_ex` の [symlink-dir](#symlink-dir) は `<置き場>/sockat.XXXXXXXXXX/<ファイル名>` を返し、共有の置き場では他の利用者がそれを作り直せる。標準の型でアドレスを返す口を差し替えられる言語 (Python) は元のパスを返す (Python の asyncio は listener の `getsockname` の綴りを `stat` / unlink する)。差し替えられない言語は元のパスを呼び出し元が持つ |
+| カーネルが返すアドレス | bind した側の `getsockname` と、そこへ connect した側の `getpeername` は `R/<ファイル名>` ([proc](#proc) は `/proc/self/fd/<fd>/R/<ファイル名>`) を返す。R はもう無いので、後で解決しても普段は何にも当たらない (プロセスの cwd が他人も書ける場所だと、他の利用者が綴りを見て作り直せる。「[失うもの](#失うもの)」の `respelled`)。[symlink-file](#symlink-file) の bind は symlink の綴り `<置き場>/sockat.XXXXXXXXXX` を返す (その綴りで unlink しても置き場の中の項目が消えるだけ)。最終手段を使う `bind_ex` の [symlink-dir](#symlink-dir) は `<置き場>/sockat.XXXXXXXXXX/<ファイル名>` を返し、共有の置き場では他の利用者がそれを作り直せる。標準の型でアドレスを返す口を差し替えられる言語 (Python) は元のパスを返す (Python の asyncio は listener の `getsockname` の綴りを `stat` / unlink する)。差し替えられない言語は元のパスを呼び出し元が持つ。illumos では connect した側の `getpeername` が、bind した綴りでなく connect に渡した綴り ([symlink-file](#symlink-file) の connect なら symlink の綴り) を返す (sockat-rs の CI で実測 2026-11-19) |
 | ディレクトリを先に引く | R を使う経路 (D を通す経路と D 無しの形) と [symlink-dir](#symlink-dir) は、symlink を作る時にソケットのディレクトリを realpath で引く。[proc-direct](#proc-direct)・[relative](#relative)・[at-direct](#at-direct)・[fork-cwd-direct](#fork-cwd-direct) はディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない。[widened](#widened) と [symlink-file](#symlink-file) は標準と同じ |
 | 運用の道具での見え方 | `ss -x`・`lsof`・`/proc/net/unix` 等に出るアドレスがカーネルの綴り (`R/<ファイル名>` 等) になり、元のパスでどのソケットか見分けにくい。ファイル名は綴りの最後に残る ([symlink-file](#symlink-file) の bind の綴りにはファイル名が出ない) |
 | 他のスレッドの chdir | relative は、間に cwd が変わったままなら一般のエラー。変えて戻した場合は見えない |
