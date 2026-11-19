@@ -39,7 +39,7 @@
 |---|---|
 | `ok` | bind / connect が通ったか |
 | `error` | 失敗の時、errno の名前 (`ENAMETOOLONG`、`ENOENT` 等)。引数の誤りは `invalid-argument`、一般のエラーは `general` |
-| `route` | 通った経路の名前。失敗の時は実際に bind / connect して失敗した経路の名前か `null` (SPEC の「公開する操作」の any 系の決まり) |
+| `route` | 通った経路の名前。失敗の時は実際に bind / connect して失敗した経路の名前か `null` (SPEC の「公開する操作」の `_ex` の決まり) |
 | `losses` | 失うものの名前の並び (SPEC の「失うもの」の名前)。失敗の時は `[]` |
 | `skipped` | 飛ばした経路の名前の並び (試した順)。`reason` は約束しないので出さない |
 

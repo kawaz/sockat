@@ -239,7 +239,7 @@ Numbers are in bytes.
 - Not usable when: `/proc/self/fd/<Dfd>` cannot be resolved, the spelling does not fit the sockaddr, D can be created nowhere ([Where D is created](#where-d-is-created))
 - Reach: a file name up to about 79 (it varies with the fd's digits)
 - What is lost: `respelled` for a bind, nothing for a connect
-- The spelling's length depends on D's fd number, which is unknown until D is opened. Before creating D it is estimated, and it is checked again once D is open (if it does not fit, D is cleaned up and the next is tried)
+- The spelling's length depends on D's fd number, which is unknown until D is opened. Before creating D it is estimated, and it is checked again once D is open (if it does not fit, this route is treated as unusable and the next is tried. D is shared with later routes, so it is cleaned up once at the end of the call)
 - Checking whether `/proc` is usable does not need an fd of the socket's directory (use the fd of `/` or of D)
 - The spelling goes through R as well, so a reused fd number later hits no unrelated file
 - Apart from what is lost, the same for bind and connect
