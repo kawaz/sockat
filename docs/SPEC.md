@@ -126,10 +126,36 @@ What taking the route loses compared to the standard. The any family's `losses` 
 
 | Name | What is lost | Attached when |
 |---|---|---|
-| `respelled` | the address the kernel reports is not the original path ("[What differs from the standard for a long path](#what-differs-from-the-standard-for-a-long-path)"). Even in a language whose standard removes the file when the listener is closed (Go's standard etc.) it is not removed; the file at the original path has to be removed by the caller (`_ex`'s `discard()` etc.). The random name (R) in the spelling has been removed, so normally it hits nothing, but the spelling may be visible to other users (Linux's `/proc/net/unix`); if the process's cwd is a place others can write to (`/tmp` etc.), after another user sees and recreates it, unlinking by that spelling may remove a same-named file in a directory that user chose. Removing by the original path hits nothing | a bind took a route other than standard |
-| `cwd-relative` | the spelling the kernel keeps is relative to the cwd (the given path went to the standard unchanged). Unlinking / `stat`ing by that spelling after the cwd changes hits another place. A hazard the standard already has rather than one a route introduced, but it is reported. Removing by the original path made absolute hits nothing | a bind took [standard](#standard) with a relative path (not an abstract name) |
-| `forked` | the side effects of forking ("[Side effects of the fork route](#side-effects-of-the-fork-route)") | [fork](#fork), [fork-sockdir](#fork-sockdir) or [fork-direct](#fork-direct) was taken |
-| `recreatable-spelling` | the spelling the kernel reports goes through a shared base (`/tmp` etc.). The name is random, so it cannot be guessed in advance, but after the bind other users may see it (Linux's `/proc/net/unix`). If another user recreates it and then it is unlinked by that spelling, a same-named file in a directory the other user chose may be removed. Removing by the original path (`discard()` etc.) hits nothing. The name's length is not the defense (the name is visible after the bind) | `bind_any` took the [symlink](#symlink) in a shared base |
+| [respelled](#respelled) | the address the kernel reports is not the original path | a bind took a route other than standard |
+| [cwd-relative](#cwd-relative) | the spelling the kernel keeps is relative to the cwd | a bind took [standard](#standard) with a relative path (not an abstract name) |
+| [forked](#forked) | the side effects of forking | [fork](#fork), [fork-sockdir](#fork-sockdir) or [fork-direct](#fork-direct) was taken |
+| [recreatable-spelling](#recreatable-spelling) | the spelling can be recreated by other users | `bind_any` took the [symlink](#symlink) in a shared base |
+
+Each language's README / manual puts recommended code for how to avoid each, under a heading of the same name (run as a test).
+
+#### respelled
+
+- What happens: the bound side's `getsockname` (and the connecting side's `getpeername`) returns a spelling that is not the original path ("[What differs from the standard for a long path](#what-differs-from-the-standard-for-a-long-path)"). Even in a language whose standard removes the file when the listener is closed (Go's standard etc.) it is not removed
+- Watch out for: do not unlink / `stat` the file by the spelling the kernel reports. The random name R in the spelling has been removed, so normally it hits nothing, but the spelling may be visible to other users (Linux's `/proc/net/unix`). If the process's cwd is a place others can write to (`/tmp` etc.), after another user sees and recreates it, unlinking by that spelling may remove a same-named file in a directory that user chose
+- How to avoid: keep the original path and use it when removing. Use `discard()` of the bind with cleanup (`_ex`)
+
+#### cwd-relative
+
+- What happens: the given relative path goes to the standard unchanged, and the kernel keeps a relative spelling
+- Watch out for: unlinking / `stat`ing by that spelling (or by the given relative path) after the cwd changes hits another place. A hazard the standard already has rather than one a route introduced, but it is reported
+- How to avoid: make the path absolute before the bind. Remove by the absolute path or `discard()` as well
+
+#### forked
+
+- What happens: a child is forked for a moment ("[Side effects of the fork route](#side-effects-of-the-fork-route)"). The child holds copies of every fd, the parent gets `SIGCHLD`, and `pthread_atfork` handlers run. In the `connect_any` variants the peer pid the server sees is that of the child
+- Watch out for: a program that uses a `SIGCHLD` handler or `waitpid(-1)` may reap the child or mistake the result. A program that closes an fd to tell the peer EOF gets it across only after the child exits. The server on the other end of a `connect_any` variant cannot count on authorizing by the peer's pid
+- How to avoid: do not use `waitpid(-1)` in other threads (wait by pid). Where `forked` cannot be accepted, do not use the any family
+
+#### recreatable-spelling
+
+- What happens: the spelling the kernel reports goes through a shared base (`/tmp` etc.) (`<base>/sockat.XXXXXXXXXX/<file name>`)
+- Watch out for: the name is random, so it cannot be guessed in advance, but after the bind other users may see it (Linux's `/proc/net/unix`). If another user recreates it and then it is unlinked by that spelling, a same-named file in a directory the other user chose may be removed. The name's length is not the defense (the name is visible after the bind)
+- How to avoid: do not remove by the spelling the kernel reports; remove by the original path or `discard()`. If you prepare a base only the owner can write to (`$XDG_RUNTIME_DIR`, or a `$TMPDIR` only the owner can write to), that base is used first and this name is not attached
 
 - The names are a promise: they are never changed, only added. Read an unknown name only as "something was lost"
 - The names have no order or inclusion among them (`forked` and `recreatable-spelling` do not include each other)

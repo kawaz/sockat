@@ -126,10 +126,36 @@ connect:
 
 | 名前 | 失うもの | 付く時 |
 |---|---|---|
-| `respelled` | カーネルが返すアドレスが元のパスでない (「[長いパスで標準と違う点](#長いパスで標準と違う点)」)。標準が listener を閉じる時に消す言語 (Go の標準等) でも消えず、元のパスのファイルは自分で消す (`_ex` の `discard()` 等)。綴りの中の乱数の名前 (R) は消してあるので普段は何にも当たらないが、綴りは他の利用者に見えうる (Linux の `/proc/net/unix`) ので、プロセスの cwd が他人も書ける場所 (`/tmp` 等) だと、相手が見て作り直した後にその綴りで unlink すると、相手の選んだディレクトリの同じ名前のファイルを消しうる。元のパスで消せば当たらない | bind が標準以外の経路を通った |
-| `cwd-relative` | カーネルが覚えた綴りが cwd からの相対パス (渡したパスがそのまま標準に渡った)。cwd を変えた後にその綴りで unlink / stat すると別の場所に当たる。sockat が経路で失わせたものでなく標準が元から持つ危険だが、知らせる。元のパスを絶対パスにして消せば当たらない | 相対パス (abstract の名前は除く) で bind が [standard](#standard) を通った |
-| `forked` | fork の副作用 (「[fork の副作用](#fork-の副作用)」) | [fork](#fork)・[fork-sockdir](#fork-sockdir)・[fork-direct](#fork-direct) を通った |
-| `recreatable-spelling` | カーネルが返す綴りが共有の置き場 (`/tmp` 等) を通る。名前は乱数なので事前には当てられないが、bind の後は他の利用者に見えうる (Linux の `/proc/net/unix`)。他の利用者がそれを作り直した後にその綴りで unlink すると、相手の選んだディレクトリの同じ名前のファイルを消しうる。元のパス (`discard()` 等) で消せば当たらない。名前の長さは防御でない (名前は bind の後に見える) | `bind_any` が共有の置き場の [symlink](#symlink) を通った |
+| [respelled](#respelled) | カーネルが返すアドレスが元のパスでない | bind が標準以外の経路を通った |
+| [cwd-relative](#cwd-relative) | カーネルが覚えた綴りが cwd からの相対パス | 相対パス (abstract の名前は除く) で bind が [standard](#standard) を通った |
+| [forked](#forked) | fork の副作用 | [fork](#fork)・[fork-sockdir](#fork-sockdir)・[fork-direct](#fork-direct) を通った |
+| [recreatable-spelling](#recreatable-spelling) | 綴りを他の利用者が作り直せる | `bind_any` が共有の置き場の [symlink](#symlink) を通った |
+
+各言語の README / マニュアルは、同じ名前の見出しで、避け方の推奨コードを置く (試験として動かす)。
+
+#### respelled
+
+- 起きること: bind した側の `getsockname` (と、そこへ connect した側の `getpeername`) が元のパスでない綴りを返す (「[長いパスで標準と違う点](#長いパスで標準と違う点)」)。標準が listener を閉じる時にファイルを消す言語 (Go の標準等) でも消えない
+- 注意すること: カーネルが返す綴りでファイルを unlink / stat しない。綴りの中の乱数の名前 R は消してあるので普段は何にも当たらないが、綴りは他の利用者に見えうる (Linux の `/proc/net/unix`)。プロセスの cwd が他人も書ける場所 (`/tmp` 等) だと、相手が見て作り直した後にその綴りで unlink すると、相手の選んだディレクトリの同じ名前のファイルを消しうる
+- 避け方: 元のパスを持っておき、消す時はそれを使う。後始末つきの bind (`_ex`) の `discard()` を使う
+
+#### cwd-relative
+
+- 起きること: 渡した相対パスがそのまま標準に渡り、カーネルが相対の綴りを覚える
+- 注意すること: cwd を変えた後に、その綴り (や渡した相対パス) で unlink / stat すると別の場所に当たる。sockat が経路で失わせたものでなく標準が元から持つ危険だが、知らせる
+- 避け方: bind の前にパスを絶対パスにする。消す時も絶対パスか `discard()` を使う
+
+#### forked
+
+- 起きること: fork した子が一瞬できる (「[fork の副作用](#fork-の副作用)」)。子は全 fd の複製を持ち、親に `SIGCHLD` が届き、`pthread_atfork` の handler が走る。`connect_any` 系ではサーバに見える peer の pid が子
+- 注意すること: `SIGCHLD` の handler や `waitpid(-1)` を使うプログラムは、子を刈り取ったり、結果を取り違えたりしうる。fd を閉じて相手に EOF を伝えるつもりのプログラムは、子が終わるまで伝わらない。`connect_any` 系の相手のサーバは、peer の pid での認可を当てにできない
+- 避け方: 他のスレッドで `waitpid(-1)` を使わない (pid を指定して待つ)。`forked` を受け入れられない所では any 系を使わない
+
+#### recreatable-spelling
+
+- 起きること: カーネルが返す綴りが共有の置き場 (`/tmp` 等) を通る (`<置き場>/sockat.XXXXXXXXXX/<ファイル名>`)
+- 注意すること: 名前は乱数なので事前には当てられないが、bind の後は他の利用者に見えうる (Linux の `/proc/net/unix`)。他の利用者がそれを作り直した後にその綴りで unlink すると、相手の選んだディレクトリの同じ名前のファイルを消しうる。名前の長さは防御でない (名前は bind の後に見える)
+- 避け方: カーネルが返す綴りで消さず、元のパスか `discard()` で消す。持ち主だけが書ける置き場 (`$XDG_RUNTIME_DIR` や、持ち主だけが書ける `$TMPDIR`) を用意すれば、そちらが先に使われてこの名前は付かない
 
 - 名前は約束で、変えずに足すだけ。知らない名前は「何かを失った」とだけ読む
 - 名前の間に大小や包含の関係は無い (`forked` と `recreatable-spelling` は互いを含まない)
