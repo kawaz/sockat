@@ -27,10 +27,10 @@
 |---|---|---|---|---|---|---|
 | bind | `bind` | `bind` | `Listen` | 試す | (待たない) | listen 済みの標準の listener |
 | 後始末つきの bind | `bind_ex` | `bind_ex` | `ListenEx` | 試す | (待たない) | 標準の listener と `discard()` |
-| 何かを失ってでも届く bind | `bind_any` | `bind_any` | `ListenAny` | 試す | (待たない) | 標準の listener と、`level`・`route`・`skipped` |
+| 何かを失ってでも届く bind | `bind_any` | `bind_any` | `ListenAny` | 試す | (待たない) | 標準の listener と、`losses`・`route`・`skipped` |
 | connect | `connect` | `connect` | `Dial` | 試さない | する | 標準の stream |
 | ブロックしない connect | `connect_nonblocking` | `connect_nonblocking` | なし | 試さない | しない | 非ブロッキングの標準の stream |
-| 何かを失ってでも届く connect | `connect_any` | なし | なし | 試す | する | 標準の stream と、`level`・`route`・`skipped` |
+| 何かを失ってでも届く connect | `connect_any` | なし | なし | 試す | する | 標準の stream と、`losses`・`route`・`skipped` |
 | 同 (ブロックしない) | `connect_any_nonblocking` | なし | なし | 試す | しない | 同上 (stream は非ブロッキング) |
 
 - 名前は仮。他の言語はその言語の命名の慣習に合わせる。振る舞いは上の表に従う
@@ -41,12 +41,14 @@
   - `discard()` は、ファイルが既に無い時と別のファイルに置き換わっていて消さない時も成功を返す。失敗を返すのは、確かめられない時 (`lstat` が `ENOENT` / `ENOTDIR` 以外で失敗) と消そうとして失敗した時 (消せたか分からないのを成功に見せない)
   - 確かめてから消すまでと、bind してから覚えるまでの間に、ソケットのディレクトリに書ける者がファイルをすり替えるのは防げない (inode を指定して消す手段が POSIX に無い)
 - any 系 (`bind_any`、`connect_any` 系) は、既定の経路が全部使えない時に、何かを失ってでも届かせる ([DR-0013](decisions/DR-0013-any-means-reach-at-any-cost.md))。`bind_any` は最後に置き場の [symlink](#symlink)、`connect_any` 系は最後に [fork-direct](#fork-direct) を試す。pid は返さない
-- any 系は次の 3 つを返す ([DR-0013](decisions/DR-0013-any-means-reach-at-any-cost.md))
-  - `level`: 通った経路で失ったものの段階 (「[失ったものの段階](#失ったものの段階)」の 4 つのどれか 1 つ)。分岐に使う。段階に大小は無く、将来増えうる (知らない値は「標準ではない」とだけ読むと説明に書く)
+- any 系は成功した時に次の 3 つを返す ([DR-0013](decisions/DR-0013-any-means-reach-at-any-cost.md))
+  - `losses`: 通った経路で失ったものの名前の並び (「[失うもの](#失うもの)」の名前。何も失っていなければ空)。分岐に使う。名前は約束で、変えずに足すだけ (知らない名前は「何かを失った」とだけ読むと説明に書く)。名前の間に大小や包含の関係は無い
   - `route`: 通った経路の名前
   - `skipped`: 試して使えなかった経路の並び (試した順)。各要素は `{ name, reason }` (経路の名前と使えなかった理由)。`route` より前に試した経路はすべて使えなかったものなので、「使えたか」は持たない
-  - `route`・`skipped` は診断用で、中身を約束しない (経路は増えたり変わったりする)。失敗した時の `skipped` は返さない
-  - 項目と型の名前、段階の値の名前は各言語の慣習で決める
+  - `route`・`skipped` の名前と `reason` は診断用で、中身を約束しない (経路は増えたり変わったりする)
+  - 項目と型の名前は各言語の慣習で決める。失うものの名前は各言語の慣習 (enum 等) で表してよいが、文字列にした時は SPEC の名前と同じにする
+- any 系が失敗した時も、エラーに `skipped` を付ける。実際に bind / connect して失敗した経路があれば、その名前 (`route`) も付ける (全部が使えなかった `ENAMETOOLONG` では無い) ([DR-0013](decisions/DR-0013-any-means-reach-at-any-cost.md))
+  - 付け方は各言語の慣習に従う。OS のエラーの errno は取り出せる形を保つ ([エラー](#エラー))
 - any 系は既定の API に出さず、使う人が選んで有効にする仕組みの後ろに置く (Rust は feature `any`)。`connect_any` 系は fork の経路を作れない言語では既定の connect と変わらないので出さず、README の表に「fork の経路なし」と書く ([DR-0002](decisions/DR-0002-no-connect-any-without-fork.md))。`bind_any` は fork の有無によらず出す
 - 標準の connect が元から待たない言語 (Node.js 等) は、標準と同じ形の connect を 1 つだけ出す ([DR-0003](decisions/DR-0003-single-connect-when-standard-never-blocks.md))
 - `connect` / `connect_nonblocking` は [fork-direct](#fork-direct) に来た所で `ENAMETOOLONG` を返す
@@ -80,57 +82,58 @@
 
 ### 経路の名前
 
-経路は次の名前で呼ぶ。表は試す順。名前が bind と connect の両方に出るものは同じ経路で、違いは各経路の節に書く。段階は「[失ったものの段階](#失ったものの段階)」。
+経路は次の名前で呼ぶ。表は試す順。名前が bind と connect の両方に出るものは同じ経路で、違いは各経路の節に書く。失うものの名前は「[失うもの](#失うもの)」。
 
 bind:
 
-| 名前 | 中身 | OS | 失ったものの段階 |
+| 名前 | 中身 | OS | 失うもの |
 |---|---|---|---|
-| [standard](#standard) | 標準にそのまま渡す | 全部 | 標準 |
-| [thread-cwd](#thread-cwd) | 使い捨てのスレッドの cwd を D に移し、`R/<ファイル名>` | Linux / Android / Apple の OS | 綴り替え |
-| [at](#at) | `bindat(Dfd, R/<ファイル名>)` | FreeBSD | 綴り替え |
-| [proc](#proc) | `/proc/self/fd/<Dfd>/R/<ファイル名>` | `/proc` を使える Linux / Android | 綴り替え |
-| [fork](#fork) | fork した子が `fchdir(Dfd)` して `R/<ファイル名>` | 全部 | fork |
-| [thread-cwd-sockdir](#thread-cwd-sockdir) | thread-cwd を D 無しの形で (R はソケットのディレクトリの中、`.sockat.XXXXXXXXXX/<ファイル名>`) | Linux / Android / Apple の OS | 綴り替え |
-| [at-sockdir](#at-sockdir) | at を D 無しの形で | FreeBSD | 綴り替え |
-| [proc-sockdir](#proc-sockdir) | proc を D 無しの形で | `/proc` を使える Linux / Android | 綴り替え |
-| [fork-sockdir](#fork-sockdir) | fork を D 無しの形で | 全部 | fork |
-| [symlink](#symlink) | 置き場にソケットのディレクトリを指す symlink を作り、`<置き場>/sockat.XXXXXXXXXX/<ファイル名>` (`bind_any` だけ) | 全部 | 綴り替え (持ち主だけが書ける置き場)<br>共有の symlink (共有の置き場) |
+| [standard](#standard) | 標準にそのまま渡す | 全部 | 無し |
+| [thread-cwd](#thread-cwd) | 使い捨てのスレッドの cwd を D に移し、`R/<ファイル名>` | Linux / Android / Apple の OS | `respelled` |
+| [at](#at) | `bindat(Dfd, R/<ファイル名>)` | FreeBSD | `respelled` |
+| [proc](#proc) | `/proc/self/fd/<Dfd>/R/<ファイル名>` | `/proc` を使える Linux / Android | `respelled` |
+| [fork](#fork) | fork した子が `fchdir(Dfd)` して `R/<ファイル名>` | 全部 | `respelled`<br>`forked` |
+| [thread-cwd-sockdir](#thread-cwd-sockdir) | thread-cwd を D 無しの形で (R はソケットのディレクトリの中、`.sockat.XXXXXXXXXX/<ファイル名>`) | Linux / Android / Apple の OS | `respelled` |
+| [at-sockdir](#at-sockdir) | at を D 無しの形で | FreeBSD | `respelled` |
+| [proc-sockdir](#proc-sockdir) | proc を D 無しの形で | `/proc` を使える Linux / Android | `respelled` |
+| [fork-sockdir](#fork-sockdir) | fork を D 無しの形で | 全部 | `respelled`<br>`forked` |
+| [symlink](#symlink) | 置き場にソケットのディレクトリを指す symlink を作り、`<置き場>/sockat.XXXXXXXXXX/<ファイル名>` (`bind_any` だけ) | 全部 | 持ち主だけが書ける置き場: `respelled`<br>共有の置き場: `respelled` と `recreatable-spelling` |
 
 - `-sockdir` の 4 つは、D をどこにも作れない時だけ同じ順で試す ([D 無しの形](#d-無しの形))
 - symlink は `bind_any` だけが、既定の bind が `ENAMETOOLONG` になる所で試す
 
 connect:
 
-| 名前 | 中身 | OS | 失ったものの段階 |
+| 名前 | 中身 | OS | 失うもの |
 |---|---|---|---|
-| [standard](#standard) | 標準にそのまま渡す | 全部 | 標準 |
-| [thread-cwd](#thread-cwd) | 使い捨てのスレッドの cwd を D に移し、`R/<ファイル名>` | Linux / Android / Apple の OS | 綴り替え |
-| [at](#at) | `connectat(Dfd, R/<ファイル名>)` | FreeBSD | 綴り替え |
-| [proc](#proc) | `/proc/self/fd/<Dfd>/R/<ファイル名>` | `/proc` を使える Linux / Android | 綴り替え |
-| [proc-direct](#proc-direct) | R を通さない `/proc/self/fd/<fd>/<ファイル名>` (予備) | `/proc` を使える Linux / Android | 綴り替え |
-| [proc-held](#proc-held) | D の中にソケットのファイルを指す `s` を置き、`/proc/self/fd/<Dfd>/s` (予備) | `/proc` を使える Linux / Android | 綴り替え |
-| [relative](#relative) | cwd からの相対パス (予備) | `/proc` を使えない Linux / Android<br>Apple の OS<br>NetBSD / OpenBSD / illumos / その他の Unix | 綴り替え |
-| [widened](#widened) | 広げた sockaddr (予備) | Apple の OS | 綴り替え |
-| [symlink](#symlink) | 置き場の symlink (予備) | FreeBSD 以外 | 綴り替え |
-| [at-direct](#at-direct) | `connectat(<ソケットのディレクトリの fd>, <ファイル名>)` (予備) | FreeBSD | 綴り替え |
-| [fork-direct](#fork-direct) | fork した子がファイル名で connect (`connect_any` 系だけ) | 全部 | fork |
+| [standard](#standard) | 標準にそのまま渡す | 全部 | 無し |
+| [thread-cwd](#thread-cwd) | 使い捨てのスレッドの cwd を D に移し、`R/<ファイル名>` | Linux / Android / Apple の OS | 無し |
+| [at](#at) | `connectat(Dfd, R/<ファイル名>)` | FreeBSD | 無し |
+| [proc](#proc) | `/proc/self/fd/<Dfd>/R/<ファイル名>` | `/proc` を使える Linux / Android | 無し |
+| [proc-direct](#proc-direct) | R を通さない `/proc/self/fd/<fd>/<ファイル名>` (予備) | `/proc` を使える Linux / Android | 無し |
+| [proc-held](#proc-held) | D の中にソケットのファイルを指す `s` を置き、`/proc/self/fd/<Dfd>/s` (予備) | `/proc` を使える Linux / Android | 無し |
+| [relative](#relative) | cwd からの相対パス (予備) | `/proc` を使えない Linux / Android<br>Apple の OS<br>NetBSD / OpenBSD / illumos / その他の Unix | 無し |
+| [widened](#widened) | 広げた sockaddr (予備) | Apple の OS | 無し |
+| [symlink](#symlink) | 置き場の symlink (予備) | FreeBSD 以外 | 無し |
+| [at-direct](#at-direct) | `connectat(<ソケットのディレクトリの fd>, <ファイル名>)` (予備) | FreeBSD | 無し |
+| [fork-direct](#fork-direct) | fork した子がファイル名で connect (`connect_any` 系だけ) | 全部 | `forked` |
 
 - 予備の経路を OS ごとにどの順で試すかは「[予備の経路 (connect 系)](#予備の経路-connect-系)」
 
-### 失ったものの段階
+### 失うもの
 
-経路を通ったことで、標準と比べて何を失ったか。1 回の呼び出しで通る経路は 1 つなので、段階は次のどれか 1 つ。
+経路を通ったことで、標準と比べて何を失うか。any 系の `losses` はこの名前の並びで返す (何も失っていなければ空)。
 
-| 段階 | 失ったもの |
-|---|---|
-| 標準 | 無し |
-| 綴り替え | カーネルが返すアドレスが元のパスでない (「[長いパスで標準と違う点](#長いパスで標準と違う点)」)。上のライブラリの自動削除 (Go の標準等) が効かず、元のパスのファイルは自分で消す (`_ex` の `discard()` 等) |
-| fork | 綴り替えに加えて、fork の副作用 (「[fork の副作用](#fork-の副作用)」) |
-| 共有の symlink | 綴り替えに加えて、他の利用者が綴りを作り直せる |
+| 名前 | 失うもの | 付く時 |
+|---|---|---|
+| `respelled` | カーネルが返すアドレスが元のパスでない (「[長いパスで標準と違う点](#長いパスで標準と違う点)」)。標準が listener を閉じる時に消す言語 (Go の標準等) でも消えず、元のパスのファイルは自分で消す (`_ex` の `discard()` 等)。綴りの中の乱数の名前 (R) は消してあるので普段は何にも当たらないが、綴りは他の利用者に見えうる (Linux の `/proc/net/unix`) ので、プロセスの cwd が他人も書ける場所 (`/tmp` 等) だと、相手が見て作り直した後にその綴りで unlink すると、相手の選んだディレクトリの同じ名前のファイルを消しうる。元のパスで消せば当たらない | bind が標準以外の経路を通った |
+| `forked` | fork の副作用 (「[fork の副作用](#fork-の副作用)」) | [fork](#fork)・[fork-sockdir](#fork-sockdir)・[fork-direct](#fork-direct) を通った |
+| `recreatable-spelling` | カーネルが返す綴りが共有の置き場 (`/tmp` 等) を通る。名前は乱数なので事前には当てられないが、bind の後は他の利用者に見えうる (Linux の `/proc/net/unix`)。他の利用者がそれを作り直した後にその綴りで unlink すると、相手の選んだディレクトリの同じ名前のファイルを消しうる。元のパス (`discard()` 等) で消せば当たらない。名前の長さは防御でない (名前は bind の後に見える) | `bind_any` が共有の置き場の [symlink](#symlink) を通った |
 
-- fork と共有の symlink は綴り替えを含む (fork と共有の symlink は互いを含まない)
-- 綴り替えで失うものは bind の側のもの。connect の綴りは相手に残らない (「[試す順番](#試す順番)」) ので、connect の綴り替えは実際には何も失わない (connect で何かを失うのは fork の副作用を持つ fork-direct だけ)
+- 名前は約束で、変えずに足すだけ。知らない名前は「何かを失った」とだけ読む
+- 名前の間に大小や包含の関係は無い (`forked` と `recreatable-spelling` は互いを含まない)
+- connect の綴りは相手に残らない (「[試す順番](#試す順番)」) ので、connect で付くのは `forked` だけ
+- 持ち主だけが書ける置き場の symlink は `respelled` だけ
 
 ### 試す順番
 
@@ -157,7 +160,7 @@ connect:
 - 使える条件: パスが標準に渡す長さ以下
 - 使えない時: パスが標準に渡す長さを超える
 - 届く長さ: パス全体が標準に渡す長さ以下
-- 段階: 標準
+- 失うもの: 無し
 - bind と connect で同じ
 
 #### thread-cwd
@@ -170,8 +173,8 @@ connect:
   - スレッドを作れない・固定できない
   - D をどこにも作れない ([D の置き場](#d-の置き場))、綴りが sockaddr に入らない
 - 届くファイル名: sockaddr に入る長さ − 11 (Linux / Android 96、Apple の OS 92)
-- 段階: 綴り替え
-- bind と connect で同じ
+- 失うもの: bind は `respelled`、connect は無し
+- 失うもの以外は bind と connect で同じ
 
 #### at
 
@@ -179,7 +182,7 @@ connect:
 - 使える条件: FreeBSD
 - 使えない時: D をどこにも作れない ([D の置き場](#d-の置き場))、綴りが sockaddr に入らない
 - 届くファイル名: 92
-- 段階: 綴り替え
+- 失うもの: bind は `respelled`、connect は無し
 
 #### proc
 
@@ -187,11 +190,11 @@ connect:
 - 使える条件: `/proc` を使える Linux / Android
 - 使えない時: `/proc/self/fd/<Dfd>` を引けない、綴りが sockaddr に入らない、D をどこにも作れない ([D の置き場](#d-の置き場))
 - 届くファイル名: およそ 79 (fd の桁で変わる)
-- 段階: 綴り替え
+- 失うもの: bind は `respelled`、connect は無し
 - 綴りの長さは D の fd の番号で変わり、開くまで分からない。D を作る前は見積もりで確かめ、開いた後に確かめ直す (収まらなければ D を片付けて次へ)
 - `/proc` を使えるかの確認に、ソケットのディレクトリの fd は要らない (`/` か D の fd で確かめる)
 - 綴りも R を通すので、後で fd の番号が使い回されても無関係なファイルに当たらない
-- bind と connect で同じ
+- 失うもの以外は bind と connect で同じ
 
 #### fork
 
@@ -199,7 +202,7 @@ connect:
 - 使える条件: bind だけ。前の経路が使えない時に試す (「[試す順番](#試す順番)」)
 - 使えない時: D をどこにも作れない ([D の置き場](#d-の置き場))。綴りが sockaddr に入らない時は次へ進まず `ENAMETOOLONG`
 - 届くファイル名: sockaddr に入る長さ − 11 (Linux / illumos 96、Apple の OS / BSD 92)
-- 段階: fork
+- 失うもの: `respelled` と `forked`
 - connect は D を通す fork を使わない (`connect_any` 系は [fork-direct](#fork-direct))
 
 #### thread-cwd-sockdir
@@ -208,7 +211,7 @@ connect:
 - 使える条件: bind だけ。D をどこにも作れない。OS は thread-cwd と同じ
 - 使えない時: thread-cwd の「使えない時」のうち D によらないもの、綴りが sockaddr に入らない
 - 届くファイル名: sockaddr に入る長さ − 19 (Linux / Android 88、Apple の OS 84)
-- 段階: 綴り替え
+- 失うもの: `respelled`
 
 #### at-sockdir
 
@@ -216,7 +219,7 @@ connect:
 - 使える条件: bind だけ。FreeBSD。D をどこにも作れない
 - 使えない時: 綴りが sockaddr に入らない
 - 届くファイル名: 84
-- 段階: 綴り替え
+- 失うもの: `respelled`
 
 #### proc-sockdir
 
@@ -224,7 +227,7 @@ connect:
 - 使える条件: bind だけ。`/proc` を使える Linux / Android。D をどこにも作れない
 - 使えない時: `/proc/self/fd/<fd>` を引けない、綴りが sockaddr に入らない
 - 届くファイル名: およそ 72 (fd の桁で変わる)
-- 段階: 綴り替え
+- 失うもの: `respelled`
 
 #### fork-sockdir
 
@@ -232,7 +235,7 @@ connect:
 - 使える条件: bind だけ。D をどこにも作れず、前の経路が使えない時に試す ([D 無しの形](#d-無しの形))
 - 使えない時: 綴りが sockaddr に入らない時は `ENAMETOOLONG`
 - 届くファイル名: sockaddr に入る長さ − 19 (Linux / illumos 88、Apple の OS / BSD 84)
-- 段階: fork
+- 失うもの: `respelled` と `forked`
 
 #### proc-direct
 
@@ -240,7 +243,7 @@ connect:
 - 使える条件: connect 系の予備。`/proc` を使える Linux / Android
 - 使えない時: ソケットのディレクトリを開けない、`/proc/self/fd/<fd>` を stat で引けない、綴りが sockaddr に入らない
 - 届くファイル名: およそ 90 (fd の桁で変わる)
-- 段階: 綴り替え
+- 失うもの: 無し
 - bind は使わない (「[試す順番](#試す順番)」)
 
 #### proc-held
@@ -249,7 +252,7 @@ connect:
 - 使える条件: connect 系の予備。`/proc` を使える Linux / Android
 - 使えない時: D か `s` を作れない
 - 届くファイル名: 綴りにファイル名が出ないので、ファイル名によらない
-- 段階: 綴り替え
+- 失うもの: 無し
 
 #### relative
 
@@ -257,7 +260,7 @@ connect:
 - 使える条件: connect 系の予備。元のパスが絶対パス
 - 使えない時: 相対パスが sockaddr に入る長さを超える、作った綴りのディレクトリが元と `(st_dev, st_ino)` で一致しない、cwd が既に変わっている
 - 届く長さ: 相対パスが sockaddr に入る長さ以内 (Linux / Android / illumos 107、Apple の OS / BSD 103)
-- 段階: 綴り替え
+- 失うもの: 無し
 - bind は使わない (「[試す順番](#試す順番)」)
 
 #### widened
@@ -266,7 +269,7 @@ connect:
 - 使える条件: connect 系の予備。Apple の OS。パスが 253 バイト以内
 - 使えない時: カーネルが `EINVAL` / `ENAMETOOLONG` を返した
 - 届く長さ: 元のパスか相対パスが 253 以内
-- 段階: 綴り替え
+- 失うもの: 無し
 - bind は使わない (「[試す順番](#試す順番)」)
 
 #### symlink
@@ -275,12 +278,12 @@ connect:
 - bind の使える条件: 既定の bind の経路が全部使えない (`ENAMETOOLONG` になる所)
 - bind の使えない時: どの候補も、綴りが sockaddr に入らない・置き場の条件に合わない・symlink を作れない。この時は `ENAMETOOLONG`
 - bind で届くファイル名: sockaddr に入る長さ − (置き場の綴りの長さ + 19)
-- bind の段階: 持ち主だけが書ける置き場なら綴り替え (綴りを作り直せるのは自分だけ)、共有の置き場なら共有の symlink (他の利用者が綴りを作り直せ、上のライブラリや利用者が綴りで unlink すると、相手の選んだディレクトリの同じ名前のファイルを消させうる)
+- bind で失うもの: 持ち主だけが書ける置き場なら `respelled` (綴りを作り直せるのは自分だけ)、共有の置き場なら `respelled` と `recreatable-spelling` (他の利用者が綴りを作り直せ、上のライブラリや利用者が綴りで unlink すると、相手の選んだディレクトリの同じ名前のファイルを消させうる)
 - connect のやり方: 安全な置き場にソケットのファイルを指す symlink を作り、`<置き場>/sockat.XXXXXXXXXX` で connect して、すぐ消す ([symlink の置き場と名前](#symlink-の置き場と名前))
 - connect の使える条件: connect 系の予備。FreeBSD 以外
 - connect の使えない時: どの候補も、綴りが sockaddr に入らない・置き場が安全でない・symlink を作れない
 - connect で届くファイル名: 綴りにファイル名が出ないので、ファイル名によらない (綴り `<置き場>/sockat.XXXXXXXXXX` が sockaddr に入る長さ以内)
-- connect の段階: 綴り替え (connect の綴りは相手に残らない)
+- connect で失うもの: 無し (connect の綴りは相手に残らない)
 
 #### at-direct
 
@@ -288,7 +291,7 @@ connect:
 - 使える条件: connect 系の予備。FreeBSD
 - 使えない時: ソケットのディレクトリを開けない、ファイル名が 103 バイトを超える
 - 届くファイル名: 103
-- 段階: 綴り替え
+- 失うもの: 無し
 
 #### fork-direct
 
@@ -296,7 +299,7 @@ connect:
 - 使える条件: `connect_any` 系だけ。他の経路が全部使えない
 - 使えない時: 綴りが sockaddr (Apple の OS は広げた sockaddr) に入らない時は `ENAMETOOLONG`
 - 届くファイル名: Linux / Android / illumos 107、Apple の OS 253、BSD 103
-- 段階: fork
+- 失うもの: `forked`
 - `connect` / `connect_nonblocking` はここに来た所で `ENAMETOOLONG`
 
 ### D と R
@@ -450,7 +453,7 @@ D を通す経路が使えない時 (手段が無い、D を作れない、綴�
 
 | 点 | 内容 |
 |---|---|
-| カーネルが返すアドレス | bind した側の `getsockname` と、そこへ connect した側の `getpeername` は `R/<ファイル名>` ([proc](#proc) は `/proc/self/fd/<fd>/R/<ファイル名>`) を返す。R はもう無いので、後でどこで解決しても何にも当たらない。`bind_any` の [symlink](#symlink) は `<置き場>/sockat.XXXXXXXXXX/<ファイル名>` を返し、共有の置き場では他の利用者がそれを作り直せる。標準の型でアドレスを返す口を差し替えられる言語 (Python) は元のパスを返す (Python の asyncio は listener の `getsockname` の綴りを `stat` / unlink する)。差し替えられない言語は元のパスを呼び出し元が持つ |
+| カーネルが返すアドレス | bind した側の `getsockname` と、そこへ connect した側の `getpeername` は `R/<ファイル名>` ([proc](#proc) は `/proc/self/fd/<fd>/R/<ファイル名>`) を返す。R はもう無いので、後で解決しても普段は何にも当たらない (プロセスの cwd が他人も書ける場所だと、他の利用者が綴りを見て作り直せる。「[失うもの](#失うもの)」の `respelled`)。`bind_any` の [symlink](#symlink) は `<置き場>/sockat.XXXXXXXXXX/<ファイル名>` を返し、共有の置き場では他の利用者がそれを作り直せる。標準の型でアドレスを返す口を差し替えられる言語 (Python) は元のパスを返す (Python の asyncio は listener の `getsockname` の綴りを `stat` / unlink する)。差し替えられない言語は元のパスを呼び出し元が持つ |
 | ディレクトリを先に引く | R を使う経路 (D を通す経路と D 無しの形) は R を作る時にソケットのディレクトリを realpath で引く。[proc-direct](#proc-direct)・[relative](#relative)・[at-direct](#at-direct)・[fork-direct](#fork-direct) はディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない。[widened](#widened) と [symlink](#symlink) は標準と同じ |
 | 他のスレッドの chdir | relative は、間に cwd が変わったままなら一般のエラー。変えて戻した場合は見えない |
 | 他人も書けるソケットのディレクトリ | sticky でなく他人も書けるソケットのディレクトリでは、D 無しの形の R を作ってから bind するまでの間に R を差し替えられ、別のディレクトリに bind しうる (そこに同じ名前が既にあれば `EADDRINUSE` で、上書きはしない)。D の中の R は D が 0700 なので差し替えられない |
@@ -496,8 +499,8 @@ D を通す経路が使えない時 (手段が無い、D を作れない、綴�
 | 手段が使えない時 | thread-cwd を使えなくして、`/proc` を使える Linux は proc に進む。それも使えない時、bind は fork (peer は親)、connect 系は予備の経路に進む |
 | 予備の経路 | 各経路を強制して、ソケットに届き、置き場に何も残らない。symlink は安全でない置き場を飛ばす、深すぎる `TMPDIR` で `/tmp` に回る、名前の衝突を飛ばし 16 回で打ち切る |
 | 失敗をやり直さない | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` を返し、後の経路・置き場に何も作らない |
-| connect と fork | `connect` 系は fork-direct でしか届かない時に `ENAMETOOLONG`、`connect_any` 系は届いて段階が fork |
-| `bind_any` | 既定の bind が `ENAMETOOLONG` になる所で symlink を通って届く。持ち主だけが書ける置き場があればそこを使って段階が綴り替え、共有の置き場しか無ければ段階が共有の symlink。置き場に何も残らない。既定の経路で届く所では段階がその経路のもの |
+| connect と fork | `connect` 系は fork-direct でしか届かない時に `ENAMETOOLONG`、`connect_any` 系は届いて `losses` が `forked` だけ |
+| `bind_any` | 既定の bind が `ENAMETOOLONG` になる所で symlink を通って届く。持ち主だけが書ける置き場があればそこを使って `losses` が `respelled` だけ、共有の置き場しか無ければ `losses` が `respelled` と `recreatable-spelling`。置き場に何も残らない。既定の経路で届く所では `losses` がその経路のもの |
 | 開けない D | umask が持ち主の権限を削って作った直後の D を開けない時、置き場に何も残らない |
 | relative と cwd | relative の途中で cwd が変わったら一般のエラー |
 | fork | fork・fork-sockdir で bind したサーバに connect したクライアントから見える peer が親 (send の前も後も)。fork-direct の peer の pid の振る舞い、`SIGCHLD` を `SIG_IGN` にした時の結果の読み取り |
