@@ -260,7 +260,8 @@ The OS's temporary-directory cleaning ([research](research/2026-11-20-tmp-cleane
 
 - Only when called, it removes the D in B whose owners are dead (D whose lock has been released). It does not remove the D of other live processes (how it tells is in [D and E](SPEC-routes.md#d-and-e))
 - `sweep()` covers the B with the default names in bases 1 to 3 (`sockat-<uid>`, `sockat`). Only those that exist; it creates no B
-- `sweep_base(path)` (the name follows each language's convention) removes the dead D in the B passed as `Options.base`. The app that manages that B calls it
+- `sweep_base(path)` (the name follows each language's convention) removes the dead D in the B passed as `Options.base`. The app that manages that B calls it. When B or its parent is missing, it does nothing and succeeds. The path is checked as for `Options.base` (a wrong form is an invalid argument; a symlink, someone else's, or a B or directory on the way writable by others is `EPERM`; not a directory is `ENOTDIR`)
+- `sweep()` silently skips the bases and B that fail the checks
 - A B with a random name (fallen back to after the checks failed) and a B in the socket's directory are not covered
 - It does not touch the E right under B (the default connect's). A D containing something other than a symlink is left
 - It is never called automatically (resolve does not list B on each call)

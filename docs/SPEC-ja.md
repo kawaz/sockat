@@ -260,7 +260,8 @@ OS の一時ディレクトリの掃除 ([research](research/2026-11-20-tmp-clea
 
 - 呼んだ時だけ、B の中の持ち主の死んだ D (ロックの外れた D) を消す。生きている他のプロセスの D は消さない (見分け方は [D と E](SPEC-routes-ja.md#d-と-e))
 - `sweep()` の対象は、置き場 1〜3 の既定の名前の B (`sockat-<uid>`・`sockat`)。あるものだけで、B を作らない
-- `sweep_base(path)` (名前は各言語の慣習) は、`Options.base` に渡した B の中の死んだ D を消す。その B を管理するアプリが呼ぶ
+- `sweep_base(path)` (名前は各言語の慣習) は、`Options.base` に渡した B の中の死んだ D を消す。その B を管理するアプリが呼ぶ。B か親が無ければ何もせず成功。path の確かめは `Options.base` と同じ (形の誤りは引数の誤り、symlink・他人の物・他人が書ける B や途中は `EPERM`、ディレクトリでなければ `ENOTDIR`)
+- `sweep()` は、確かめに外れた置き場・B を黙って飛ばす
 - 乱数の名前の B (確かめに外れて落とした B) とソケットのディレクトリの B は対象にしない
 - B の直下の E (既定の connect の物) には触らない。symlink でない物がある D は残す
 - 自動では呼ばない (resolve のたびに B の中を一覧しない)
