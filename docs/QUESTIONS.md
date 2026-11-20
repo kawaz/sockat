@@ -17,11 +17,4 @@
 
 ## 裁定待ち
 
-### PB-Q1: DR-0017 の 3 言語を公開してよいか
-
-3 言語とも手元で作り直しが済み、ハブ cf4599fb の `just conformance` が手元・Linux の全場面で差なし ([issue](issue/2026-11-21-roll-out-dr-0017.md))。
-
-- [ ] a: 公開する (sockat-rs 0.5.0・sockat-py 0.3.0・sockat-go v0.4.0 に bump して push、CI (BSD・illumos の VM を含む) と release を確かめる)
-- [ ] b: まだ公開しない (理由・追加で見たい物を添えて)
-
-pages/ の GitHub Pages の公開は別に聞く。
+(なし)
