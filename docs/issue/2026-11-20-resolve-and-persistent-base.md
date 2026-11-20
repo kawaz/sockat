@@ -108,7 +108,7 @@ pub enum Spelling {
         removable: bool,             // 綴りで unlink すると実体が消えるか (link-dir: true、link-file: false)
         until: Until,                // Process (procB) / Cleanup (dirB・tmpB)
         followable_by_other_uids: bool,    // 別の uid の相手が辿れるか
-        followable_from_private_tmp: bool, // /tmp を隔離した相手 (systemd の PrivateTmp 等) が辿れるか (綴りが /tmp・/var/tmp を通らなければ true。mount 名前空間が丸ごと違う相手 (コンテナ等) までは保証しない)
+        followable_across_private_tmp: bool, // 自分と相手のどちらかが /tmp を隔離していても (systemd の PrivateTmp 等) 相手が辿れるか (綴りが /tmp・/var/tmp を通らなければ true。mount 名前空間が丸ごと違う相手 (コンテナ等) までは保証しない)
         recreatable_after_cleanup: bool, // cleanup の後に他人が作り直せるか (tmpB)
     },
     Dangling,     // 片付け済みの R を含む綴り。どこにも届かない (thread-cwd・at・fork-cwd)
