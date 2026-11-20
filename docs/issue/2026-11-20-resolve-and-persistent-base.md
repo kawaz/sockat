@@ -229,6 +229,16 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 - resolve は path を返すだけなので、thread-cwd でしか届かない長さでは `ENAMETOOLONG`。それも届かせたい人は `bind` / `connect` を使う
 - 既定の `bind` は `SocketFile` を返さないので、その D は `cleanup_base` か次の sockat の掃除まで残る (片付け損ねた B・D の掃除が必須になる)
 
+## 利用者の回答 (2026-11-20)
+
+llm-gateway の統括 (sockat-rs 0.4.1 を使用):
+
+- 使うのは `bind`・`connect_nonblocking`・`connect` (同期、ECONNREFUSED で残骸を見分ける) だけ。`_ex`・最終手段・`getsockname` は使わない。STREAM だけで DGRAM / SEQPACKET の需要は無い
+- 実運用のパスは 60〜66 バイトで長いパスの経路を通らない。長くなるのは試験 (TMPDIR が 113 バイト) と、利用者が長い置き場を設定した時
+- fork をやめても困らない。connect の順が今どおりなら振る舞いは変わらない
+- 気になる点: 監督者や unit は落ちて起こし直されるので長いパスでは B が残る (次の sockat の掃除で足りる)。試験は並行して多数の bind / connect を長いパスで行うので、B の作成と片付けが並行で競合しないか、試験の後に残骸が残らないか。状態がアプリの置き場の外 ($XDG_RUNTIME_DIR / $TMPDIR / /tmp) に増える (MANUAL に書く)。connect の後の片付けで待ちが入ると tokio の上で困る (`connect_nonblocking` は待たずに返ること)
+- 確かめてほしい点: macOS には $XDG_RUNTIME_DIR が無く、$TMPDIR が長い (113 バイト) 環境で B の綴りが収まるか
+
 ## 未決
 
 ### 整理案で案を出した (判断待ち。[docs/QUESTIONS.md](../QUESTIONS.md))
