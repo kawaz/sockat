@@ -162,5 +162,197 @@
     "cwd": "{root}",
     "setup": ["mkdir {long}", "listen {long}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.sock"],
     "expect": { "ok": true, "error": null, "losses": [], "received": "x", "residue": [] }
+  },
+  {
+    "name": "linux-long-bind",
+    "op": "bind",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "linux": { "seccomp": "unconfined" },
+    "expect": { "ok": true, "error": null, "file": true, "residue": [] }
+  },
+  {
+    "name": "no-thread-cwd-bind",
+    "op": "bind",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "linux": { "seccomp": "default" },
+    "expect": { "ok": true, "error": null, "file": true, "residue": [] }
+  },
+  {
+    "name": "no-thread-cwd-bind-kill-unshare",
+    "op": "bind",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "linux": { "seccomp": "kill-unshare" },
+    "expect": { "ok": true, "error": null, "file": true, "residue": [] }
+  },
+  {
+    "name": "no-proc-bind",
+    "op": "bind",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "linux": { "seccomp": "unconfined", "proc": false },
+    "expect": { "ok": true, "error": null, "file": true, "residue": [] }
+  },
+  {
+    "name": "no-thread-cwd-no-proc-bind",
+    "op": "bind",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "linux": { "seccomp": "kill-unshare", "proc": false },
+    "expect": { "ok": true, "error": null, "file": true, "residue": [] }
+  },
+  {
+    "name": "no-thread-cwd-no-proc-bind-last-resort",
+    "op": "bind",
+    "last_resort": true,
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "linux": { "seccomp": "kill-unshare", "proc": false },
+    "expect": { "ok": true, "error": null, "file": true, "residue": [] }
+  },
+  {
+    "name": "no-tmpdir-bind",
+    "op": "bind",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "linux": { "seccomp": "unconfined", "readonly": ["{tmpdir}"] },
+    "expect": { "ok": true, "error": null, "file": true, "residue": [] }
+  },
+  {
+    "name": "no-tmpdir-no-tmp-bind",
+    "op": "bind",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "linux": { "seccomp": "unconfined", "readonly": ["{tmpdir}", "/tmp"] },
+    "expect": { "ok": true, "error": null, "file": true, "residue": [] }
+  },
+  {
+    "name": "no-tmp-no-thread-cwd-no-proc-bind",
+    "op": "bind",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "linux": { "seccomp": "kill-unshare", "proc": false, "readonly": ["{tmpdir}", "/tmp"] },
+    "expect": { "ok": true, "error": null, "file": true, "residue": [] }
+  },
+  {
+    "name": "no-tmp-no-xdg-no-thread-cwd-no-proc-bind-last-resort",
+    "op": "bind",
+    "last_resort": true,
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "linux": { "seccomp": "kill-unshare", "proc": false, "readonly": ["{tmpdir}", "/tmp", "{xdg}"] },
+    "expect": { "ok": true, "error": null, "file": true, "residue": [] }
+  },
+  {
+    "name": "no-proc-long-filename-bind",
+    "op": "bind",
+    "path": "{long}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "linux": { "seccomp": "unconfined", "proc": false },
+    "expect": { "ok": false, "error": "ENAMETOOLONG", "losses": [], "created": [], "residue": [] }
+  },
+  {
+    "name": "linux-long-connect",
+    "op": "connect",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}", "listen {long}/s.sock"],
+    "linux": { "seccomp": "unconfined" },
+    "expect": { "ok": true, "error": null, "received": "x", "residue": [] }
+  },
+  {
+    "name": "no-proc-connect",
+    "op": "connect",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}", "listen {long}/s.sock"],
+    "linux": { "seccomp": "unconfined", "proc": false },
+    "expect": { "ok": true, "error": null, "received": "x", "residue": [] }
+  },
+  {
+    "name": "no-proc-connect-near-cwd",
+    "op": "connect",
+    "path": "{long}/s.sock",
+    "cwd": "{long}",
+    "setup": ["mkdir {long}", "listen {long}/s.sock"],
+    "linux": { "seccomp": "unconfined", "proc": false },
+    "expect": { "ok": true, "error": null, "received": "x", "residue": [] }
+  },
+  {
+    "name": "no-thread-cwd-no-proc-connect",
+    "op": "connect",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}", "listen {long}/s.sock"],
+    "linux": { "seccomp": "kill-unshare", "proc": false },
+    "expect": { "ok": true, "error": null, "received": "x", "residue": [] }
+  },
+  {
+    "name": "no-tmp-no-thread-cwd-no-proc-connect",
+    "op": "connect",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}", "listen {long}/s.sock"],
+    "linux": { "seccomp": "kill-unshare", "proc": false, "readonly": ["{tmpdir}", "/tmp"] },
+    "expect": { "ok": false, "error": "ENAMETOOLONG", "losses": [], "created": [], "residue": [] }
+  },
+  {
+    "name": "no-tmp-no-thread-cwd-no-proc-connect-last-resort",
+    "op": "connect",
+    "last_resort": true,
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}", "listen {long}/s.sock"],
+    "linux": { "seccomp": "kill-unshare", "proc": false, "readonly": ["{tmpdir}", "/tmp"] },
+    "expect": { "ok": true, "error": null, "received": "x", "residue": [] }
+  },
+  {
+    "name": "no-tmp-no-proc-connect",
+    "op": "connect",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}", "listen {long}/s.sock"],
+    "linux": { "seccomp": "unconfined", "proc": false, "readonly": ["{tmpdir}", "/tmp"] },
+    "expect": { "ok": true, "error": null, "received": "x", "residue": [] }
+  },
+  {
+    "name": "no-place-no-proc-connect",
+    "op": "connect",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}", "listen {long}/s.sock"],
+    "linux": { "seccomp": "unconfined", "proc": false, "readonly": ["{tmpdir}", "/tmp", "{long}"] },
+    "expect": { "ok": false, "error": "ENAMETOOLONG", "losses": [], "created": [], "residue": [] }
+  },
+  {
+    "name": "linux-filename-93-connect",
+    "op": "connect",
+    "path": "{long}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}", "listen {long}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.sock"],
+    "linux": { "seccomp": "unconfined" },
+    "expect": { "ok": true, "error": null, "received": "x", "residue": [] }
+  },
+  {
+    "name": "no-thread-cwd-filename-93-connect",
+    "op": "connect",
+    "path": "{long}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}", "listen {long}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.sock"],
+    "linux": { "seccomp": "default" },
+    "expect": { "ok": true, "error": null, "received": "x", "residue": [] }
   }
 ]

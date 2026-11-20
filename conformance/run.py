@@ -4,13 +4,16 @@
 決まりの正本は docs/design/conformance.md。場面 (cases.json) ごとに環境を作り、
 各言語の試験用 CLI (langs.json) を起こし、結果と CLI の後の状態を言語どうしと
 expect で比べる。差があれば場面 x 言語の表を出して終了コード 1。
+`linux` の条件を持つ場面は docker の Linux コンテナの中で条件を作って流す。
 
-    python3 -I conformance/run.py [--langs rs,py,go] [--case NAME[,NAME...]] [--keep]
+    python3 -I conformance/run.py [--langs rs,py,go] [--case NAME[,NAME...]] [--on all|host|linux] [--keep]
 
 標準ライブラリだけで書く (どの言語のリポにも依らずに流せるように)。
 """
 
 import argparse
+import ctypes
+import errno
 import json
 import os
 import secrets
@@ -24,6 +27,26 @@ from pathlib import Path
 
 HUB = Path(__file__).resolve().parent.parent
 CONFORMANCE = HUB / "conformance"
+
+# Linux の場面を流すコンテナ。rs の Linux 向けの CLI を作るイメージと同じにする (glibc をそろえるため。
+# langs.json の rs の linux.build もこれを使う)。python3 (3.11 以上) が入っていて、run.py と py の CLI もこれで動く。
+LINUX_IMAGE = "rust:1"
+# 各言語の Linux 向けの CLI を置く docker の volume。コンテナの中では /out (読み取り専用)。
+LINUX_OUT_VOLUME = "sockat-conformance-out"
+# コンテナの中の置き場。tmpfs にし、TMPDIR に向ける (場面の {root} 等はこの下。/tmp を書けなくしても巻き込まない)。
+LINUX_WORK = "/work"
+LINUX_HUB = "/hub/conformance"
+LINUX_LANGS = "/langs"
+# seccomp の条件 -> (docker run のオプション, コンテナの中の prctl(PR_GET_SECCOMP) の期待値)。
+SECCOMP = {
+    "default": ([], 2),
+    "unconfined": (["--security-opt", "seccomp=unconfined"], 0),
+    "kill-unshare": (["--security-opt", f"seccomp={CONFORMANCE / 'linux' / 'seccomp-kill-unshare.json'}"], 2),
+}
+# 書けなくする場所に書ける placeholder (それ以外は絶対パス)。
+READONLY_PLACEHOLDERS = ("{tmpdir}", "{xdg}", "{root}", "{long}")
+MS_RDONLY, MS_REMOUNT, MS_BIND = 1, 32, 4096
+PR_GET_SECCOMP = 21
 
 # {long} はパス全体がこのバイト数以上になるまで深くする。
 # sun_path (macOS 104、Linux 108) を超え、ファイル名を足しても PATH_MAX には遠い長さ。
@@ -95,7 +118,33 @@ def load_cases():
         if c["name"] in names:
             fail_usage(f"cases.json: 場面の名前 {c['name']!r} が重複")
         names.add(c["name"])
+        if "linux" in c:
+            check_linux_conditions(c)
     return cases
+
+
+def check_linux_conditions(c):
+    where = f"cases.json: 場面 {c['name']!r} の linux"
+    lx = c["linux"]
+    if not isinstance(lx, dict):
+        fail_usage(f"{where} はオブジェクト")
+    unknown = set(lx) - {"seccomp", "proc", "readonly"}
+    if unknown:
+        fail_usage(f"{where} に知らない項目 {sorted(unknown)}")
+    if lx.get("seccomp") not in SECCOMP:
+        fail_usage(f"{where} の seccomp は {' か '.join(SECCOMP)}")
+    if not isinstance(lx.get("proc", True), bool):
+        fail_usage(f"{where} の proc は true か false")
+    ro = lx.get("readonly", [])
+    if not isinstance(ro, list) or not all(isinstance(p, str) for p in ro):
+        fail_usage(f"{where} の readonly はパスの並び")
+    for p in ro:
+        if not (p.startswith("/") or any(p == h or p.startswith(h + "/") for h in READONLY_PLACEHOLDERS)):
+            fail_usage(f"{where} の readonly {p!r} は絶対パスか {', '.join(READONLY_PLACEHOLDERS)} で始める")
+    # 書けなくする・/proc を隠すには SYS_ADMIN が要り、docker は SYS_ADMIN を足すと既定の seccomp の
+    # profile を緩める (unshare が通る)。default のまま組むと「既定の seccomp」でなくなるので断る。
+    if lx["seccomp"] == "default" and (ro or not lx.get("proc", True)):
+        fail_usage(f"{where}: seccomp の default は proc・readonly と組めない (SYS_ADMIN で profile が緩むため。kill-unshare を使う)")
 
 
 def load_langs():
@@ -104,6 +153,14 @@ def load_langs():
         lacks = spec.get("lacks") if isinstance(spec, dict) else None
         if not isinstance(lacks, list) or not all(isinstance(r, str) for r in lacks):
             fail_usage(f"langs.json: 言語 {name!r} の lacks は経路の名前の並び")
+        lx = spec.get("linux")
+        if lx is not None:
+            if not isinstance(lx, dict) or set(lx) - {"cmd", "build"}:
+                fail_usage(f"langs.json: 言語 {name!r} の linux は cmd と build のオブジェクト")
+            for key in ("cmd", "build"):
+                v = lx.get(key)
+                if v is not None and (not isinstance(v, list) or not all(isinstance(a, str) for a in v)):
+                    fail_usage(f"langs.json: 言語 {name!r} の linux.{key} は文字列の並びか null")
     return langs
 
 
@@ -139,7 +196,9 @@ class Env:
     def subst(self, s):
         return (s.replace("{long}", str(self.long))
                  .replace("{root}", str(self.root))
-                 .replace("{short}", str(self.short)))
+                 .replace("{short}", str(self.short))
+                 .replace("{tmpdir}", str(self.tmp))
+                 .replace("{xdg}", str(self.xdg)))
 
     def render(self, p):
         """スクリプトが作った場所を placeholder に戻す (言語ごとに場所が違っても比べられるように)。"""
@@ -217,6 +276,59 @@ class Env:
             shutil.rmtree(self.case_dir, ignore_errors=True)
 
 
+class Conditions:
+    """コンテナの中で CLI の間だけ作る条件 (書けなくする場所、/proc を隠す)。seccomp は docker run で掛ける。
+
+    mount はコンテナの mount 名前空間全体に効くので、CLI が終わったら release で外す
+    (待ち受けの手伝いや残骸の確かめは条件の外で動く)。
+    """
+
+    def __init__(self, env, linux):
+        self.readonly = [env.subst(p) for p in linux.get("readonly", [])]
+        self.hide_proc = not linux.get("proc", True)
+        self.mounted = []
+        self.libc = ctypes.CDLL(None, use_errno=True)
+
+    def _mount(self, src, target, fstype, flags, data):
+        enc = lambda s: None if s is None else os.fsencode(s)
+        if self.libc.mount(enc(src), enc(target), enc(fstype), ctypes.c_ulong(flags), enc(data)) != 0:
+            e = ctypes.get_errno()
+            raise SetupError(f"mount {target} に失敗: {os.strerror(e)}")
+
+    def apply(self):
+        # 書けなくする方を先に (後で隠す /proc に頼らないが、順を決めておく)。
+        for p in self.readonly:
+            self._mount(p, p, None, MS_BIND, None)
+            self.mounted.append(p)
+            self._mount(None, p, None, MS_BIND | MS_REMOUNT | MS_RDONLY, None)
+        if self.hide_proc:
+            self._mount("sockat-noproc", "/proc", "tmpfs", MS_RDONLY, "size=4k")
+            self.mounted.append("/proc")
+        # 条件が本当に効いているかを確かめる (経路の名前に依らず、環境だけを見る)。
+        for p in self.readonly:
+            probe = os.path.join(p, ".conformance-probe")
+            try:
+                os.mkdir(probe)
+            except OSError as e:
+                if e.errno != errno.EROFS:
+                    raise SetupError(f"{p} を書けなくできたか確かめられない: {e}")
+            else:
+                os.rmdir(probe)
+                raise SetupError(f"{p} がまだ書ける")
+        if self.hide_proc and os.path.exists("/proc/self"):
+            raise SetupError("/proc がまだ見える")
+
+    def release(self):
+        for p in reversed(self.mounted):
+            if self.libc.umount2(os.fsencode(p), 0) != 0:
+                raise SetupError(f"umount {p} に失敗: {os.strerror(ctypes.get_errno())}")
+        self.mounted = []
+
+
+def seccomp_mode():
+    return ctypes.CDLL(None, use_errno=True).prctl(PR_GET_SECCOMP, 0, 0, 0, 0)
+
+
 def tmp_sockat_entries():
     try:
         return {str(Path("/tmp") / n) for n in os.listdir("/tmp") if n.startswith("sockat.")}
@@ -280,13 +392,22 @@ def run_one(case, argv, base, keep):
         child_env["PWD"] = cwd
         before_tree = env.tree()
         before_tmp = tmp_sockat_entries()
+        conditions = Conditions(env, case["linux"]) if "linux" in case else None
         try:
-            request = {"op": case["op"], "path": path}
-            if "last_resort" in case:
-                request["last_resort"] = case["last_resort"]
-            proc = subprocess.run(argv, input=json.dumps(request),
-                                  cwd=cwd, env=child_env, umask=0o022, capture_output=True,
-                                  text=True, timeout=CLI_TIMEOUT_SEC)
+            try:
+                if conditions:
+                    conditions.apply()
+                request = {"op": case["op"], "path": path}
+                if "last_resort" in case:
+                    request["last_resort"] = case["last_resort"]
+                proc = subprocess.run(argv, input=json.dumps(request),
+                                      cwd=cwd, env=child_env, umask=0o022, capture_output=True,
+                                      text=True, timeout=CLI_TIMEOUT_SEC)
+            finally:
+                if conditions:
+                    conditions.release()
+        except SetupError as e:
+            return {"status": "setup-error", "message": str(e)}
         except (FileNotFoundError, PermissionError) as e:
             return {"status": "unimplemented", "message": f"起こせない: {e}"}
         except subprocess.TimeoutExpired:
@@ -295,6 +416,8 @@ def run_one(case, argv, base, keep):
             received = env.collect_received()
         except SetupError as e:
             return {"status": "setup-error", "message": str(e)}
+        if proc.returncode < 0:
+            return {"status": "broken", "message": f"シグナル {-proc.returncode} で終わった: {proc.stderr.strip()[-500:]}"}
         if proc.returncode != 0:
             return {"status": "broken", "message": f"終了コード {proc.returncode}: {proc.stderr.strip()[-500:]}"}
         out, err = validate_cli_output(proc.stdout)
@@ -438,13 +561,133 @@ def print_table(rows, header):
         print("  ".join(pad(c, w) for c, w in zip(r, widths)).rstrip())
 
 
+def build_cmd(build, repo):
+    """build の argv を、{repo} を手元のリポの場所にして走らせる。失敗したら終了コード 1 で止める。"""
+    build = [a.replace("{repo}", str(repo)) for a in build]
+    r = subprocess.run(build, cwd=repo, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    if r.returncode != 0:
+        print(f"build に失敗した ({' '.join(build)})\n{r.stderr[-2000:]}", file=sys.stderr)
+        sys.exit(1)
+
+
+def lang_repo(spec):
+    repo = (HUB / spec["cwd"]).resolve() if spec.get("cwd") else None
+    return repo if repo is not None and repo.is_dir() else None
+
+
+def linux_command(lang, spec):
+    """コンテナの中の CLI の argv か、起こせない理由の文字列。{repo} はコンテナの中のリポの場所。"""
+    lx = spec.get("linux") or {}
+    if lx.get("cmd") is None:
+        return "langs.json に linux.cmd が無い"
+    if lang_repo(spec) is None:
+        return f"リポが無い: {(HUB / spec.get('cwd', '.')).resolve()}"
+    cmd = [a.replace("{repo}", f"{LINUX_LANGS}/{lang}") for a in lx["cmd"]]
+    return cmd or "langs.json の linux.cmd が空"
+
+
+def prepare_linux(langs, build):
+    """Linux の場面を流せるようにする。戻り値は飛ばす理由 (流せる時は None)。
+
+    docker が無い・動かない・コンテナのイメージを取れない時は飛ばす (失敗にしない)。
+    イメージがあって各言語の Linux 向けの build が失敗した時は、コードの誤りでありうるので止める。
+    """
+    if shutil.which("docker") is None:
+        return "docker が無い"
+    try:
+        r = subprocess.run(["docker", "info", "--format", "{{.OSType}}"], capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        return "docker が応えない"
+    if r.returncode != 0:
+        return f"docker が動いていない: {r.stderr.strip()[-300:]}"
+    if r.stdout.strip() != "linux":
+        return f"docker が Linux のコンテナを動かせない (OSType: {r.stdout.strip()})"
+    if subprocess.run(["docker", "image", "inspect", LINUX_IMAGE], capture_output=True).returncode != 0:
+        r = subprocess.run(["docker", "pull", "-q", LINUX_IMAGE], capture_output=True, text=True)
+        if r.returncode != 0:
+            return f"イメージ {LINUX_IMAGE} を取れない: {r.stderr.strip()[-300:]}"
+    if build:
+        for l, spec in langs.items():
+            b = (spec.get("linux") or {}).get("build")
+            repo = lang_repo(spec)
+            if b and isinstance(linux_command(l, spec), list) and repo is not None:
+                print(f"{l}: Linux 向けの CLI を作る", file=sys.stderr)
+                build_cmd(b, repo)
+    return None
+
+
+def run_linux_case(case, commands, langs):
+    """1 つの場面を、条件を作ったコンテナの中で全言語流す。戻り値は言語ごとの outcome。"""
+    lx = case["linux"]
+    runnable = {l: c for l, c in commands.items() if isinstance(c, list)}
+    argv = ["docker", "run", "--rm", "-i", "--network", "none", *SECCOMP[lx["seccomp"]][0]]
+    if lx.get("readonly") or not lx.get("proc", True):
+        argv += ["--cap-add", "SYS_ADMIN"]
+    argv += ["--tmpfs", f"{LINUX_WORK}:rw,size=64m", "-e", f"TMPDIR={LINUX_WORK}",
+             "-v", f"{CONFORMANCE}:{LINUX_HUB}:ro", "-v", f"{LINUX_OUT_VOLUME}:/out:ro"]
+    for l in runnable:
+        argv += ["-v", f"{lang_repo(langs[l])}:{LINUX_LANGS}/{l}:ro"]
+    argv += [LINUX_IMAGE, "python3", "-I", f"{LINUX_HUB}/run.py", "--inside"]
+    timeout = CLI_TIMEOUT_SEC * max(1, len(runnable)) + 60
+    try:
+        r = subprocess.run(argv, input=json.dumps({"case": case, "langs": runnable}),
+                           capture_output=True, text=True, timeout=timeout)
+        got = json.loads(r.stdout)["outcomes"] if r.returncode == 0 else None
+        err = None if r.returncode == 0 else f"コンテナが終了コード {r.returncode}: {r.stderr.strip()[-500:]}"
+    except subprocess.TimeoutExpired:
+        got, err = None, f"コンテナが {timeout} 秒で終わらない"
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        got, err = None, f"コンテナの出力が読めない ({e}): {r.stderr.strip()[-500:]}"
+    outcomes = {}
+    for l, c in commands.items():
+        if isinstance(c, str):
+            outcomes[l] = {"status": "unimplemented", "message": c}
+        elif got is None or l not in got:
+            outcomes[l] = {"status": "setup-error", "message": err or "コンテナの出力にこの言語が無い"}
+        else:
+            outcomes[l] = got[l]
+    return outcomes
+
+
+def inside():
+    """コンテナの中で、標準入力の {"case", "langs"} を流して {"outcomes"} を標準出力に出す。"""
+    req = json.load(sys.stdin)
+    case, cmds = req["case"], req["langs"]
+    want = SECCOMP[case["linux"]["seccomp"]][1]
+    got = seccomp_mode()
+    base = tempfile.mkdtemp(prefix="conformance.", dir=LINUX_WORK)
+    outcomes = {}
+    for lang, cmd in cmds.items():
+        if got != want:
+            outcomes[lang] = {"status": "setup-error", "message": f"seccomp の mode が {got} (条件 {case['linux']['seccomp']} は {want})"}
+        else:
+            outcomes[lang] = run_one(case, cmd, base, False)
+    print(json.dumps({"outcomes": outcomes}))
+    return 0
+
+
+def describe_linux(lx):
+    parts = [f"seccomp={lx['seccomp']}"]
+    if not lx.get("proc", True):
+        parts.append("/proc 無し")
+    if lx.get("readonly"):
+        parts.append("書けない: " + ",".join(lx["readonly"]))
+    return " ".join(parts)
+
+
 def main():
     ap = argparse.ArgumentParser(description="sockat の適合試験 (決まりは docs/design/conformance.md)")
     ap.add_argument("--langs", help="流す言語 (カンマ区切り。既定は langs.json の全部)")
     ap.add_argument("--case", action="append", help="流す場面の名前 (カンマ区切り、繰り返し可。既定は全部)")
-    ap.add_argument("--keep", action="store_true", help="場面の一時ディレクトリを消さずに残す")
-    ap.add_argument("--no-build", action="store_true", help="流す前に各言語の CLI を作り直さない (langs.json の build を走らせない)")
+    ap.add_argument("--on", choices=["all", "host", "linux"], default="all",
+                    help="流す場面: host は手元で流す場面、linux は Linux のコンテナで流す場面 (linux の条件を持つもの)。既定は両方")
+    ap.add_argument("--keep", action="store_true", help="手元で流す場面の一時ディレクトリを消さずに残す")
+    ap.add_argument("--no-build", action="store_true", help="流す前に各言語の CLI を作り直さない (langs.json の build と linux.build を走らせない)")
+    ap.add_argument("--verbose", action="store_true", help="差が無くても、場面ごとに各言語の route・error・losses・skipped を出す")
+    ap.add_argument("--inside", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
+    if args.inside:
+        return inside()
 
     cases = load_cases()
     langs = load_langs()
@@ -461,21 +704,23 @@ def main():
         if unknown:
             fail_usage(f"cases.json に無い場面: {', '.join(unknown)}")
         cases = [c for c in cases if c["name"] in wanted]
+    if args.on == "host":
+        cases = [c for c in cases if "linux" not in c]
+    elif args.on == "linux":
+        cases = [c for c in cases if "linux" in c]
 
-    if not args.no_build:
+    host_cases = [c for c in cases if "linux" not in c]
+    linux_cases = [c for c in cases if "linux" in c]
+    if not args.no_build and host_cases:
         # 各言語の CLI を流す前に作り直す (古いビルドのまま比べると、言語の差でなく作り忘れが差に出るため)。
         for l, spec in langs.items():
-            build = spec.get("build")
-            repo = (HUB / spec["cwd"]).resolve() if spec.get("cwd") else None
-            if not build or spec.get("cmd") is None or repo is None or not repo.is_dir():
-                continue
-            build = [str(a).replace("{repo}", str(repo)) for a in build]
-            r = subprocess.run(build, cwd=repo, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-            if r.returncode != 0:
-                print(f"{l}: build に失敗した ({' '.join(build)})\n{r.stderr[-2000:]}", file=sys.stderr)
-                sys.exit(1)
+            repo = lang_repo(spec)
+            if spec.get("build") and spec.get("cmd") is not None and repo is not None:
+                build_cmd(spec["build"], repo)
+    linux_skip = prepare_linux(langs, not args.no_build) if linux_cases else None
 
-    commands = {l: lang_command(spec) for l, spec in langs.items()}
+    commands = {"host": {l: lang_command(spec) for l, spec in langs.items()},
+                "linux": {l: linux_command(l, spec) for l, spec in langs.items()}}
     lacks = {l: set(spec["lacks"]) for l, spec in langs.items()}
     base = tempfile.mkdtemp(prefix="conformance.", dir=os.environ.get("TMPDIR") or None)
     rows = []
@@ -483,33 +728,48 @@ def main():
     failed = False
     messages = []
     splits = []
+    verbose = []
     try:
         for case in cases:
-            outcomes = {}
-            for lang, cmd in commands.items():
-                if isinstance(cmd, str):
-                    outcomes[lang] = {"status": "unimplemented", "message": cmd}
-                    continue
-                outcomes[lang] = run_one(case, cmd, base, args.keep)
+            where = "linux" if "linux" in case else "host"
+            if where == "linux" and linux_skip:
+                continue
+            cmds = commands[where]
+            if where == "linux":
+                outcomes = run_linux_case(case, cmds, langs)
+            else:
+                outcomes = {}
+                for lang, cmd in cmds.items():
+                    if isinstance(cmd, str):
+                        outcomes[lang] = {"status": "unimplemented", "message": cmd}
+                        continue
+                    outcomes[lang] = run_one(case, cmd, base, args.keep)
             cells, detail, groups = judge(case, outcomes, lacks)
             if groups:
                 splits.append((case["name"], groups))
             for lang, o in outcomes.items():
                 if o["status"] == "unimplemented":
-                    commands[lang] = o["message"]
+                    cmds[lang] = o["message"]
                 elif o["status"] in ("broken", "setup-error"):
                     messages.append(f"{case['name']} / {lang}: {o['message']}")
             if any(c in ("差", "期待違い", "壊れた", "準備失敗") for c in cells.values()):
                 failed = True
-            rows.append([case["name"]] + [cells[l] for l in langs])
+            rows.append([case["name"], where] + [cells[l] for l in langs])
             if detail:
                 details.append((case, detail))
+            if args.verbose:
+                verbose.append((case, outcomes))
     finally:
         if not args.keep:
             shutil.rmtree(base, ignore_errors=True)
 
-    print_table(rows, ["場面"] + list(langs))
-    unimplemented = [f"  {lang}: {cmd}" for lang, cmd in commands.items() if isinstance(cmd, str)]
+    if rows:
+        print_table(rows, ["場面", "環境"] + list(langs))
+    if linux_skip:
+        print(f"\nLinux の場面を飛ばした ({len(linux_cases)} 場面): {linux_skip}")
+    ran = {row[1] for row in rows}
+    unimplemented = [f"  {lang} ({where}): {cmd}" for where, cmds in commands.items() if where in ran
+                     for lang, cmd in cmds.items() if isinstance(cmd, str)]
     if unimplemented:
         print("\n未実装 (差の判定から外した):")
         print("\n".join(unimplemented))
@@ -519,7 +779,8 @@ def main():
             print(f"  {name}: " + " / ".join(",".join(l for l in langs if l in g) for g in groups))
     for case, detail in details:
         lr = " last_resort" if case.get("last_resort") else ""
-        print(f"\n== {case['name']}  ({case['op']}{lr} {json.dumps(case['path'], ensure_ascii=False)})")
+        env = f"  [linux: {describe_linux(case['linux'])}]" if "linux" in case else ""
+        print(f"\n== {case['name']}  ({case['op']}{lr} {json.dumps(case['path'], ensure_ascii=False)}){env}")
         header = ["項目"] + list(langs) + ["期待"]
         drows = []
         for field, (encoded, odd, mismatch, exp_values) in detail.items():
@@ -531,11 +792,23 @@ def main():
             row.append(" / ".join(sorted(exp_values)) if exp_values else "-")
             drows.append(row)
         print_table(drows, header)
+    if verbose:
+        print("\n各言語の結果:")
+        for case, outcomes in verbose:
+            env = f"  [linux: {describe_linux(case['linux'])}]" if "linux" in case else ""
+            print(f"  {case['name']}{env}")
+            for l, o in outcomes.items():
+                if o["status"] != "result":
+                    print(f"    {l}: {o['status']}")
+                    continue
+                r = o["result"]
+                print(f"    {l}: ok={json.dumps(r['ok'])} error={r['error']} route={r['route']} "
+                      f"losses={','.join(r['losses']) or '-'} skipped={','.join(r['skipped']) or '-'}")
     for m in messages:
         print(f"\n{m}")
     if args.keep:
         print(f"\n一時ディレクトリ: {base}")
-    if not any(not isinstance(c, str) for c in commands.values()):
+    if rows and not any(not isinstance(c, str) for w in ran for c in commands[w].values()):
         print("\n比べた言語が無い (全部未実装)")
     print("\n結果: " + ("差あり" if failed else "差なし"))
     return 1 if failed else 0
