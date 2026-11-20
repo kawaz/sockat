@@ -26,7 +26,7 @@ kawaz との議論 (2026-11-19〜20) で方向が出たものの記録。[DR-001
   2. dirB: `$XDG_RUNTIME_DIR` と `$TMPDIR` のうち短い方の実パスの綴り。収まる時
   3. tmpB: `/tmp` の実パスの綴り。収まる時
   4. どれも収まらなければ今の経路 (thread-cwd・fork 等)
-- 利用者が「別の uid にも辿らせる」と指定した時は 1・2 を飛ばして 3 から (別の uid が辿れるのは `/tmp` の下の 0711 の B だけ)
+- 利用者が「別の uid にも辿らせる」と指定した時は、1 を飛ばし、2・3 のうち B までの途中のディレクトリが全部 other に x (辿る権限) を持つ物だけを使う (子が 0711 でも親が 0700 なら別の uid は辿れない。実測)。`/tmp` (1777) の下の tmpB はいつも当たり、dirB は置き場が 0700 (`/run/user/<uid>`、macOS の `$TMPDIR`) なら外れ、`$TMPDIR` を辿れる場所に向けた環境なら当たる
 - 相手の `/tmp` が隔離されている場合 (systemd の `PrivateTmp` 等) は選択肢にせず説明に書く (procB を先に試すので Linux ではまず起きない)
 - D は乱数 (カウンタにしない。プロセスが終わった後に同じ PID・同じ fd 番号の別の sockat のプロセスが現れると、カウンタの D は同じ綴りで他人のソケットを指す)
 - 消す (`remove`) と片付ける (`cleanup`) は自動で行わない。どちらも 1 回だけ働き、2 回目以降は何もしない (`remove` は resolve した綴りの物を 1 回だけ消す、の意味の冪等)。connect は内部で resolve した後に自分で `cleanup` してよい
@@ -43,6 +43,7 @@ kawaz との議論 (2026-11-19〜20) で方向が出たものの記録。[DR-001
 | その綴りに別のプロセスが connect | 同じ uid: 届く。別の uid: `EACCES` |
 | その綴りで unlink | 元のパスの実体が消える |
 | macOS の `$TMPDIR` (`/var/folders/.../T/`) の権限 | `drwx------` (別の uid は辿れない) |
+| 0700 の親の中の 0711 のディレクトリに別の uid が cd | できない。親も 0711 にするとできる |
 | bind が最後の要素の symlink を辿るか (`B/D/s` で bind できるか) | 辿るのは macOS と NetBSD だけ (Linux・FreeBSD・OpenBSD・illumos は辿らない。[findings](../findings/2026-11-19-bind-through-file-symlink.md)) |
 
 ## 綴りごとの性質
@@ -55,7 +56,7 @@ kawaz との議論 (2026-11-19〜20) で方向が出たものの記録。[DR-001
 | B の綴り | 他のプロセスが辿れるか | プロセスが終わった後 |
 |---|---|---|
 | procB | 同じ uid・同じ PID 名前空間だけ (root は辿れる) | 辿れない |
-| dirB | 同じ uid だけ (置き場が 0700) | `cleanup` まで残る |
+| dirB | 置き場までの途中が全部 other に x を持てば別の uid も、そうでなければ同じ uid だけ (`/run/user/<uid>` と macOS の `$TMPDIR` は 0700) | `cleanup` まで残る |
 | tmpB | 別の uid も (B が 0711、D は乱数) | `cleanup` まで残る。`cleanup` の後は他人が同じ名前で作り直しうる |
 
 ## 未決
