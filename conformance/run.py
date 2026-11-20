@@ -14,6 +14,7 @@ expect で比べる。差があれば場面 x 言語の表を出して終了コ�
 import argparse
 import ctypes
 import errno
+import fcntl
 import json
 import os
 import re
@@ -71,7 +72,9 @@ SPELLING_ATTRS = {
 SPELLING_UNTIL = ("Process", "Cleanup")
 
 # 置き場の中の B の名前 (SPEC-routes の「B の作り方」)。<uid> と乱数の部分は表示で記号に置き換える。
-B_NAME_TMP = re.compile(r"^sockat-(\d+)$")
+# <uid> は試験を流すユーザのもの (場面の CLI はスクリプトと同じ uid で走る)。他の uid の数字の名前
+# (別のユーザの B や、他のツールが /tmp に作る `sockat-<数字>` の一時ディレクトリ) は B とみなさない。
+B_NAME_TMP = f"sockat-{os.getuid()}"
 B_NAME_RUNTIME = "sockat"
 B_NAME_SOCKDIR = re.compile(r"^\.sockat\.[0-9A-Za-z]{10}$")
 # /tmp の中で、スクリプトが作る物 ({short} の symlink)。
@@ -234,6 +237,11 @@ class Env:
                 return name + p[len(prefix):]
         return p
 
+    def owns(self, target):
+        """symlink の指す先 target が、この場面の場所 (case_dir と {short}) の中か。"""
+        prefixes = {str(self.case_dir), os.path.realpath(self.case_dir), str(self.short)}
+        return any(target == p or target.startswith(p + "/") for p in prefixes)
+
     def resolve(self, cwd, p):
         return p if os.path.isabs(p) else os.path.join(cwd, p)
 
@@ -363,11 +371,40 @@ def walk_all(top):
     return out
 
 
+def is_real_dir(path):
+    try:
+        return stat.S_ISDIR(os.lstat(path).st_mode)
+    except OSError:
+        return False
+
+
+def lock_dead_d(path):
+    """D (path) を開いて flock(LOCK_EX | LOCK_NB) を掛けた fd。取れなければ None。
+
+    場面の CLI は終わっているので、その D のロックは外れている。取れないのは生きている他のプロセスの D
+    (SPEC-routes の「D と E」の sweep と同じ見分け方)。開けない・消えた時も None。
+    """
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError:
+        return None
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        os.close(fd)
+        return None
+    return fd
+
+
 class Places:
     """CLI の前後で、置き場とソケットのディレクトリに増えた物を見る。
 
     B の中に増えた物 (D と E) は left、B の外に増えた物は residue に分ける。{root} の木の中で B の外に
     増えた物は created (ソケットのファイル等) で、run_one が別に見る。
+
+    /tmp の B は他のプロセス (他の試験、利用者のアプリ) と共有なので、B の中は場面の CLI が作った物だけを
+    見て消す。CLI は D と B の直下の E しか作らないので、B の直下に増えた物ごとに見分ける
+    (made_by_case)。
     """
 
     def __init__(self, env, sockdir, base):
@@ -379,15 +416,11 @@ class Places:
         """今ある B の (実パス, 表示)。"""
         out = []
         env = self.env
-        try:
-            for n in os.listdir("/tmp"):
-                if B_NAME_TMP.match(n):
-                    out.append((os.path.join("/tmp", n), "/tmp/sockat-<uid>"))
-        except OSError:
-            pass
-        for n in os.listdir(env.tmp):
-            if B_NAME_TMP.match(n):
-                out.append((str(env.tmp / n), "{tmpdir}/sockat-<uid>"))
+        tmp_b = os.path.join("/tmp", B_NAME_TMP)
+        if is_real_dir(tmp_b):
+            out.append((tmp_b, "/tmp/sockat-<uid>"))
+        if is_real_dir(env.tmp / B_NAME_TMP):
+            out.append((str(env.tmp / B_NAME_TMP), "{tmpdir}/sockat-<uid>"))
         if os.path.isdir(env.xdg / B_NAME_RUNTIME):
             out.append((str(env.xdg / B_NAME_RUNTIME), "{xdg}/" + B_NAME_RUNTIME))
         if self.sockdir and os.path.isdir(self.sockdir):
@@ -399,11 +432,18 @@ class Places:
         return out
 
     def snapshot(self):
-        """(B の中の全部, B の外の、置き場の直下の全部)。/tmp は sockat の名前の物だけを見る。"""
+        """(B の直下の全部, B の外の、置き場の直下の全部)。/tmp は sockat の名前の物だけを見る。
+
+        B の直下は他のプロセスの物も含めて全部取る (CLI の間に持ち主が終わった他のプロセスの D を、
+        後で「増えた物」と取り違えないように)。
+        """
         inside = set()
         bs = self.b_dirs()
         for b, _ in bs:
-            inside |= walk_all(b)
+            try:
+                inside |= {os.path.join(b, n) for n in os.listdir(b)}
+            except OSError:
+                pass
         outside = set()
         try:
             outside |= {os.path.join("/tmp", n) for n in os.listdir("/tmp")
@@ -415,17 +455,47 @@ class Places:
         outside -= {b for b, _ in bs}
         return inside, outside
 
+    def made_by_case(self, top):
+        """B の直下に増えた top が、場面の CLI の作った物か。
+
+        ディレクトリ (D) は flock(LOCK_EX | LOCK_NB) が取れる物 (取れたロックはすぐ外す)。
+        symlink (B の直下の E) は、指す先がこの場面の場所の中か相対パスの物 (他のプロセスの既定の
+        connect の E は、そのプロセスのソケットを絶対パスで指す)。それ以外の物は場面の物とみなす
+        (sockat は B に D と E しか作らないので、見えたら CLI の誤りとして left に出す)。
+        """
+        try:
+            mode = os.lstat(top).st_mode
+            target = os.readlink(top) if stat.S_ISLNK(mode) else None
+        except OSError:
+            return False
+        if target is not None:
+            return not os.path.isabs(target) or self.env.owns(target)
+        if stat.S_ISDIR(mode):
+            fd = lock_dead_d(top)
+            if fd is None:
+                return False
+            os.close(fd)
+        return True
+
     def diff(self, before):
-        """(left, residue, 増えた B の中の物の実パス)。"""
-        inside, outside = self.snapshot()
-        new_inside = sorted(inside - before[0])
+        """(left, residue, 場面の CLI が B の直下に増やした物の実パス)。"""
+        _, outside = self.snapshot()
         left = []
+        made = []
         for b, shown in self.b_dirs():
-            for p in new_inside:
-                if p.startswith(b + "/"):
+            try:
+                names = sorted(os.listdir(b))
+            except OSError:
+                continue
+            for n in names:
+                top = os.path.join(b, n)
+                if top in before[0] or not self.made_by_case(top):
+                    continue
+                made.append(top)
+                for p in [top] + (sorted(walk_all(top)) if is_real_dir(top) else []):
                     left.append(self.render_left(shown, os.path.relpath(p, b), p))
         residue = sorted(self.env.render(p) for p in outside - before[1])
-        return sorted(left), residue, new_inside
+        return sorted(left), residue, made
 
     def render_left(self, shown, rel, p):
         parts = rel.split("/")
@@ -441,13 +511,23 @@ class Places:
 
     @staticmethod
     def remove(paths):
-        """B の中に増えた物を消す (B は残す。/tmp の B に場面ごとの D が溜まらないように)。"""
-        for p in sorted(paths, key=len, reverse=True):
+        """場面の CLI が B の直下に増やした物 (diff の 3 つ目) を消す (B は残す。/tmp の B に場面ごとの
+        D が溜まらないように)。D は sweep と同じく、flock(LOCK_EX | LOCK_NB) を掛けたまま消し、
+        取れなければ (見た後に他のプロセスが掴んだ) 消さない。"""
+        for p in paths:
             try:
-                if os.path.islink(p) or not os.path.isdir(p):
+                if not is_real_dir(p):
                     os.unlink(p)
-                else:
-                    shutil.rmtree(p, ignore_errors=True)
+                    continue
+                fd = lock_dead_d(p)
+                if fd is None:
+                    continue
+                try:
+                    st, held = os.lstat(p), os.fstat(fd)
+                    if (st.st_dev, st.st_ino) == (held.st_dev, held.st_ino):
+                        shutil.rmtree(p, ignore_errors=True)
+                finally:
+                    os.close(fd)
             except OSError:
                 pass
 
@@ -554,11 +634,11 @@ def run_one(case, argv, base, keep):
         out, err = validate_cli_output(proc.stdout)
         if err:
             return {"status": "broken", "message": f"{err}: {proc.stderr.strip()[-500:]}"}
-        left, residue, new_in_b = places.diff(before_places)
+        left, residue, made_in_b = places.diff(before_places)
         b_paths = {b for b, _ in places.b_dirs()}
         created = sorted(env.render(p) for p in env.tree() - before_tree
                          if p not in b_paths and not any(p.startswith(b + "/") for b in b_paths))
-        Places.remove(new_in_b)
+        Places.remove(made_in_b)
         result = {
             "ok": out["ok"],
             "error": out["error"],

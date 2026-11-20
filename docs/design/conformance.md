@@ -73,7 +73,7 @@ CLI の出力に加えて、CLI が終わった後に:
 | 確かめること | 中身 |
 |---|---|
 | ソケットのファイル (`file`) | bind が通った時、元のパスにソケットのファイルがある |
-| B の中に残した物 (`left`) | B の中に増えた D と E。B は `/tmp` の `sockat-<uid>`、`$TMPDIR` の `sockat-<uid>`、`$XDG_RUNTIME_DIR` の `sockat`、ソケットのディレクトリの `.sockat.<乱数 10>`、`base` に渡した所 |
+| B の中に残した物 (`left`) | B の中に、場面の CLI が増やした D と E ([見分け方](#b-の中の見分け方))。B は `/tmp` の `sockat-<uid>`、`$TMPDIR` の `sockat-<uid>`、`$XDG_RUNTIME_DIR` の `sockat`、ソケットのディレクトリの `.sockat.<乱数 10>`、`base` に渡した所。`<uid>` は試験を流すユーザの uid (CLI も同じ uid で走る)。他の uid の数字の名前は B とみなさない |
 | B の外の残骸 (`residue`) | `TMPDIR`・`XDG_RUNTIME_DIR` の直下と、`/tmp` の `sockat` で始まる名前のうち、B の外に増えた物 |
 | `{root}` の木に増えた物 (`created`) | B の外に増えた物 (ソケットのファイル等) |
 | 届いたか (`received`) | connect が通った時、スクリプトが待ち受けていた側に `x` が届いた |
@@ -88,8 +88,21 @@ CLI の出力に加えて、CLI が終わった後に:
 
 - `<B>` は `/tmp/sockat-<uid>`・`{tmpdir}/sockat-<uid>`・`{xdg}/sockat`・`{long}/.sockat.<rand>` のように、置き場の placeholder と、uid・乱数を記号にした名前。`base` の B は渡したパスの placeholder の形
 - 指す先は placeholder の形 (link-dir は `{long}`、link-file は `{long}/s.sock`)
-- スクリプトは場面の後に、その場面で B の中に増えた物を消す (B は消さない。`/tmp` の B に場面ごとの D が溜まらないように)
-- `/tmp` の B は前後の差で見るので、同じ時に他で sockat を動かすと誤った差が出うる
+- スクリプトは場面の後に、その場面の CLI が B の中に増やした物を消す (B は消さない。`/tmp` の B に場面ごとの D が溜まらないように)
+
+### B の中の見分け方
+
+`/tmp` の B は利用者ごとに 1 つで、他のプロセス (他の言語の試験、利用者のアプリ) も同じ時に D と E を作る。スクリプトは B の直下を CLI の前後で比べ、増えた物のうち CLI が作った物だけを `left` に出して消す。
+
+| B の直下に増えた物 | CLI が作った物とみなす条件 |
+|---|---|
+| ディレクトリ (D) | `flock(LOCK_EX \| LOCK_NB)` が取れる (CLI は終わっているので、その D のロックは外れている。取れないのは生きている他のプロセスの D)。取れたロックはすぐ外す |
+| symlink (B の直下の E) | 指す先が、その場面の場所 (`{root}`・`{tmpdir}`・`{xdg}`・`{short}` を含む場面のディレクトリ) の中か、相対パス |
+| それ以外 | 常に (sockat は B に D と E しか作らないので、CLI の誤りとして出す) |
+
+- D を消す時は、sockat の `sweep` と同じく `flock(LOCK_EX | LOCK_NB)` を掛けたまま消し、取れなければ消さない
+- 増えた物の中に入って見るのは、CLI の前に無かった物だけ (前からある D の中は、持ち主が CLI の間に終わっても見ない)
+- 他のプロセスが CLI の間に D を作り、CLI の間に終えた時は、その D が `left` に出て消される (死んだ D なので消しても `sweep` と同じ)。`/tmp` の直下に CLI の間に他のプロセスが `sockat` で始まる名前の物を作った時は `residue` に出る (消さない)。どちらも誤った差
 
 ## 言語どうしの比べ方
 
