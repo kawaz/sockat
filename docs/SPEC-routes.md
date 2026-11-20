@@ -93,7 +93,7 @@ sockat decides by itself. From the top, the first that fits.
 Creating D:
 
 1. Relative to B's fd, `mkdirat(B's fd, name, 0700)` with a random name. On `EEXIST`, draw a new name, giving up after 16 tries
-2. Right after creating it, set the mode with `fchmodat(B's fd, name, 0711)`, then open it with `O_DIRECTORY | O_NOFOLLOW` and check with `fstat` that it is a real directory owned by oneself. When the mode cannot be set or it cannot be opened, remove the empty directory one just created and go on to the next base
+2. Right after creating it, set the mode with `fchmodat(B's fd, name, 0711)`, then open it with `O_DIRECTORY | O_NOFOLLOW` and check with `fstat` that it is a real directory owned by oneself. When the mode cannot be set or it cannot be opened, remove the empty directory one just created, and the routes that use D are unusable for that call (no other B is looked for)
 3. Put a flock (shared lock) on that fd and keep holding it. The fd is close-on-exec
 4. Check that the `(st_dev, st_ino)` from `lstat` by name is the same as the fd's. If not (another process's `sweep()` removed it between 1 and 3), close the fd and start again from 1
 
