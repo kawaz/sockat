@@ -25,7 +25,7 @@ kawaz との議論 (2026-11-19〜20) で方向が出たものの記録。[DR-001
 
 - 長いパスを、元のパスと同じ所を指し続ける短い綴りに言い換える。綴りが生きている間は、`getsockname` の綴りで消す上のライブラリ、DGRAM の返信、運用の道具が元のパスと同じに働く
 - 綴りはただのパスなので、ソケットの型 (stream / DGRAM / SEQPACKET) と操作 (bind / connect / `send_to`) を問わず、利用者が std に渡して使える
-- fork はしない (kawaz 裁定 2026-11-20。fork の手法の説明と、それで届く場面は [docs/design/fork-cwd.md](../design/fork-cwd.md))。普段はスレッドも使わない
+- fork はしない (kawaz 裁定 2026-11-20。fork の手法の説明と、それで届く場面は [pages/fork-cwd.md](../../pages/fork-cwd.md))。普段はスレッドも使わない
 
 ## 方向 (kawaz と合意)
 
@@ -165,7 +165,7 @@ pub enum Spelling {
 - fork の実装を全部なくす (`fork-cwd`・`fork-cwd-sockdir`・`fork-cwd-direct`)。fork の副作用 (fd の複製、`SIGCHLD`、`waitpid(-1)`、`pthread_atfork`、connect では相手に見える pid) はプロセス全体に及び、してほしくない利用者の方が多い
 - 最終手段も無くなる: bind の symlink-dir は tmpB として既定の順に入り、connect の fork-cwd-direct は作らない。引数から最終手段が消え、`forked` も無くなる
 - 3 言語で届く所がそろう (Python・Go はもともと fork の経路を作らない)
-- fork をやめて届かなくなる場面と、fork の手法の説明は [docs/design/fork-cwd.md](../design/fork-cwd.md)。sockat で届かない場面の全体は届く範囲の表 (作成中)
+- fork をやめて届かなくなる場面と、fork の手法の説明は [pages/fork-cwd.md](../../pages/fork-cwd.md)。sockat で届かない場面の全体は [届く範囲の表](../../pages/reach/README.md) (選んで絞り込むページは [pages/reach/index.html](../../pages/reach/index.html))
 
 ### 引数
 

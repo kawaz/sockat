@@ -1,0 +1,181 @@
+{
+  "about": "sockat の届く範囲の表の正本。issue 2026-11-20-resolve-and-persistent-base の作り直しの案 (置き場 B、link-dir / link-file、fork なし、最終手段なし) に対して作る。表のセルは gen.py がこのデータから計算する。既定の bind は QUESTIONS.md の RS-Q4 の推し b (呼び出しごとの一時ディレクトリを作って消す今の形から fork を除いた形) で作る",
+  "params": {
+    "rand": {"value": 10, "note": "D・R の乱数の名前 (英数 10 文字)"},
+    "B": {"value": 17, "note": "B の名前の長さ。名前は未決 (issue の「案がまだ無い」)。今の名前 sockat.XXXXXXXXXX と同じ 17 バイトで見積もる"},
+    "pid": {"value": 7, "note": "procB の <pid> の桁。Linux の pid_max 4194304 で 7 桁 (小さい pid ではその分届くファイル名が延びる)"},
+    "fd": {"value": 2, "note": "fd の番号の桁。SPEC の proc の「およそ 79」と同じ 2 桁"},
+    "name_max": {"value": 255, "note": "ファイル名の上限 (NAME_MAX)。表のファイル名の帯はここまで"},
+    "widened": {"value": 253, "note": "Apple の OS の広げた sockaddr に入るパスの長さ (SPEC の widened)"}
+  },
+  "oses": [
+    {"id": "linux", "label": "Linux / Android", "sockaddr": 107, "tmp_realpath": "/tmp", "proc": true, "thread_cwd": "unshare(CLONE_FS) + fchdir", "family": "linux",
+     "bind_follows_symlink": false, "follow_basis": "実測 (docs/findings/2026-11-19-bind-through-file-symlink.md)。Android は未確認"},
+    {"id": "macos", "label": "macOS", "sockaddr": 103, "tmp_realpath": "/private/tmp", "proc": false, "thread_cwd": "pthread_fchdir_np", "family": "apple",
+     "bind_follows_symlink": true, "follow_basis": "実測 (docs/findings/2026-11-19-bind-through-file-symlink.md)"},
+    {"id": "apple-other", "label": "iOS 等の他の Apple の OS", "sockaddr": 103, "tmp_realpath": "/private/tmp", "proc": false, "thread_cwd": "pthread_fchdir_np", "family": "apple",
+     "bind_follows_symlink": "probe", "follow_basis": "未確認 (SPEC の「未確定」)。実行時に見分ける"},
+    {"id": "freebsd", "label": "FreeBSD", "sockaddr": 103, "tmp_realpath": "/tmp", "proc": false, "thread_cwd": null, "family": "bsd",
+     "bind_follows_symlink": false, "follow_basis": "実測 (findings、sockat-py の CI の FreeBSD 15.1)"},
+    {"id": "netbsd", "label": "NetBSD", "sockaddr": 103, "tmp_realpath": "/tmp", "proc": false, "thread_cwd": null, "family": "bsd",
+     "bind_follows_symlink": true, "follow_basis": "実測 (findings、sockat-py の CI の NetBSD 11.1)"},
+    {"id": "openbsd", "label": "OpenBSD", "sockaddr": 103, "tmp_realpath": "/tmp", "proc": false, "thread_cwd": null, "family": "bsd",
+     "bind_follows_symlink": false, "follow_basis": "実測 (findings、sockat-py の CI の OpenBSD 8.0)"},
+    {"id": "illumos", "label": "illumos", "sockaddr": 107, "tmp_realpath": "/tmp", "proc": false, "thread_cwd": null, "family": "illumos",
+     "bind_follows_symlink": false, "follow_basis": "実測 (findings、sockat-py の CI の OmniOS r151060)"},
+    {"id": "other", "label": "その他の Unix", "sockaddr": 103, "tmp_realpath": "/tmp", "proc": false, "thread_cwd": null, "family": "other",
+     "bind_follows_symlink": "probe", "follow_basis": "未確認。実行時に見分ける。sockaddr に入る長さは BSD と同じ 103 で見積もる"}
+  ],
+  "langs": [
+    {"id": "rs", "label": "Rust (sockat-rs)", "lacks": []},
+    {"id": "py", "label": "Python (sockat-py)", "lacks": []},
+    {"id": "go", "label": "Go (sockat-go)", "lacks": ["widened"], "lacks_note": {"widened": "標準の型に取り込むと、相手が広げた形で bind している時に RemoteAddr() が nil になる (sockat-go の README)"}}
+  ],
+  "routes_outside_table": {"routes": ["fork-cwd", "fork-cwd-sockdir", "fork-cwd-direct", "thread-cwd-sockdir", "at-sockdir", "proc-sockdir", "symlink-dir", "proc-held"], "note": "表に出ない今の経路。fork の 3 つと symlink-dir・proc-held は作り直しで無くなる。-sockdir の 3 つは既定の bind に残るが、bind はソケットのディレクトリに D を作れる前提なので通らない"},
+  "lacks_basis": "conformance/langs.json の lacks から、作り直しで無くなる fork の経路 (fork-cwd・fork-cwd-sockdir・fork-cwd-direct) を除いた物。新しい経路 (link-dir・link-file・thread-cwd-direct) を作れない言語は無い前提 (未実装なので見積もり)",
+  "places": {
+    "xdg": {"label": "$XDG_RUNTIME_DIR", "os": ["linux"], "profiles": [
+      {"id": "run-user", "label": "/run/user/<uid> (14、0700)", "len": 14, "literal_len": 14, "traversable": false, "under_tmp": false},
+      {"id": "none", "label": "無い・書けない", "usable": false}
+    ]},
+    "tmpdir": {"label": "$TMPDIR", "profiles_by_family": {
+      "apple": [
+        {"id": "default", "label": "既定 (/private/var/folders/…/T、56、0700)", "len": 56, "literal_len": 48, "traversable": false, "under_tmp": false},
+        {"id": "deep", "label": "深い所 (113、0700 の下)", "len": 113, "literal_len": 113, "traversable": false, "under_tmp": false},
+        {"id": "none", "label": "未設定・書けない", "usable": false}
+      ],
+      "*": [
+        {"id": "var-tmp", "label": "/var/tmp (8、1777)", "len": 8, "literal_len": 8, "traversable": true, "under_tmp": true},
+        {"id": "deep", "label": "深い所 (113、0700 の下)", "len": 113, "literal_len": 113, "traversable": false, "under_tmp": false},
+        {"id": "none", "label": "未設定・書けない", "usable": false}
+      ]
+    }},
+    "tmp": {"label": "/tmp", "profiles": [
+      {"id": "writable", "label": "書ける (1777)", "len": "os.tmp_realpath", "literal_len": 4, "traversable": true, "under_tmp": true},
+      {"id": "none", "label": "書けない", "usable": false}
+    ]},
+    "sockdir": {"label": "ソケットのディレクトリ", "bind_fixed": "writable", "profiles": [
+      {"id": "writable", "label": "書ける", "len": null, "traversable": false, "under_tmp": false},
+      {"id": "none", "label": "書けない", "usable": false}
+    ]}
+  },
+  "conditions": [
+    {"id": "os", "label": "OS", "kind": "enum"},
+    {"id": "lang", "label": "言語", "kind": "enum"},
+    {"id": "filename", "label": "ファイル名 (バイト)", "kind": "band", "note": "境目は各経路の綴りの長さの式から計算する"},
+    {"id": "relpath", "label": "元のパスと相対パスの短い方 (バイト)", "kind": "band", "ops": ["connect"], "uses": "relative・widened の綴り。相対パスは cwd から作る (SPEC の「相対パスの作り方」)"},
+    {"id": "thread_cwd", "label": "スレッドの cwd を使える", "kind": "bool", "os_attr": "thread_cwd", "note": "Linux は seccomp の filter が掛かっていない・unshare が通る、Apple の OS は pthread_fchdir_np がある"},
+    {"id": "proc", "label": "/proc を使える", "kind": "bool", "os_attr": "proc"},
+    {"id": "follows", "label": "bind が symlink を辿る", "kind": "bool", "os_probe": true, "ops": ["bind", "bind_ex", "resolve_for_bind"], "note": "辿るかを実測していない OS だけの条件。実測した OS は OS で決まる"},
+    {"id": "xdg", "label": "$XDG_RUNTIME_DIR", "kind": "place", "ops": ["bind_ex", "resolve_for_bind", "connect"]},
+    {"id": "tmpdir", "label": "$TMPDIR", "kind": "place", "ops": ["bind", "bind_ex", "resolve_for_bind", "connect"]},
+    {"id": "tmp", "label": "/tmp", "kind": "place", "ops": ["bind", "bind_ex", "resolve_for_bind", "connect"]},
+    {"id": "sockdir", "label": "ソケットのディレクトリに書ける", "kind": "place", "ops": ["connect"], "note": "bind はソケットのファイルを作るので書ける前提"},
+    {"id": "private_tmp", "label": "PrivateTmp (自分か相手が /tmp を隔離)", "kind": "bool", "os": ["linux"], "ops": ["bind_ex", "resolve_for_bind"], "note": "systemd の PrivateTmp 等。綴りを相手が辿れるかにだけ効く"},
+    {"id": "cross_uid", "label": "別の uid の相手と通信する", "kind": "bool", "ops": ["bind_ex", "resolve_for_bind"], "note": "Options.usable_cross_uid を指定する前提。B の選び方と、綴りを相手が辿れるかに効く"}
+  ],
+  "typical": {
+    "note": "まとめの表の「普段の環境」。スレッドの cwd と /proc を使え、置き場は OS の既定のまま書け、別の uid とも PrivateTmp とも関わらない。相対パスの長さと、bind が symlink を辿るかを実測していない OS の辿るかは、どの値でも届く時だけ届くとする",
+    "values": {"thread_cwd": true, "proc": true, "xdg": "run-user", "tmpdir": {"apple": "default", "*": "none"}, "tmp": "writable", "sockdir": "writable", "private_tmp": false, "cross_uid": false}
+  },
+  "ops": [
+    {"id": "bind", "label": "既定の bind", "note": "RS-Q4 の推し b: 呼び出しごとの一時ディレクトリ D を作って消す今の形から fork を除いた物。B は作らない。綴りは Dangling"},
+    {"id": "bind_ex", "label": "bind_ex", "note": "B の綴り (link-dir・link-file) を先に試し、収まらなければ thread-cwd (FreeBSD は at)"},
+    {"id": "resolve_for_bind", "label": "resolve_for_bind", "note": "bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持たない"},
+    {"id": "connect", "label": "connect", "note": "connect・connect_nonblocking・connect_ex 系。DGRAM の connect・send_to も同じ経路 (send_to が relative を使わないかは issue の未決)"}
+  ],
+  "routes": {
+    "symlink-file": {"route": "symlink-file", "requires": ["follows"],
+      "place": {"from": ["tmpdir", "tmp"], "pick": "first_fit", "spell_len": "literal_len"},
+      "spelling": "<place>/sockat.<rand>", "limit": "sockaddr", "kind": "Dangling",
+      "unchanged": true, "note": "置き場の symlink は呼び出しの中で消す"},
+    "thread-cwd": {"route": "thread-cwd", "os_attr": "thread_cwd", "requires": ["thread_cwd"],
+      "place": {"from": ["tmpdir", "tmp", "sockdir"], "pick": "first", "in_spelling": false},
+      "spelling": "<rand>/<F>", "limit": "sockaddr", "kind": "Dangling", "unchanged": true},
+    "at": {"route": "at", "os": ["freebsd"],
+      "place": {"from": ["tmpdir", "tmp", "sockdir"], "pick": "first", "in_spelling": false},
+      "spelling": "<rand>/<F>", "limit": "sockaddr", "kind": "Dangling", "unchanged": true},
+    "proc": {"route": "proc", "os_attr": "proc", "requires": ["proc"],
+      "place": {"from": ["tmpdir", "tmp", "sockdir"], "pick": "first", "in_spelling": false},
+      "spelling": "/proc/self/fd/<fd>/<rand>/<F>", "limit": "sockaddr", "kind": "Dangling", "unchanged": true},
+    "link-dir@procB": {"route": "link-dir", "base": "procB", "os_attr": "proc", "requires": ["proc"], "cross_uid": "skip",
+      "place": {"from": ["xdg", "tmpdir", "tmp", "sockdir"], "pick": "first", "in_spelling": false},
+      "spelling": "/proc/<pid>/fd/<fd>/<rand>/d/<F>", "limit": "sockaddr",
+      "kind": "Linked", "removable": true, "until": "Process", "usable_cross_uid": false, "usable_with_private_tmp": true},
+    "link-dir@dirB": {"route": "link-dir", "base": "dirB", "cross_uid": "if_traversable",
+      "place": {"from": ["xdg", "tmpdir"], "pick": "shortest"},
+      "spelling": "<place>/<B>/<rand>/d/<F>", "limit": "sockaddr",
+      "kind": "Linked", "removable": true, "until": "Cleanup", "usable_cross_uid": "place.traversable", "usable_with_private_tmp": "not place.under_tmp"},
+    "link-file@dirB": {"route": "link-file", "base": "dirB", "requires": ["follows"], "cross_uid": "if_traversable",
+      "place": {"from": ["xdg", "tmpdir"], "pick": "shortest"},
+      "spelling": "<place>/<B>/<rand>/s", "limit": "sockaddr",
+      "kind": "Linked", "removable": false, "until": "Cleanup", "usable_cross_uid": "place.traversable", "usable_with_private_tmp": "not place.under_tmp"},
+    "link-dir@tmpB": {"route": "link-dir", "base": "tmpB",
+      "place": {"from": ["tmp"], "pick": "first"},
+      "spelling": "<place>/<B>/<rand>/d/<F>", "limit": "sockaddr",
+      "kind": "Linked", "removable": true, "until": "Cleanup", "usable_cross_uid": true, "usable_with_private_tmp": false},
+    "link-file@tmpB": {"route": "link-file", "base": "tmpB", "requires": ["follows"],
+      "place": {"from": ["tmp"], "pick": "first"},
+      "spelling": "<place>/<B>/<rand>/s", "limit": "sockaddr",
+      "kind": "Linked", "removable": false, "until": "Cleanup", "usable_cross_uid": true, "usable_with_private_tmp": false},
+    "proc-direct": {"route": "proc-direct", "os_attr": "proc", "requires": ["proc"],
+      "spelling": "/proc/self/fd/<fd>/<F>", "limit": "sockaddr", "unchanged": true},
+    "relative": {"route": "relative", "os": ["linux", "macos", "apple-other", "netbsd", "openbsd", "illumos", "other"], "requires": ["!proc"],
+      "spelling": "<rel>", "limit": "sockaddr", "unchanged": true},
+    "widened": {"route": "widened", "os": ["macos", "apple-other"],
+      "spelling": "<rel>", "limit": "widened", "unchanged": true},
+    "at-direct": {"route": "at-direct", "os": ["freebsd"],
+      "spelling": "<F>", "limit": "sockaddr", "unchanged": true},
+    "thread-cwd-direct": {"route": "thread-cwd-direct", "os_attr": "thread_cwd", "requires": ["thread_cwd"],
+      "spelling": "<F>", "limit": "sockaddr"},
+    "link-file@procB": {"route": "link-file", "base": "procB", "os_attr": "proc", "requires": ["proc"],
+      "place": {"from": ["xdg", "tmpdir", "tmp", "sockdir"], "pick": "first", "in_spelling": false},
+      "spelling": "/proc/<pid>/fd/<fd>/<rand>/s", "limit": "sockaddr",
+      "unconfirmed": {"os": ["freebsd"], "note": "FreeBSD の connect で link-file を使えるかは未確認 (issue)"}},
+    "link-file@dirB/connect": {"route": "link-file", "base": "dirB",
+      "place": {"from": ["xdg", "tmpdir"], "pick": "shortest"},
+      "spelling": "<place>/<B>/<rand>/s", "limit": "sockaddr",
+      "unconfirmed": {"os": ["freebsd"], "note": "FreeBSD の connect で link-file を使えるかは未確認 (issue)"}},
+    "link-file@tmpB/connect": {"route": "link-file", "base": "tmpB",
+      "place": {"from": ["tmp"], "pick": "first"},
+      "spelling": "<place>/<B>/<rand>/s", "limit": "sockaddr",
+      "unconfirmed": {"os": ["freebsd"], "note": "FreeBSD の connect で link-file を使えるかは未確認 (issue)"}}
+  },
+  "orders": {
+    "bind": ["symlink-file", "thread-cwd", "at", "proc"],
+    "bind_ex": ["link-dir@procB", "link-dir@dirB", "link-file@dirB", "link-dir@tmpB", "link-file@tmpB", "thread-cwd", "at"],
+    "resolve_for_bind": ["link-dir@procB", "link-dir@dirB", "link-file@dirB", "link-dir@tmpB", "link-file@tmpB"],
+    "connect": ["proc-direct", "relative", "widened", "at-direct", "thread-cwd-direct", "link-file@procB", "link-file@dirB/connect", "link-file@tmpB/connect"]
+  },
+  "fork": {
+    "note": "sockat は fork しない (kawaz 裁定 2026-11-20)。届かない所で fork-cwd なら届くかを示すためだけに計算する",
+    "bind": {"route": "fork-cwd", "spelling": "<rand>/<F>", "limit": "sockaddr", "place": {"from": ["tmpdir", "tmp", "sockdir"], "pick": "first", "in_spelling": false}},
+    "connect": {"route": "fork-cwd-direct", "spelling": "<F>", "limit_by_family": {"apple": "widened", "*": "sockaddr"}},
+    "scenarios": [
+      {"id": "bind-linux-without-thread-cwd", "ops": ["bind", "bind_ex", "resolve_for_bind"], "os": ["linux"]},
+      {"id": "bind-apple-without-thread-cwd", "ops": ["bind", "bind_ex", "resolve_for_bind"], "os": ["macos", "apple-other"]},
+      {"id": "bind-without-thread-cwd-means", "ops": ["bind", "bind_ex", "resolve_for_bind"], "os": ["freebsd", "netbsd", "openbsd", "illumos", "other"]},
+      {"id": "connect-without-place-or-thread-cwd", "ops": ["connect"], "os": ["linux", "macos", "apple-other", "freebsd", "netbsd", "openbsd", "illumos", "other"]}
+    ]
+  },
+  "evidence": {
+    "note": "今の実装 (sockat-rs 0.4 系・sockat-py・sockat-go) を適合試験 (just conformance --no-build --verbose、2026-11-20、全場面で言語の差なし) に流した結果。作り直しで変わらない経路 (unchanged) の行と、fork を持たない言語 (py・go) の既定の bind の行だけに当てる。条件を書いていない次元は、その行で効かない (全部) 時だけ当てる",
+    "cases": [
+      {"case": "linux-long-bind", "op": "bind", "os": "linux", "when": {"thread_cwd": true, "proc": true}, "filename": 6, "observed": {"rs": "thread-cwd", "py": "thread-cwd", "go": "thread-cwd"}},
+      {"case": "no-thread-cwd-bind", "op": "bind", "os": "linux", "when": {"thread_cwd": false, "proc": true}, "filename": 6, "observed": {"rs": "proc", "py": "proc", "go": "proc"}},
+      {"case": "no-thread-cwd-bind-kill-unshare", "op": "bind", "os": "linux", "when": {"thread_cwd": false, "proc": true}, "filename": 6, "observed": {"rs": "proc", "py": "proc", "go": "proc"}},
+      {"case": "no-proc-bind", "op": "bind", "os": "linux", "when": {"thread_cwd": true, "proc": false}, "filename": 6, "observed": {"rs": "thread-cwd", "py": "thread-cwd", "go": "thread-cwd"}},
+      {"case": "no-thread-cwd-no-proc-bind", "op": "bind", "os": "linux", "when": {"thread_cwd": false, "proc": false}, "filename": 6, "observed": {"rs": "fork-cwd", "py": null, "go": null}},
+      {"case": "no-tmpdir-bind", "op": "bind", "os": "linux", "when": {"thread_cwd": true, "proc": true, "tmpdir": "none"}, "filename": 6, "observed": {"rs": "thread-cwd", "py": "thread-cwd", "go": "thread-cwd"}},
+      {"case": "no-tmpdir-no-tmp-bind", "op": "bind", "os": "linux", "when": {"thread_cwd": true, "proc": true, "tmpdir": "none", "tmp": "none"}, "filename": 6, "observed": {"rs": "thread-cwd", "py": "thread-cwd", "go": "thread-cwd"}},
+      {"case": "no-tmp-no-thread-cwd-no-proc-bind", "op": "bind", "os": "linux", "when": {"thread_cwd": false, "proc": false, "tmpdir": "none", "tmp": "none"}, "filename": 6, "observed": {"rs": "fork-cwd", "py": null, "go": null}},
+      {"case": "no-proc-long-filename-bind", "op": "bind", "os": "linux", "when": {"thread_cwd": true, "proc": false}, "filename": 100, "observed": {"rs": null, "py": null, "go": null}},
+      {"case": "long-absolute-bind", "op": "bind", "os": "macos", "when": {"thread_cwd": true, "tmpdir": "deep", "tmp": "writable"}, "filename": 6, "observed": {"rs": "symlink-file", "py": "symlink-file", "go": "symlink-file"}},
+      {"case": "long-filename-bind", "op": "bind", "os": "macos", "when": {"thread_cwd": true, "tmpdir": "deep", "tmp": "writable"}, "filename": 100, "observed": {"rs": "symlink-file", "py": "symlink-file", "go": "symlink-file"}},
+      {"case": "linux-long-connect", "op": "connect", "os": "linux", "when": {"thread_cwd": true, "proc": true}, "filename": 6, "observed": {"rs": "proc-direct", "py": "proc-direct", "go": "proc-direct"}},
+      {"case": "no-proc-connect-near-cwd", "op": "connect", "os": "linux", "when": {"thread_cwd": true, "proc": false}, "filename": 6, "relpath": 6, "observed": {"rs": "relative", "py": "relative", "go": "relative"}},
+      {"case": "long-connect", "op": "connect", "os": "macos", "when": {"thread_cwd": true}, "filename": 6, "relpath": "fits-sockaddr", "observed": {"rs": "relative", "py": "relative", "go": "relative"}},
+      {"case": "long-filename-connect", "op": "connect", "os": "macos", "when": {"thread_cwd": true}, "filename": 100, "relpath": "over-sockaddr-within-widened", "observed": {"rs": "widened", "py": "widened", "go": "symlink-file"}}
+    ]
+  }
+}

@@ -56,3 +56,13 @@ push: check-on-default-branch ensure-clean check-outdated-translations
 # 言語によらない適合試験を流す (例: just conformance --langs rs,go --case long-connect)
 conformance *ARGS:
     python3 -I conformance/run.py {{ARGS}}
+
+# ---------- 届く範囲の表 ----------
+
+# pages/reach/model.json から README.md と data/ を作り直す
+reach:
+    python3 -I pages/reach/gen.py
+
+# 生成物が model.json とずれていないか、lacks が conformance/langs.json とずれていないかを確かめる
+reach-check:
+    python3 -I pages/reach/gen.py --check

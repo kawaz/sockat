@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sockat の届く範囲</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: light-dark(#fbfbfa, #17181a);
+  --fg: light-dark(#1d1f22, #e6e6e3);
+  --muted: light-dark(#6a6f76, #9aa0a6);
+  --line: light-dark(#d9dbde, #33363b);
+  --head: light-dark(#f0f1f2, #212328);
+  --ok: light-dark(#1b7f3b, #5ccf82);
+  --ng: light-dark(#b3261e, #ff8a80);
+  --accent: light-dark(#2459c2, #8ab4ff);
+  --ok-bg: color-mix(in oklch, var(--ok) 10%, transparent);
+  --ng-bg: color-mix(in oklch, var(--ng) 10%, transparent);
+  font: 14px/1.5 system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+body { margin: 0; padding: 1rem clamp(0.5rem, 2vw, 2rem) 4rem; }
+h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
+h2 { font-size: 1.1rem; margin: 2rem 0 0.5rem; display: flex; gap: 0.75rem; align-items: baseline; }
+h2 small { color: var(--muted); font-weight: normal; font-size: 0.85rem; }
+a { color: var(--accent); }
+.lead { color: var(--muted); margin: 0 0 1rem; max-width: 70rem; }
+form {
+  position: sticky; top: 0; z-index: 2;
+  background: color-mix(in oklch, var(--bg) 92%, transparent);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--line);
+  padding: 0.5rem 0 0.75rem;
+  display: grid; gap: 0.5rem 1.25rem;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+}
+form fieldset { border: 0; margin: 0; padding: 0; display: contents; }
+form label { display: flex; gap: 0.4rem; align-items: center; }
+form label:has(:disabled) { color: var(--muted); text-decoration: line-through; }
+form .stack { display: grid; gap: 0.15rem; }
+form .stack > span { font-size: 0.8rem; color: var(--muted); }
+select, input[type=number] { font: inherit; padding: 0.15rem 0.3rem; field-sizing: content; min-width: 6rem; }
+.ops { display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; grid-column: 1 / -1; }
+.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; }
+table { border-collapse: collapse; min-width: 100%; }
+th, td { border-bottom: 1px solid var(--line); padding: 0.3rem 0.5rem; vertical-align: top; text-align: left; }
+th { background: var(--head); position: sticky; top: 0; font-weight: 600; white-space: nowrap; }
+td.cond { white-space: nowrap; color: var(--fg); }
+td.all { color: var(--muted); }
+tr:has(td.reach-ok) td.reach-ok { background: var(--ok-bg); color: var(--ok); font-weight: 600; }
+tr:has(td.reach-ng) td.reach-ng { background: var(--ng-bg); color: var(--ng); font-weight: 600; }
+td ul { margin: 0; padding-left: 1rem; }
+td .lines { white-space: pre-line; font-size: 0.9em; }
+.empty { color: var(--muted); padding: 0.75rem; }
+.count { color: var(--muted); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<h1>sockat の届く範囲 (作り直しの案)</h1>
+<p class="lead">長いパスに届くか、どの経路で届くか、届かなければなぜかを、選んだ条件で絞り込む。合わない行と、全部の行で同じになった列が消える。数字はバイトで、未実装の設計に対する綴りの長さからの見積もり (根拠の列が「実測」の行は適合試験の結果と一致)。表の全体と畳み方は <a href="README.md">README.md</a> (JS の無い環境ではこちら)、fork-cwd の手法は <a href="../fork-cwd.md">fork-cwd.md</a>。</p>
+
+<form id="f">
+  <label class="stack"><span>OS</span><select name="os"></select></label>
+  <label class="stack"><span>言語</span><select name="lang"></select></label>
+  <label class="stack"><span>ファイル名の長さ (バイト、空なら全部)</span><input name="filename" type="number" min="1" max="255" inputmode="numeric"></label>
+  <label class="stack"><span>元のパスと相対パスの短い方 (connect、空なら全部)</span><input name="relpath" type="number" min="1" inputmode="numeric"></label>
+  <label class="stack"><span>$XDG_RUNTIME_DIR</span><select name="xdg"></select></label>
+  <label class="stack"><span>$TMPDIR</span><select name="tmpdir"></select></label>
+  <label class="stack"><span>/tmp</span><select name="tmp"></select></label>
+  <label class="stack"><span>ソケットのディレクトリ (connect)</span><select name="sockdir"></select></label>
+  <label class="stack"><span>結果</span><select name="result"><option value="">全部</option><option value="ok">届く</option><option value="ng">届かない</option></select></label>
+  <fieldset>
+    <label><input type="checkbox" name="proc" checked> /proc を使える</label>
+    <label><input type="checkbox" name="thread_cwd" checked> スレッドの cwd を使える</label>
+    <label><input type="checkbox" name="follows" checked> bind が symlink を辿る (未確認の OS)</label>
+    <label><input type="checkbox" name="private_tmp"> PrivateTmp (自分か相手が /tmp を隔離)</label>
+    <label><input type="checkbox" name="cross_uid"> 別の uid と通信する</label>
+  </fieldset>
+  <div class="ops" id="ops"></div>
+</form>
+
+<main id="out"><p class="empty">読み込み中…</p></main>
+
+<script type="module">
+const form = document.getElementById("f");
+const out = document.getElementById("out");
+const opsBox = document.getElementById("ops");
+const BOOL_DIMS = ["proc", "thread_cwd", "follows", "private_tmp", "cross_uid"];
+const PLACE_DIMS = ["xdg", "tmpdir", "tmp", "sockdir"];
+const BAND_DIMS = ["filename", "relpath"];
+const BIND_OPS = new Set(["bind", "bind_ex", "resolve_for_bind"]);
+
+function h(tag, attrs = {}, ...children) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === false || v === null || v === undefined) continue;
+    if (k === "class") el.className = v;
+    else el.setAttribute(k, v === true ? "" : String(v));
+  }
+  for (const c of children.flat()) {
+    if (c === null || c === undefined || c === false) continue;
+    el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+  return el;
+}
+
+const res = await fetch("data/reach.json");
+if (!res.ok) {
+  out.replaceChildren(h("p", { class: "empty" }, `data/reach.json を読めない (${res.status})。`, h("a", { href: "README.md" }, "README.md"), " を読む"));
+  throw new Error(`fetch ${res.status}`);
+}
+const data = await res.json();
+const osById = new Map(data.oses.map((o) => [o.id, o]));
+const condLabel = new Map(data.conditions.map((c) => [c.id, c.label]));
+
+function fillSelect(name, options) {
+  const sel = form.elements.namedItem(name);
+  sel.replaceChildren(h("option", { value: "" }, "全部"), ...options.map((o) => h("option", { value: o.id }, o.label)));
+}
+
+function placeValues(dim, osId) {
+  const seen = new Map();
+  for (const o of osId ? [osById.get(osId)] : data.oses) {
+    for (const v of o.values[dim] ?? []) if (!seen.has(v.id)) seen.set(v.id, v);
+  }
+  return [...seen.values()];
+}
+
+fillSelect("os", data.oses.map((o) => ({ id: o.id, label: o.label })));
+fillSelect("lang", data.langs.map((l) => ({ id: l.id, label: l.label })));
+for (const op of data.ops) {
+  opsBox.append(h("label", { title: op.note }, h("input", { type: "checkbox", name: `op_${op.id}`, checked: true }), op.label));
+}
+
+function osSupports(dim, osId) {
+  if (!osId) return true;
+  const o = osById.get(osId);
+  return Object.values(o.dims).some((dims) => dims.includes(dim));
+}
+
+function refreshPlaces() {
+  const osId = form.elements.namedItem("os").value;
+  for (const dim of PLACE_DIMS) {
+    const sel = form.elements.namedItem(dim);
+    const keep = sel.value;
+    fillSelect(dim, placeValues(dim, osId));
+    sel.value = [...sel.options].some((o) => o.value === keep) ? keep : "";
+  }
+}
+
+function refreshDisabled() {
+  const osId = form.elements.namedItem("os").value;
+  for (const dim of [...BOOL_DIMS, ...PLACE_DIMS, ...BAND_DIMS]) {
+    form.elements.namedItem(dim).disabled = !osSupports(dim, osId);
+  }
+}
+
+function readState() {
+  const s = {};
+  for (const el of form.elements) {
+    if (!el.name) continue;
+    if (el.type === "checkbox") s[el.name] = el.checked;
+    else s[el.name] = el.value;
+  }
+  return s;
+}
+
+const DEFAULTS = readState();
+
+function writeUrl(s) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(s)) {
+    if (v === DEFAULTS[k]) continue;
+    q.set(k, typeof v === "boolean" ? (v ? "1" : "0") : v);
+  }
+  const qs = q.toString();
+  history.replaceState(null, "", qs ? `?${qs}` : location.pathname);
+}
+
+function readUrl() {
+  const q = new URLSearchParams(location.search);
+  if (q.has("os")) form.elements.namedItem("os").value = q.get("os");
+  refreshPlaces();
+  for (const [k, v] of q) {
+    const el = form.elements.namedItem(k);
+    if (!el || k === "os") continue;
+    if (el.type === "checkbox") el.checked = v === "1";
+    else el.value = v;
+  }
+}
+
+function inBand(bandIds, n) {
+  return bandIds.some((b) => {
+    const [lo, hi] = b.split("-");
+    return n >= Number(lo) && (hi === "" || n <= Number(hi));
+  });
+}
+
+function bandLabel(ids) {
+  const bands = ids.map((b) => b.split("-").map((x) => (x === "" ? null : Number(x)))).sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const [lo, hi] of bands) {
+    const last = merged.at(-1);
+    if (last && last[1] !== null && last[1] + 1 === lo) last[1] = hi;
+    else merged.push([lo, hi]);
+  }
+  return merged.map(([lo, hi]) => (hi === null ? `${lo} 以上` : lo === hi ? `${lo}` : `${lo}–${hi}`)).join("\n");
+}
+
+function valueLabel(dim, osId, ids) {
+  if (BAND_DIMS.includes(dim)) return bandLabel(ids);
+  if (dim === "lang") return ids.join("\n");
+  if (BOOL_DIMS.includes(dim)) return ids.map((v) => (v ? "○" : "×")).join("\n");
+  const vals = osById.get(osId).values[dim] ?? [];
+  return ids.map((id) => vals.find((v) => v.id === id)?.label ?? id).join("\n");
+}
+
+function matches(row, op, s) {
+  const [osId, c, ri] = row;
+  if (s.os && osId !== s.os) return false;
+  const r = data.results[ri];
+  if (s.result === "ok" && !r.reach) return false;
+  if (s.result === "ng" && r.reach) return false;
+  const dims = osById.get(osId).dims[op];
+  if (s.lang && c.lang && !c.lang.includes(s.lang)) return false;
+  for (const dim of BOOL_DIMS) {
+    if (!dims.includes(dim) || form.elements.namedItem(dim).disabled) continue;
+    if (c[dim] && !c[dim].includes(s[dim])) return false;
+  }
+  for (const dim of PLACE_DIMS) {
+    if (!s[dim] || !dims.includes(dim)) continue;
+    if (c[dim] && !c[dim].includes(s[dim])) return false;
+  }
+  for (const dim of BAND_DIMS) {
+    if (s[dim] === "" || !dims.includes(dim)) continue;
+    const n = Number(s[dim]);
+    if (c[dim] && !inBand(c[dim], n)) return false;
+  }
+  return true;
+}
+
+function spellingLines(sp) {
+  if (!sp) return "—";
+  if (sp.kind === "Dangling") return "Dangling";
+  return [
+    "Linked",
+    `removable: ${sp.removable}`,
+    `until: ${sp.until}`,
+    `usable_cross_uid: ${sp.usable_cross_uid}`,
+    `usable_with_private_tmp: ${sp.usable_with_private_tmp}`,
+  ].join("\n");
+}
+
+function renderOp(op, s) {
+  const rows = data.rows[op.id].filter((row) => matches(row, op.id, s));
+  const section = h("section", {}, h("h2", {}, op.label, h("small", {}, op.note)));
+  if (rows.length === 0) {
+    section.append(h("p", { class: "empty" }, "この条件に合う行は無い。"));
+    return section;
+  }
+  const condDims = [];
+  if (!s.os) condDims.push("os");
+  const order = ["lang", "filename", "relpath", "thread_cwd", "proc", "follows", "xdg", "tmpdir", "tmp", "sockdir", "private_tmp", "cross_uid"];
+  const constant = [];
+  for (const dim of order) {
+    const keys = new Set(rows.map(([, c]) => JSON.stringify(c[dim] ?? null)));
+    if (keys.size > 1) {
+      condDims.push(dim);
+    } else if (!keys.has("null")) {
+      const [osId, c] = rows[0];
+      constant.push(`${condLabel.get(dim)}: ${valueLabel(dim, osId, c[dim]).replaceAll("\n", "、")}`);
+    }
+  }
+  const results = rows.map(([, , ri]) => data.results[ri]);
+  const showWhy = results.some((r) => !r.reach);
+  const showFork = results.some((r) => r.fork);
+  const isBind = BIND_OPS.has(op.id);
+  const head = [
+    ...condDims.map((d) => (d === "os" ? "OS" : condLabel.get(d))),
+    "届く", "経路",
+    ...(isBind ? ["綴り", "綴りを相手が辿れるか"] : []),
+    ...(showWhy ? ["届かない理由"] : []),
+    ...(showFork ? ["fork-cwd なら"] : []),
+    "根拠",
+  ];
+  const tbody = h("tbody");
+  for (const [osId, c, ri] of rows) {
+    const r = data.results[ri];
+    const cells = condDims.map((d) => {
+      if (d === "os") return h("td", { class: "cond" }, osById.get(osId).label);
+      if (d !== "lang" && !osById.get(osId).dims[op.id].includes(d)) return h("td", { class: "cond all" }, "—");
+      if (c[d] === undefined) return h("td", { class: "cond all" }, "全部");
+      return h("td", { class: "cond" }, h("span", { class: "lines" }, valueLabel(d, osId, c[d])));
+    });
+    cells.push(h("td", { class: r.reach ? "reach-ok" : "reach-ng" }, r.reach ? "○" : "×"));
+    cells.push(h("td", {}, r.label ?? "—"));
+    if (isBind) {
+      cells.push(h("td", {}, h("span", { class: "lines" }, spellingLines(r.spelling))));
+      cells.push(h("td", {}, r.peer ?? "—"));
+    }
+    if (showWhy) cells.push(h("td", {}, r.why ? h("ul", {}, r.why.map((w) => h("li", {}, w))) : "—"));
+    if (showFork) cells.push(h("td", {}, r.fork ? h("a", { href: `${data.fork_doc}#${r.fork}` }, "届く") : "—"));
+    const basis = r.basis.measured.length ? [`実測: ${r.basis.measured.join("、")}`] : ["見積もり"];
+    cells.push(h("td", {}, h("span", { class: "lines" }, [...basis, ...r.basis.notes].join("\n"))));
+    tbody.append(h("tr", {}, cells));
+  }
+  section.append(
+    h("p", { class: "count" }, `${rows.length} 行`, constant.length ? `。全部の行で同じ条件: ${constant.join(" / ")}` : ""),
+    h("div", { class: "scroll" }, h("table", {}, h("thead", {}, h("tr", {}, head.map((t) => h("th", {}, t)))), tbody)),
+  );
+  return section;
+}
+
+function render() {
+  refreshDisabled();
+  const s = readState();
+  writeUrl(s);
+  const sections = data.ops.filter((op) => s[`op_${op.id}`]).map((op) => renderOp(op, s));
+  out.replaceChildren(...(sections.length ? sections : [h("p", { class: "empty" }, "操作を 1 つ以上選ぶ。")]));
+}
+
+readUrl();
+refreshDisabled();
+form.addEventListener("input", (e) => {
+  if (e.target.name === "os") refreshPlaces();
+  render();
+});
+render();
+</script>
+</body>
+</html>
