@@ -59,6 +59,134 @@ kawaz との議論 (2026-11-19〜20) で方向が出たものの記録。[DR-001
 | dirB | 置き場までの途中が全部 other に x を持てば別の uid も、そうでなければ同じ uid だけ (`/run/user/<uid>` と macOS の `$TMPDIR` は 0700) | `cleanup` まで残る |
 | tmpB | 別の uid も (B が 0711、D は乱数) | `cleanup` まで残る。`cleanup` の後は他人が同じ名前で作り直しうる |
 
+## 整理案 (統括、2026-11-20。kawaz の判断待ち)
+
+既定の `bind` も、収まれば resolve の綴りを使う (kawaz)。thread-cwd・fork は収まらない時の後ろ。今の route・losses の名前とのつながりは気にしない (kawaz)。
+
+### 経路 (route、診断用)
+
+bind (6 つ):
+
+| 順 | route | 綴り | 使う時 |
+|---|---|---|---|
+| 1 | `standard` | 元のパス | 標準に渡す長さ以下 |
+| 2 | `link-dir` | `B/D/d/<ファイル名>` (`d` → ソケットのディレクトリ) | 収まる時 |
+| 3 | `link-file` | `B/D/s` (`s` → ソケットのファイル) | bind が symlink を辿る OS (macOS・NetBSD) で、`link-dir` が収まらない時 |
+| 4 | `thread-cwd` | `R/<ファイル名>` (R は片付け済み) | Linux・Apple の OS |
+| 4 | `at` | 同 | FreeBSD |
+| 5 | `fork-cwd` | 同 | fork のある言語 |
+
+- B は持ち主だけの置き場 (procB → dirB) を先に、共有の置き場 (tmpB) を後に試し、同じ B の中では `link-dir` → `link-file` の順
+- B を `$XDG_RUNTIME_DIR`・`$TMPDIR`・`/tmp` のどこにも作れない時は、ソケットのディレクトリに `.sockat.XXXXXXXXXX` で作る (`-sockdir` の経路は無くなる)
+- どの B を使ったかは診断用の `base` (`proc`・`runtime`・`tmpdir`・`tmp`・`sockdir`) で返す
+
+connect (8 つ):
+
+| 順 | route | 中身 |
+|---|---|---|
+| 1 | `standard` | 元のパス |
+| 2 | `proc-direct` / `relative` / `widened` / `at-direct` | 書き込みもスレッドも要らない (OS ごとに今と同じ) |
+| 3 | `thread-cwd-direct` | 使い捨てのスレッドがソケットのディレクトリへ `fchdir` してファイル名で connect (D も R も要らない。connect の綴りは相手に残らないため) |
+| 4 | `link-file` | `B/D/s`。ファイル名の長さによらず届く。connect の後に片付ける |
+| 5 | `fork-cwd-direct` | fork のある言語だけ (案 L を採らなければ) |
+
+- connect は D・R を通す `thread-cwd`・`at`・`proc`・`proc-held`・`symlink-file` が要らなくなる
+- FreeBSD の connect で `link-file` を使えるか (今の SPEC は symlink-file を FreeBSD で使わない) は未確認
+
+### 失うもの (bind だけ。connect の綴りは相手に残らない)
+
+名前の並びをやめ、綴りの性質を 1 つの値で返す案 (S1) と、名前の並びの案 (S2)。推しは S1。利用者が知りたいのは「この綴りを後で使えるか」の 1 点で、性質は互いに排他な種類 + 種類ごとの属性になるため。
+
+S1:
+
+```rust
+#[non_exhaustive]
+pub enum Spelling {
+    Original,     // 元の絶対パス
+    CwdRelative,  // 元の相対パス (cwd を変えると別の所を指す)
+    Linked {
+        removable: bool,             // 綴りで unlink すると実体が消えるか (link-dir: true、link-file: false)
+        until: Until,                // Process (procB) / Cleanup (dirB・tmpB)
+        others_can_follow: bool,     // 別の uid が辿れるか
+        recreatable_after_cleanup: bool, // cleanup の後に他人が作り直せるか (tmpB)
+    },
+    Dangling,     // 片付け済みの R を含む綴り。どこにも届かない (thread-cwd・at・fork-cwd)
+}
+```
+
+S2: `forked`・`cwd-relative`・`dangling`・`unremovable-by-spelling`・`temporary`・`owner-only`・`recreatable-after-cleanup` の名前の並び。種類と属性が混ざり、組み合わせの意味を利用者が考えることになる。
+
+fork したかは別の `forked: bool` にする。
+
+### 最終手段
+
+- bind: 無くなる (共有の置き場の綴りは tmpB として既定の順に入り、生きている間は 0711 の自分の B で作り直されない)
+- connect: `fork-cwd-direct` だけ。thread-cwd-direct と link-file の後に来るので、出番はスレッドも B も使えない環境だけ
+- 案 L: 最終手段を無くし、`fork-cwd-direct` を作らない (Python・Go はもともと無い)。引数から最終手段が消える
+
+### 引数
+
+- `_ex` の引数を `Options` にする: `others_can_follow: bool` (別の uid にも辿らせる。B の選び方にだけ効き、満たせなければ結果の `Spelling` で分かる)、案 L を採らなければ `last_resort: bool` (connect だけ)
+- 既定の操作は今のとおり path だけ
+
+### 関数
+
+推しは F1。
+
+| 案 | 形 |
+|---|---|
+| F1 | 型ごとのモジュールに std の形で置く (stream は crate 直下、`datagram::`、`seqpacket::`)。操作ごとに `_ex(…, Options)`。resolve は用途ごとに 2 つ |
+| F2 | 型を引数で渡す (`bind(path, Type)`)。std の形から外れる |
+| F3 | builder (`Options::new().others_can_follow(true).bind(path)`)。`_ex` の数は減るが、型ごとの操作が builder に集まる |
+
+F1 の一覧 (Rust):
+
+```rust
+// stream
+sockat::bind(path) -> io::Result<UnixListener>
+sockat::connect(path) -> io::Result<UnixStream>
+sockat::connect_nonblocking(path) -> io::Result<UnixStream>
+sockat::bind_ex(path, Options) -> Result<Bound<UnixListener>, ExError>
+sockat::connect_ex(path, Options) -> Result<Connected<UnixStream>, ExError>
+sockat::connect_nonblocking_ex(path, Options) -> Result<Connected<UnixStream>, ExError>
+
+// datagram (std の UnixDatagram の、path を取る関数と unbound)
+sockat::datagram::bind(path) -> io::Result<UnixDatagram>
+sockat::datagram::unbound() -> io::Result<UnixDatagram>
+sockat::datagram::connect(&UnixDatagram, path) -> io::Result<()>
+sockat::datagram::send_to(&UnixDatagram, buf, path) -> io::Result<usize>
+sockat::datagram::bind_ex(path, Options) -> Result<Bound<UnixDatagram>, ExError>
+sockat::datagram::connect_ex(&UnixDatagram, path, Options) -> Result<Report, ExError>
+sockat::datagram::send_to_ex(&UnixDatagram, buf, path, Options) -> Result<(usize, Report), ExError>
+
+// seqpacket (返す型は未決)
+sockat::seqpacket::bind(path) / connect(path) / connect_nonblocking(path) と各 _ex
+
+// resolve (std に自分で渡す人向け)
+sockat::resolve_for_bind(path, Options) -> Result<ForBind, ExError>     // path / spelling / remove() / cleanup() / 診断
+sockat::resolve_for_connect(path, Options) -> Result<ForConnect, ExError> // path / cleanup() / 診断 (remove は持たない)
+
+// 置き場 B を片付ける
+sockat::cleanup_base() -> io::Result<()>
+```
+
+```rust
+pub struct Bound<S> {
+    pub socket: S,
+    pub file: SocketFile,   // remove(): bind したファイルを 1 回だけ消し、cleanup もする / cleanup(): D を 1 回だけ片付ける
+    pub spelling: Spelling,
+    pub forked: bool,
+    pub route: &'static str, pub base: Option<&'static str>, pub skipped: Vec<Skipped>, // 診断用
+}
+pub struct Connected<S> { pub socket: S, pub forked: bool, pub route: &'static str, pub skipped: Vec<Skipped> }
+pub struct Report { pub forked: bool, pub route: &'static str, pub skipped: Vec<Skipped> }
+```
+
+- resolve を用途で 2 つに分ける理由: bind は `link-file` を Linux 等で使えず `link-dir` を先に選ぶ、connect は `link-file` を選ぶ (ファイル名の長さによらない)。connect 用の resolve には `remove` を持たせず、消し間違いを型で防ぐ
+- 「標準にそのまま渡したか」の bool は持たない (`spelling == Original` か `route == "standard"` で分かる)
+- resolve は path を返すだけなので、thread-cwd・fork でしか届かない長さでは `ENAMETOOLONG`。それも届かせたい人は `bind` / `connect` を使う
+- 既定の `bind` は `SocketFile` を返さないので、その B は `cleanup_base` か次の sockat の掃除まで残る (片付け損ねた B の掃除が必須になる)
+
 ## 未決
 
 - 既定の `bind` / `connect` の中でも resolve の綴りを使うか (使うと綴りの寿命と `cleanup` が既定の操作に漏れ出す)
