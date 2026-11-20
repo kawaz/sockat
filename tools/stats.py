@@ -106,7 +106,7 @@ def dependents_depsdev(system, name, version):
 
 
 def dependents_pkgsite():
-    html = http_get("https://pkg.go.dev/github.com/kawaz/sockat-go?tab=importedby")
+    html = http_get("https://pkg.go.dev/github.com/kawaz/sockat-go")
     m = re.search(r'Imported by:\s*</span>\s*([\d,]+)', html)
     if not m:
         raise ValueError("Imported by の数が HTML から見つからない (ページの形が変わった)")
