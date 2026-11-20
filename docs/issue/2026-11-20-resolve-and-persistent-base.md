@@ -44,34 +44,39 @@ kawaz との議論 (2026-11-19〜20) で方向が出たものの記録。[DR-001
 - 既定の `bind` も、綴りが収まれば resolve の綴りを使う (kawaz)。thread-cwd は収まらない時の後ろ
 - 今の `bind` / `connect` は、resolve で済まない場面 (thread-cwd が要る長さ、`getsockname` の綴りで消す上のライブラリへの備え) のために残し、内部で resolve を使う
 - D は乱数の名前 (カウンタにしない。プロセスが終わった後に同じ PID・同じ fd 番号の別の sockat のプロセスが現れると、カウンタの D は同じ綴りで他人のソケットを指す)
-- 消す (`remove`) と片付ける (`cleanup` は D、`cleanup_base` は B) は自動で行わない。どれも 1 回だけ働き、2 回目以降は何もしない (`remove` は resolve した綴りの物を 1 回だけ消す、の意味の冪等)。connect は内部で resolve した後に自分で `cleanup` してよい
+- 消す (`remove`) と片付ける (`cleanup` は E。B と D は sockat が片付けない) は自動で行わない。どれも 1 回だけ働き、2 回目以降は何もしない (`remove` は resolve した綴りの物を 1 回だけ消す、の意味の冪等)。connect は内部で resolve した後に自分で `cleanup` してよい
 - 利用者が「別の uid にも辿らせる」と指定した時は、procB を飛ばし、dirB・tmpB のうち B までの途中のディレクトリが全部 other に x (辿る権限) を持つ物だけを使う (子が 0711 でも親が 0700 なら別の uid は辿れない。実測)。`/tmp` (1777) の下の tmpB はいつも当たり、dirB は置き場が 0700 (`/run/user/<uid>`、macOS の `$TMPDIR`) なら外れ、`$TMPDIR` を辿れる場所に向けた環境なら当たる
 - 相手の `/tmp` が隔離されている場合 (systemd の `PrivateTmp` 等) は選択肢にせず説明に書く (procB を先に試すので Linux ではまず起きない)
 - DGRAM の API は std の `UnixDatagram` の形に合わせ、パスを取る関数と、それと組で使う `unbound` だけを写す (`sockat::datagram::bind(path)`、`unbound()`、`connect(&sock, path)`、`send_to(&sock, buf, path)`)。`pair` は写さない
 
-### B と D
+### B と D (kawaz と合意 2026-11-20。掃除は OS の一時ディレクトリの掃除に任せる)
 
-| | B | D |
-|---|---|---|
-| 作る単位 | プロセスごと (fd を持ち続ける) | resolve ごと |
-| 置く所 | 置き場 (「実体の置き場と綴りの形」) | B の中 |
-| 名前 | 未決 (長さが届く範囲に効く) | 乱数 |
-| mode | 0711 (他人は中を一覧できず、名前を知っていれば辿れる) | 0711 (名前は乱数。中は `d` か `s`) |
-| 消す口 | `cleanup_base` | `cleanup` (B ごと消す `cleanup_base` でも消える) |
-| 残る間 | `cleanup_base` まで (procB の綴りはプロセスが終わると辿れない。実体は残る) | `cleanup` か `cleanup_base` まで |
+| | B | D | E |
+|---|---|---|---|
+| 作る単位 | 利用者ごと。プロセスをまたいで使い回す | プロセスごと (1 つ) | resolve ごと |
+| 置く所 | 置き場 (下の順) か、利用者が `Options.base` で指定した所 | B の中 | D の中 |
+| 名前 | `sockat-<uid>` (`$XDG_RUNTIME_DIR` の下は `sockat`)。使う前に、実ディレクトリ・持ち主が自分・他人が書けない、を確かめ、外れたら乱数の名前 (指定された所なら外れたらエラー) | 乱数 (プロセスが終わった後に同じ PID・同じ fd 番号の別のプロセスが現れても綴りが同じにならないため) | プロセスの中で一意なら短くてよい (D がプロセスごとに一意) |
+| 中身 | D | E | ソケットのディレクトリを指す symlink (link-dir、綴り `B/D/E/<ファイル名>`) か、ソケットのファイルを指す symlink (link-file、綴り `B/D/E`) |
+| 生きている間 | 消さない | プロセスが flock (共有ロック) を掛けた fd を持ち続ける。systemd-tmpfiles (v242 以上) はロックの掛かったディレクトリを配下ごと掃除しない | 消さない |
+| 片付け | sockat はしない (利用者が指定した B はアプリが管理) | sockat はしない。死んだプロセスの D は OS の一時ディレクトリの掃除で消える (Linux の `/tmp` は 10 日。macOS の `/tmp` は symlink の入ったディレクトリを消さないので再起動まで残る)。明示の `sweep()` を呼んだ時だけ、ロックの外れた D を消す | `cleanup` |
+
+- resolve のたびに B の中を一覧しない (resolve の手数を増やさない)
+- 他の節の `d`・`s` (と綴り `B/D/d/<ファイル名>`・`B/D/s`) は E のこと (`B/D/E/<ファイル名>`・`B/D/E`)
+- 既定の bind と connect の違い: bind の綴りはカーネルがソケットの寿命の間覚えるので、綴りが辿れ続けることが正しく動く条件 (`getsockname` の綴りで消す、DGRAM の返信)。connect の綴りは相手に残らず、残すのは速さのためのキャッシュでしかない。だから bind は既定でも残し、connect は既定では残さず、再利用したい人が resolve を選ぶ
+- 調査は [research](../research/2026-11-20-tmp-cleaners-and-persistent-base.md)。systemd v242 より古い環境 (RHEL 8 の v239 等) では生きている D も 10 日で消されうる (綴りが辿れなくなるだけで危険はない。説明に書く)
 
 ### 実体の置き場と綴りの形
 
 B の実体をどこに作るかと、B をどう綴るかは別の軸。
 
-実体の置き場 (作れた最初の所):
+実体の置き場 (利用者が指定しなければ、作れた最初の所。OS の掃除で死んだ D が消え、生きている D が守られる所を先に):
 
-| 順 | 置き場 |
-|---|---|
-| 1 | `$XDG_RUNTIME_DIR` |
-| 2 | `$TMPDIR` |
-| 3 | `/tmp` |
-| 4 | ソケットのディレクトリ (名前は `.sockat.XXXXXXXXXX`。1〜3 のどこにも作れない時) |
+| 順 | 置き場 | 理由 |
+|---|---|---|
+| 1 | `/tmp` | Linux は死んだ D を 10 日で消し、生きている D は flock で守られる。macOS は生きている D を消さない |
+| 2 | `$XDG_RUNTIME_DIR` | age の掃除が無く、死んだ D はログアウトまで残る |
+| 3 | `$TMPDIR` | macOS の `$TMPDIR` は dirhelper が 3 日で消しうる (生きている D も) |
+| 4 | ソケットのディレクトリ (名前は `.sockat.XXXXXXXXXX`。1〜3 のどこにも作れない時) | |
 
 綴りの形 (sockat が自分で判断する。上から順に、収まる物):
 
@@ -108,8 +113,8 @@ B の実体をどこに作るかと、B をどう綴るかは別の軸。
 | B の綴り | プロセスが終わった後 |
 |---|---|
 | procB | 辿れない |
-| dirB | `cleanup` (D) か `cleanup_base` (B) まで残る |
-| tmpB | `cleanup` (D) か `cleanup_base` (B) まで残る。`cleanup_base` で B を消した後は、他人が同じ名前で作り直しうる (std の元のパスを消した後に、そのディレクトリに書ける人が作り直せるのと同じ。片付けた後の綴りは使わない、と説明に書く) |
+| dirB | E は `cleanup` まで、D はプロセスが終わった後の OS の掃除まで残る |
+| tmpB | 同上。B が消えた後は、他人が同じ名前で作り直しうる (std の元のパスを消した後に、そのディレクトリに書ける人が作り直せるのと同じ。片付けた後の綴りは使わない、と説明に書く) |
 
 ## 整理案 (統括、2026-11-20。RS-Q1〜Q4 は kawaz 裁定済み)
 
@@ -220,7 +225,7 @@ sockat::resolve_for_bind(path, Options) -> Result<ForBind, ExError>     // path 
 sockat::resolve_for_connect(path, Options) -> Result<ForConnect, ExError> // path / cleanup() / 診断 (remove は持たない)
 
 // 置き場 B を片付ける
-sockat::cleanup_base() -> io::Result<()>
+sockat::sweep() -> io::Result<()>   // 呼んだ時だけ、持ち主の死んだ D (ロックの外れた D) を消す
 ```
 
 ```rust
@@ -237,7 +242,7 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 - resolve を用途で 2 つに分ける理由: bind は `link-file` を Linux 等で使えず `link-dir` を先に選ぶ、connect は `link-file` を選ぶ (ファイル名の長さによらない)。connect 用の resolve には `remove` を持たせず、消し間違いを型で防ぐ
 - 「標準にそのまま渡したか」の bool は持たない (`spelling == Original` か `route == "standard"` で分かる)
 - resolve は path を返すだけなので、thread-cwd でしか届かない長さでは `ENAMETOOLONG`。それも届かせたい人は `bind` / `connect` を使う
-- 既定の `bind` も綴りを残す (RS-Q4、kawaz 裁定 2026-11-20: a)。`SocketFile` を返さないので、その D はプロセスが終わるまで (dirB・tmpB では `cleanup_base` まで) 残る。exec をまたぐプロセスや片付け損ねた B・D の掃除の仕組みは作らない。片付けを気にする利用者は `_ex` か resolve を使う
+- 既定の `bind` も綴りを残す (RS-Q4、kawaz 裁定 2026-11-20: a)。`SocketFile` を返さないので、その E はプロセスが終わるまで残り、D と一緒に OS の一時ディレクトリの掃除で消える。exec をまたぐプロセスの掃除の仕組みは作らない。片付けを気にする利用者は `_ex` か resolve を使う
 
 ## 利用者の回答 (2026-11-20)
 
