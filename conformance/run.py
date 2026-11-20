@@ -544,7 +544,29 @@ def judge(case, outcomes, lacks):
             cells[l] = "期待違い"
         if odd or mismatch:
             detail[field] = (encoded, odd, mismatch, exp_values)
+    if used:
+        # きっかけの経路に来るまでの経過は、組によらず同じはず。組をまたいで比べる。
+        encoded = {l: json.dumps(skipped_before(r["skipped"], used), ensure_ascii=False) for l, r in results.items()}
+        odd = odd_in(encoded)
+        for l in odd:
+            if cells[l] == "一致":
+                cells[l] = "差"
+        if odd:
+            detail[SKIPPED_BEFORE] = (encoded, odd, set(), set())
     return cells, detail, (groups if used else None)
+
+
+# 詳細の表で、組をまたいで比べた「きっかけの経路より前の skipped」の行の名前。
+SKIPPED_BEFORE = "skipped (きっかけより前、組をまたいで)"
+
+
+def skipped_before(skipped, used):
+    """skipped のうち、最初のきっかけの経路より前。きっかけの経路を作れずに skipped に入れた言語は
+    そこで切り、作れて route にした言語は skipped 全部 (どれも route より前に試したもの)。"""
+    for i, r in enumerate(skipped):
+        if r in used:
+            return skipped[:i]
+    return list(skipped)
 
 
 def width(s):
