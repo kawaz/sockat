@@ -23,6 +23,7 @@ The same steps for the automatic bases and for `Options.base`.
 5. On `EEXIST`, check what already exists in the same way (a real directory, owned by oneself, not writable by others). Use it even if its mode is not 0711, and do not change the mode. If it fails, an automatic base falls back to `sockat-<uid>.<10 random characters>`, and `Options.base` is an error
 
 - "Not writable by others" includes the group (`mode & 022 == 0`)
+- "Oneself" is the effective uid (`geteuid`). The `<uid>` in the name is the effective uid too
 - When a directory on the way is missing, sockat does not create it and returns an error (how a place the app manages is created is up to the app)
 - The name is `sockat-<uid>` (`sockat` under `$XDG_RUNTIME_DIR`, `.sockat.<10 random characters>` under the socket's directory). `Options.base` is the path of B itself, and its last component is the name
 - Errors for `Options.base`: an invalid argument when it is a relative path or its last component is not a file name (`dir/`, `..`, `/`), `ENOENT` when a directory on the way is missing, `ENOTDIR` when the base is not a directory, `EPERM` when the owner / permission checks fail
@@ -42,6 +43,7 @@ Where B's real directory is created and how B is spelled ([Spelling forms](#spel
 - When `$TMPDIR` or `$XDG_RUNTIME_DIR` is empty or a relative path, that base is not used
 - A process using one B applies to bases 1 to 3. A B in base 4 (the socket's directory) is one per socket directory
 - When it is known beforehand that the spelling will not fit (estimable from the length of the base's real path), B is not created. It does not move on to the next base either; the routes that use B are skipped as unusable (the process's B is the first base where it could be created, and does not change with the path's length)
+- When a held B or D has been removed (`st_nlink` of the `fstat` of its fd is 0, or the name's `lstat` and the fd differ in `(st_dev, st_ino)`), it is dropped and created again on the next call (an old systemd-tmpfiles, macOS's `$TMPDIR` cleaning, removed by hand)
 - A B once held (bases 1 to 3) is used for the rest of the process. A base where creation failed is not remembered and is tried again on the next call. When D cannot be created, the routes that use D are unusable for that call, and no other B is looked for
 - The `usable_cross_uid` judgement (whether every directory on the way gives other x) is remembered from when B was created and is not re-checked later
 - When B cannot be created after the check of `Options.base` passed, that error is returned (`route` none, `skipped` what came before)

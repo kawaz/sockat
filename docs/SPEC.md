@@ -133,7 +133,7 @@ On success `_ex` and resolve return the following.
 | `skipped` | the routes tried and found unusable, in the order tried. Each element is `{ name: the route name, reason: why it was unusable }`. For a long path `standard` is included |
 
 - `skipped` has one element per route name. Trying link-dir with procB and with the real path is still one element, with the `reason` of the last try. Not using procB because of `usable_cross_uid` is not skipping a route, so nothing is added
-- `skipped` contains only the routes in that call's row of the order tables (for bind the row is decided by the OS, for connect by the OS and whether `/proc` is usable). The connect row of Linux without `/proc` usable has no proc-direct, so it is not included
+- `skipped` contains only the routes in that call's row of the order tables (for bind the row is decided by the OS, for connect by the OS and whether `/proc` is usable). The connect row of Linux without `/proc` usable has no proc-direct, so it is not included.  A route whose means the OS lacks (thread-cwd on NetBSD, OpenBSD and illumos, thread-cwd-direct on an OS that cannot move a thread's cwd) is not in that OS's row and is not included
 
 - Every route tried before `route` was unusable (when a route actually binds / connects and fails, the error is returned there and the next is not tried; only when a bind's link-file is told apart at run time does it go on). So there is no "was it usable" bool
 - The names in `route`, `base` and `skipped` and the `reason` are for diagnostics and promise nothing about their content (routes are added and changed). Branch on `Spelling`
@@ -226,7 +226,7 @@ Attributes of `Linked`:
 
 At resolve time nothing is bound, so `ForBind` cannot remember the socket file's `(st_dev, st_ino)` and has no `remove()`. When the user calls `socket_file()` after binding on their own (the name follows each language's convention; in Rust `socket_file(&self) -> io::Result<SocketFile>`), it returns a `SocketFile`. Without that call there is nothing that removes the file.
 
-- At the call it follows the spelling and remembers the socket file's realpath and `(st_dev, st_ino)`. When it cannot follow it (before the bind, no file), it is an error
+- At the call it follows the spelling and remembers the socket file's realpath and `(st_dev, st_ino)`. When it cannot follow it (before the bind, no file), it is an error. When what it reaches is not a socket (an unrelated file that was at the original path before the bind, etc.), it is an error
 - The returned `SocketFile` works like the one of `Bound` ([`remove`](#remove)). Its `cleanup()` cleans up once the same E as `cleanup()` of `ForBind`
 - Call it after the bind and before closing the listener. A replacement between the bind and the call cannot be told apart
 - When the spelling is `CwdRelative`, the process cwd's `(st_dev, st_ino)` at resolve time and at the call are compared, and a difference is an error

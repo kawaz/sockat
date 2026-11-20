@@ -133,7 +133,7 @@ Rust の名前で示す。
 | `skipped` | 試して使えなかった経路の並び (試した順)。各要素は `{ name: 経路の名前, reason: 使えなかった理由 }`。長いパスでは `standard` も入る |
 
 - `skipped` は経路の名前ごとに 1 件。link-dir を procB と実パスで試しても 1 件で、`reason` は最後に試した物。`usable_cross_uid` で procB を使わないのは経路を飛ばすことではないので、何も足さない
-- `skipped` に入るのは、その呼び出しの順の表 (bind は OS で、connect は OS と `/proc` を使えるかで決まる行) に並ぶ経路だけ。`/proc` を使えない Linux の connect の行に proc-direct は無いので入れない
+- `skipped` に入るのは、その呼び出しの順の表 (bind は OS で、connect は OS と `/proc` を使えるかで決まる行) に並ぶ経路だけ。`/proc` を使えない Linux の connect の行に proc-direct は無いので入れない。その OS に手段の無い経路 (NetBSD・OpenBSD・illumos の thread-cwd、スレッドの cwd を移せない OS の thread-cwd-direct) は、その OS の行に無いので入れない
 
 - `route` より前に試した経路はすべて使えなかったもの (実際に bind / connect して失敗したら、そこでエラーを返して次を試さない。bind の link-file を実行時に見分ける時だけは次へ進む)。そのため「使えたか」の真偽値は持たない
 - `route`・`base`・`skipped` の名前と `reason` は診断用で、中身を約束しない (経路は増えたり変わったりする)。分岐には `Spelling` を使う
@@ -226,7 +226,7 @@ pub enum Spelling {
 
 resolve の時点では bind していないので、`ForBind` はソケットのファイルの `(st_dev, st_ino)` を覚えられず、`remove()` を持たない。利用者が自分で bind した後に `socket_file()` (名前は各言語の慣習。Rust は `socket_file(&self) -> io::Result<SocketFile>`) を呼ぶと、`SocketFile` を返す。呼ばなければ消す口は無い。
 
-- 呼んだ時点で綴りを辿り、ソケットのファイルの realpath と `(st_dev, st_ino)` を覚える。辿れなければ (bind する前、ファイルが無い) エラー
+- 呼んだ時点で綴りを辿り、ソケットのファイルの realpath と `(st_dev, st_ino)` を覚える。辿れなければ (bind する前、ファイルが無い) エラー。辿った先がソケットでなければ (bind する前に元のパスにあった無関係なファイル等) エラー
 - 返す `SocketFile` は `Bound` の物と同じ働き ([`remove`](#remove))。`cleanup()` は `ForBind` の `cleanup()` と同じ E を 1 回だけ片付ける
 - 呼ぶのは bind の後・listener を閉じる前。bind から呼ぶまでの間の置き換えは見分けられない
 - 綴りが `CwdRelative` の時は、resolve の時と呼んだ時でプロセスの cwd の `(st_dev, st_ino)` を比べ、違えばエラー
