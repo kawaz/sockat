@@ -389,9 +389,10 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 | no route can be used (the spelling does not fit, the means is missing) | `ENAMETOOLONG` |
 | `resolve_for_bind` at a length only thread-cwd / at reaches | `ENAMETOOLONG` |
 | `resolve_for_connect` when link-file cannot be used (B cannot be created, the spelling does not fit) | `ENAMETOOLONG` |
-| `Options.base` is a relative path, or its last component is not a file name (`dir/`, `..`, `/`) | invalid argument |
+| `Options.base` is a relative path, or its last component is not a file name (`dir/`, `..`, `/`). Regardless of the path's length (a check of the argument's form, like a NUL not at the start) | invalid argument |
+| `Options.base` is a symlink | `EPERM` (not a real directory; the check fails) |
+| `Options.base` is neither a directory nor a symlink | `ENOTDIR` |
 | a directory on the way to `Options.base` is missing | `ENOENT` |
-| `Options.base` is not a directory | `ENOTDIR` |
 | `Options.base` failed the owner / permission checks (including, on the bind side with `usable_cross_uid`, whether every directory on the way and the base itself give x to other) | `EPERM` |
 | a path over the standard length that does not end in a name | invalid argument |
 | a path containing NUL anywhere but at the start (whatever its length) | invalid argument |

@@ -389,9 +389,10 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 | どの経路も使えない (綴りが収まらない、手段が無い) | `ENAMETOOLONG` |
 | `resolve_for_bind` で、thread-cwd・at でしか届かない長さ | `ENAMETOOLONG` |
 | `resolve_for_connect` で、link-file を使えない (B を作れない、綴りが収まらない) | `ENAMETOOLONG` |
-| `Options.base` が相対パス、または最後がファイル名でない (`dir/`・`..`・`/`) | 引数の誤り |
+| `Options.base` が相対パス、または最後がファイル名でない (`dir/`・`..`・`/`)。パスの長さによらない (先頭以外の NUL と同じく引数の形の検査) | 引数の誤り |
+| `Options.base` の場所が symlink | `EPERM` (実ディレクトリでない。確かめに外れた) |
+| `Options.base` の場所がディレクトリでも symlink でもない | `ENOTDIR` |
 | `Options.base` までの途中のディレクトリが無い | `ENOENT` |
-| `Options.base` がディレクトリでない | `ENOTDIR` |
 | `Options.base` の持ち主・権限の確かめに外れた (`usable_cross_uid` と一緒の bind 系の、途中と base 自身が other に x を持つかを含む) | `EPERM` |
 | 標準に渡す長さを超えるパスで、名前で終わらない | 引数の誤り |
 | 先頭以外に NUL を含むパス (長さによらない) | 引数の誤り |
