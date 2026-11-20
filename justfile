@@ -84,3 +84,9 @@ reach:
 # 生成物が model.json とずれていないか、lacks が conformance/langs.json とずれていないか、表示用の文字列が日英そろっているかを確かめる
 reach-check:
     python3 -I pages/reach/gen.py --check
+
+# ---------- 利用の統計 ----------
+
+# 3 言語のパッケージの利用の統計 (版・ダウンロード数・依存元の数・GitHub) を表示する (例: just stats --json)
+stats *ARGS:
+    python3 -I tools/stats.py {{ARGS}}
