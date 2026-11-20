@@ -25,14 +25,14 @@ kawaz との議論 (2026-11-19〜20) で方向が出たものの記録。[DR-001
 
 - 長いパスを、元のパスと同じ所を指し続ける短い綴りに言い換える。綴りが生きている間は、`getsockname` の綴りで消す上のライブラリ、DGRAM の返信、運用の道具が元のパスと同じに働く
 - 綴りはただのパスなので、ソケットの型 (stream / DGRAM / SEQPACKET) と操作 (bind / connect / `send_to`) を問わず、利用者が std に渡して使える
-- 普段はスレッドも fork も使わない
+- fork はしない (kawaz 裁定 2026-11-20。fork の手法の説明と、それで届く場面は [docs/design/fork-cwd.md](../design/fork-cwd.md))。普段はスレッドも使わない
 
 ## 方向 (kawaz と合意)
 
 - resolve が短い綴りを返す (整理案では用途ごとに `resolve_for_bind` / `resolve_for_connect`)。短いパス (標準に渡す長さ以下) はそのまま返す: 絶対パスは `Original`、相対パスは `CwdRelative`
 - 綴りは `B/D/d/<ファイル名>` か `B/D/s`
-- 既定の `bind` も、綴りが収まれば resolve の綴りを使う (kawaz)。thread-cwd・fork は収まらない時の後ろ
-- 今の `bind` / `connect` は、resolve で済まない場面 (thread-cwd・fork が要る長さ、`getsockname` の綴りで消す上のライブラリへの備え) のために残し、内部で resolve を使う
+- 既定の `bind` も、綴りが収まれば resolve の綴りを使う (kawaz)。thread-cwd は収まらない時の後ろ
+- 今の `bind` / `connect` は、resolve で済まない場面 (thread-cwd が要る長さ、`getsockname` の綴りで消す上のライブラリへの備え) のために残し、内部で resolve を使う
 - D は乱数の名前 (カウンタにしない。プロセスが終わった後に同じ PID・同じ fd 番号の別の sockat のプロセスが現れると、カウンタの D は同じ綴りで他人のソケットを指す)
 - 消す (`remove`) と片付ける (`cleanup` は D、`cleanup_base` は B) は自動で行わない。どれも 1 回だけ働き、2 回目以降は何もしない (`remove` は resolve した綴りの物を 1 回だけ消す、の意味の冪等)。connect は内部で resolve した後に自分で `cleanup` してよい
 - 利用者が「別の uid にも辿らせる」と指定した時は、procB を飛ばし、dirB・tmpB のうち B までの途中のディレクトリが全部 other に x (辿る権限) を持つ物だけを使う (子が 0711 でも親が 0700 なら別の uid は辿れない。実測)。`/tmp` (1777) の下の tmpB はいつも当たり、dirB は置き場が 0700 (`/run/user/<uid>`、macOS の `$TMPDIR`) なら外れ、`$TMPDIR` を辿れる場所に向けた環境なら当たる
@@ -72,7 +72,7 @@ B の実体をどこに作るかと、B をどう綴るかは別の軸。
 | tmpB | `/tmp` の実パス `…/B/D/…` | `/tmp` | `tmp` | 別の uid も (B が 0711、D は乱数) |
 
 - procB は `/proc` を使えて綴りが収まる時だけ。実体がどこでも綴りは同じ形
-- B をソケットのディレクトリに作った時は、実パスの綴りは元のパスより長くなるので、使えるのは procB の綴りだけ。`/proc` の無い OS では resolve の綴りを使えず、今の経路 (thread-cwd・fork 等) へ
+- B をソケットのディレクトリに作った時は、実パスの綴りは元のパスより長くなるので、使えるのは procB の綴りだけ。`/proc` の無い OS では resolve の綴りを使えず、thread-cwd / at へ
 - どの綴りも収まらなければ今の経路へ
 
 ## 実測 (2026-11-19〜20、docker の Linux と macOS)
@@ -118,7 +118,6 @@ bind の試す順 (B の綴りごとに展開した 1 列):
 | 5 | `link-dir` | tmpB | `B/D/d/<ファイル名>` | 収まる |
 | 6 | `link-file` | tmpB | `B/D/s` | bind が symlink を辿る OS (macOS・NetBSD) |
 | 7 | `thread-cwd` (FreeBSD は `at`) | | `R/<ファイル名>` (R は片付け済み) | Linux・Apple の OS (`at` は FreeBSD) |
-| 8 | `fork-cwd` | | 同 | fork の経路を作れる言語 |
 
 - procB の `link-file` は無い (`/proc` のある Linux は bind が symlink を辿らない)
 - B を `$XDG_RUNTIME_DIR`・`$TMPDIR`・`/tmp` のどこにも作れない時は、ソケットのディレクトリに作り、procB の綴りだけを使う (「実体の置き場と綴りの形」)。`-sockdir` の経路は無くなる
@@ -132,14 +131,13 @@ connect:
 | 2 | `proc-direct` / `relative` / `widened` / `at-direct` | 書き込みもスレッドも要らない (OS ごとに今と同じ) |
 | 3 | `thread-cwd-direct` | 使い捨てのスレッドがソケットのディレクトリへ `fchdir` してファイル名で connect (D も R も要らない。connect の綴りは相手に残らないため) |
 | 4 | `link-file` | `B/D/s`。ファイル名の長さによらず届く。connect の後に片付ける |
-| 5 | `fork-cwd-direct` | fork の経路を作れる言語だけ (案 L を採らなければ) |
 
 - connect は、D と R を通す `thread-cwd`・`at`・`proc`、D を通す `proc-held`、置き場に symlink を作る `symlink-file` が要らなくなる (`thread-cwd-direct` と `link-file` が代わる)
 - FreeBSD の connect で `link-file` を使えるか (今の SPEC は symlink-file を FreeBSD で使わない) は未確認
 
 ### 綴りの性質 (RS-Q1)
 
-bind の綴りの性質を返す。connect の綴りは相手に残らないので返さない。fork したかは綴りの性質と別の `forked: bool` で返す (connect にも付く)。
+bind の綴りの性質を返す。connect の綴りは相手に残らないので返さない。fork しないので `forked` は無い。
 
 綴りの性質を 1 つの値で返す (S1、kawaz 裁定 2026-11-20)。利用者が知りたいのは「この綴りを後で使えるか」の 1 点で、性質は互いに排他な種類 + 種類ごとの属性になるため。
 
@@ -156,21 +154,22 @@ pub enum Spelling {
         usable_cross_uid: bool,        // 別の uid の相手が辿れるか
         usable_with_private_tmp: bool, // 自分と相手のどちらかが /tmp を隔離していても (systemd の PrivateTmp 等) 相手が辿れるか (綴りが /tmp・/var/tmp を通らなければ true。mount 名前空間が丸ごと違う相手 (コンテナ等) までは保証しない)
     },
-    Dangling,     // 片付け済みの R を含む綴り。どこにも届かない (thread-cwd・at・fork-cwd)
+    Dangling,     // 片付け済みの R を含む綴り。どこにも届かない (thread-cwd・at)
 }
 ```
 
 採らなかった S2: `forked`・`cwd-relative`・`dangling`・`unremovable-by-spelling`・`temporary`・`owner-only` の名前の並び。種類と属性が混ざり、組み合わせの意味を利用者が考えることになる。
 
-### 最終手段 (RS-Q2)
+### 最終手段と fork (RS-Q2、kawaz 裁定 2026-11-20)
 
-- bind: 無くなる (共有の置き場の綴りは tmpB として既定の順に入り、生きている間は 0711 の自分の B で作り直されない)
-- connect: `fork-cwd-direct` だけ。thread-cwd-direct と link-file の後に来るので、出番はスレッドも B も使えない環境だけ
-- 案 L: 最終手段を無くし、`fork-cwd-direct` を作らない (Python・Go はもともと無い)。引数から最終手段が消える
+- fork の実装を全部なくす (`fork-cwd`・`fork-cwd-sockdir`・`fork-cwd-direct`)。fork の副作用 (fd の複製、`SIGCHLD`、`waitpid(-1)`、`pthread_atfork`、connect では相手に見える pid) はプロセス全体に及び、してほしくない利用者の方が多い
+- 最終手段も無くなる: bind の symlink-dir は tmpB として既定の順に入り、connect の fork-cwd-direct は作らない。引数から最終手段が消え、`forked` も無くなる
+- 3 言語で届く所がそろう (Python・Go はもともと fork の経路を作らない)
+- fork をやめて届かなくなる場面と、fork の手法の説明は [docs/design/fork-cwd.md](../design/fork-cwd.md)。sockat で届かない場面の全体は届く範囲の表 (作成中)
 
 ### 引数
 
-- `_ex` の引数を `Options` にする: `usable_cross_uid: bool` (別の uid の相手も辿れる綴りを求める。B の選び方にだけ効き、満たせたかは結果の `Spelling` で分かる)、案 L を採らなければ `last_resort: bool` (connect だけ)
+- `_ex` の引数を `Options` にする: `usable_cross_uid: bool` (別の uid の相手も辿れる綴りを求める。B の選び方にだけ効き、満たせたかは結果の `Spelling` で分かる)
 - 既定の操作は今のとおり path だけ
 
 ### 関数 (RS-Q3)
@@ -219,23 +218,21 @@ pub struct Bound<S> {
     pub socket: S,
     pub file: SocketFile,   // remove(): bind したファイルを 1 回だけ消し、cleanup もする / cleanup(): D を 1 回だけ片付ける
     pub spelling: Spelling,
-    pub forked: bool,
     pub route: &'static str, pub base: Option<&'static str>, pub skipped: Vec<Skipped>, // 診断用
 }
-pub struct Connected<S> { pub socket: S, pub forked: bool, pub route: &'static str, pub skipped: Vec<Skipped> }
-pub struct Report { pub forked: bool, pub route: &'static str, pub skipped: Vec<Skipped> }
+pub struct Connected<S> { pub socket: S, pub route: &'static str, pub skipped: Vec<Skipped> }
+pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 ```
 
 - resolve を用途で 2 つに分ける理由: bind は `link-file` を Linux 等で使えず `link-dir` を先に選ぶ、connect は `link-file` を選ぶ (ファイル名の長さによらない)。connect 用の resolve には `remove` を持たせず、消し間違いを型で防ぐ
 - 「標準にそのまま渡したか」の bool は持たない (`spelling == Original` か `route == "standard"` で分かる)
-- resolve は path を返すだけなので、thread-cwd・fork でしか届かない長さでは `ENAMETOOLONG`。それも届かせたい人は `bind` / `connect` を使う
+- resolve は path を返すだけなので、thread-cwd でしか届かない長さでは `ENAMETOOLONG`。それも届かせたい人は `bind` / `connect` を使う
 - 既定の `bind` は `SocketFile` を返さないので、その D は `cleanup_base` か次の sockat の掃除まで残る (片付け損ねた B・D の掃除が必須になる)
 
 ## 未決
 
 ### 整理案で案を出した (判断待ち。[docs/QUESTIONS.md](../QUESTIONS.md))
 
-- RS-Q2: 最終手段を残すか、無くす (案 L) か (「最終手段」)
 - RS-Q3: 関数の形 F1〜F3 (「関数」)。返り値の形と名前、B を片付ける口 `cleanup_base` もこの中。「別の uid にも辿らせる」の指定の形は整理案の「引数」(`Options.usable_cross_uid`)
 
 ### 案がまだ無い

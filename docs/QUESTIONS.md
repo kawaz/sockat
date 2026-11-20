@@ -19,13 +19,6 @@
 
 経路を resolve と消さない置き場 B で組み直す案 ([issue](issue/2026-11-20-resolve-and-persistent-base.md) の「整理案」) の判断。
 
-### RS-Q2: 最終手段を残すか
-
-bind の最終手段 (共有の置き場の symlink-dir) は tmpB として既定の順に入るので無くなる。残るのは connect の `fork-cwd-direct` だけで、thread-cwd-direct と link-file の後なので、出番はスレッドも B も使えない環境だけ。
-
-- [ ] 残す: `Options` に `last_resort: bool` (connect だけ)
-- [ ] L: 無くす。`fork-cwd-direct` を作らず、引数から最終手段が消える (Python・Go はもともと作れない)
-
 ### RS-Q3: 関数の形
 
 統括の推し: F1。std の形 (型ごとに別の型と関数) に合わせ、各言語で std の置き換えとして説明できる。
