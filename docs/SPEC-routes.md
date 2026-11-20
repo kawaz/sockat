@@ -246,7 +246,7 @@ Used by [relative](#relative).
 
 - When a route actually binds / connects and fails (`ENOENT`, `EADDRINUSE`, `ECONNREFUSED`, etc.), that error is returned and the next route is not tried
 - Then the E made in that call is removed before returning (link-dir, link-file, thread-cwd, at; and the default connect's link-file). D and B are kept
-- When removing the E fails, it stays silent and changes neither the result of the call nor the original error (a successful connect is not turned into a failure; the original error is not replaced by the removal's)
+- When removing the E fails, it stays silent and changes neither the result of the call nor the original error (a successful connect is not turned into a failure; the original error is not replaced by the removal's). The `cleanup()` the user calls is different and returns the failure as an error ([SPEC `remove` and `cleanup`](SPEC.md#remove-and-cleanup))
 - It goes on to the next only when the route itself is unusable (each route's "unusable when")
   - the spelling does not fit
   - B / D / E cannot be created

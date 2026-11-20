@@ -200,7 +200,7 @@ sockat が自分で判断する。上から順に、収まる物。
 
 - procB の `link-file` は無い (`/proc` のある Linux は bind が symlink を辿らない)
 - link-dir・link-file で実際に bind して失敗した時 (`EADDRINUSE` 等) は、作った E をその場で消してからエラーを返す (残さない。thread-cwd・at の E と同じ)。link-file を実行時に見分けて次へ進む時も E を消す
-- E の片付け (既定の connect の E、bind が失敗した時の E、thread-cwd・at の E) が失敗しても、呼び出しの成否も元のエラーも変えずに黙る。消す失敗を理由に成功した connect を失敗にせず、元のエラーを消す側のエラーに置き換えない (統括)
+- E の片付け (既定の connect の E、bind が失敗した時の E、thread-cwd・at の E) が失敗しても、呼び出しの成否も元のエラーも変えずに黙る。消す失敗を理由に成功した connect を失敗にせず、元のエラーを消す側のエラーに置き換えない。利用者が呼ぶ `cleanup()` は E の unlink の失敗 (`ENOENT` 以外) をエラーで返し、`remove()` はファイルを消す側のエラーを先に、無ければ `cleanup` のエラーを返す (利用者が頼んだ片付けの結果は知らせる。統括)
 - どの B を使ったかは診断用の `base` で返す
 - bind は proc-direct・relative・widened・at-direct を使わない。綴りが後で無関係なファイルに当たる (proc-direct、relative、at-direct) か、アドレスが途中で切れて読む側を壊す (widened)
 

@@ -201,6 +201,7 @@ Attributes of `Linked`:
 | `cleanup()` | cleans up resolve's E once | `SocketFile`, `ForBind`, `ForConnect` |
 
 - Neither happens automatically (Rust's Drop does not do them either). From the second call on they do nothing (`remove` is idempotent in the sense that it removes what the resolved spelling points to once)
+- `cleanup()` returns a failure to unlink E (other than `ENOENT`) as an error (it reports the result of the cleanup the user asked for). Only the cleanup of E inside a call stays silent ([How a failing route is treated](SPEC-routes.md#how-a-failing-route-is-treated)). `remove()` returns the error of removing the file first, and otherwise the error of `cleanup` (a language whose convention is to join both into one error may join them: Go's `errors.Join`)
 - sockat does not clean up B and D ([What stays in the base](#what-stays-in-the-base))
 - Do not use a spelling after it is cleaned up. When B is in `/tmp`, after B is gone someone else can recreate the same name (as with the standard library: after the original path is removed, anyone who can write to that directory can recreate it)
 
