@@ -38,7 +38,8 @@ Usage is in each repository's README.
 
 ## Documentation
 
-- [docs/SPEC.md](./docs/SPEC.md) — the language-independent specification (routes, order, what is lost, patterns not to use, errors, what each implementation must do)
+- [docs/SPEC.md](./docs/SPEC.md) — the language-independent specification (operations, resolve, spelling properties, cleanup, the order of routes, patterns not to use, errors, what each implementation must do)
+- [docs/SPEC-routes.md](./docs/SPEC-routes.md) — how the routes are built (building the base B, each route's steps; for implementers)
 - [docs/decisions/](./docs/decisions/INDEX.md) — decisions on the specification and how this repository is organized (DR, Japanese)
 - [docs/decisions/DR-0017](./docs/decisions/DR-0017-resolve-through-persistent-base.md) — the decision on the long-path routes and the API, and rejected alternatives (Japanese)
 - [docs/design/conformance.md](./docs/design/conformance.md) — the language-independent conformance test (each language's test CLI input and output, the table of cases) (Japanese)

@@ -142,7 +142,7 @@
 | symlink-file | `/tmp/sockat.<乱数>` | `ENOENT` (macOS) | 同じ名前で別のソケットを指す symlink を作ると、返信はそこに届いた (macOS) |
 
 - 長いパスに bind した送り元には、受け手から返信が届かない。返信の綴りを他人が作れる場所 (受け手の cwd、共有の `/tmp`) なら、返信はその人のソケットに届く
-- stream の `respelled` の危険は「綴りで unlink / stat する」だったが、DGRAM では「綴りへ送る」が加わる。symlink-file の綴りは、unlink では置き場の項目が消えるだけ ([SPEC](../SPEC-ja.md#symlink-file)) だが、送ると作り直された symlink を辿る
+- stream の `respelled` の危険は「綴りで unlink / stat する」だったが、DGRAM では「綴りへ送る」が加わる。symlink-file の綴りは、unlink では置き場の項目が消えるだけ ([SPEC-routes の link-file](../SPEC-routes-ja.md#link-file)) だが、送ると作り直された symlink を辿る
 
 ### SOCK_SEQPACKET
 

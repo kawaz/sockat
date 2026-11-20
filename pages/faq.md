@@ -18,7 +18,7 @@ No. If you can choose the socket's path, putting it somewhere short is best. soc
 
 ### What differs from the standard for a long path?
 
-The spelling the kernel keeps (`getsockname`, the listener's address) is no longer the original path. Do not remove or inspect the file by that spelling. Remove it by the original path or with `discard()` ([What is lost in the SPEC](../docs/SPEC.md#what-is-lost)).
+The spelling the kernel keeps (`getsockname`, the listener's address) is no longer the original path. Do not remove or inspect the file by that spelling. Remove it by the original path or with `discard()` ([Patterns not to use in the SPEC](../docs/SPEC.md#patterns-not-to-use)).
 
 ## Environment
 

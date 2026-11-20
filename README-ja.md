@@ -38,7 +38,8 @@
 
 ## ドキュメント
 
-- [docs/SPEC-ja.md](./docs/SPEC-ja.md) — 言語によらない仕様 (経路、試す順番、失うもの、使ってはいけない書き方、エラー、各実装に求めること)
+- [docs/SPEC-ja.md](./docs/SPEC-ja.md) — 言語によらない仕様 (公開する操作、resolve、綴りの性質、片付け、経路の試す順、使ってはいけない書き方、エラー、各実装に求めること)
+- [docs/SPEC-routes-ja.md](./docs/SPEC-routes-ja.md) — 経路の作り方 (置き場 B の作り方、各経路の手順。実装者向け)
 - [docs/decisions/](./docs/decisions/INDEX.md) — 仕様と構成の判断 (DR)
 - [docs/decisions/DR-0017](./docs/decisions/DR-0017-resolve-through-persistent-base.md) — 長いパスの経路と API の判断と却下した案
 - [docs/design/conformance.md](./docs/design/conformance.md) — 言語によらない適合試験 (各言語の試験用 CLI の入出力、場面の表)

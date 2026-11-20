@@ -13,7 +13,8 @@ sockat は、`sun_path` の上限を超えるパスでも Unix domain socket を
 | パス | 中身 |
 |---|---|
 | `README-ja.md` / `README.md` | 何を解決するか、言語ごとの実装の表 |
-| `docs/SPEC-ja.md` / `docs/SPEC.md` | 言語によらない仕様 |
+| `docs/SPEC-ja.md` / `docs/SPEC.md` | 言語によらない仕様 (利用者と各言語の README を書く人への約束) |
+| `docs/SPEC-routes-ja.md` / `docs/SPEC-routes.md` | 経路の作り方 (各言語の実装者向け。B の作り方、各経路の手順) |
 | `docs/decisions/` | 仕様と構成の判断 (DR) |
 | `docs/research/` | 決める前に外の事実を集めた調査 (他言語の標準、需要、先行例)。判断の材料 |
 | `docs/findings/` | 実機で確かめた結果 (環境・手順・出力つき)。SPEC・DR の主張の根拠 |
