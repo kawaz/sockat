@@ -62,6 +62,20 @@ Not with the current implementations (they clean up the spelling right after the
 
 Usually not. The sender chooses its own reply path, so it can put it somewhere short.
 
+## Speed
+
+### Is connecting to the same path many times fast?
+
+After the rework, call `resolve_for_connect` once, use the spelling for as many connects as needed, and `cleanup` when done. The work of making the spelling (creating and removing the directory and the symlink in the base) happens once. The plain `connect` makes and cleans up the spelling on every call and keeps no state in the process.
+
+### Is the plain `connect` heavy?
+
+Usually not. It first tries the routes that need neither writes to a base nor a thread (Linux's `/proc/self/fd/<dirfd>/<name>`, macOS's relative path and widened sockaddr), and a one-off connect from a CLI normally ends there. It goes on to the route that makes a symlink in a base only when the file name is quite long and the thread cwd is unusable too.
+
+### Why doesn't the plain `connect` cache the spelling?
+
+It would put hidden state in the process, the caller could not see when it is cleaned up, and a long-lived process would pile up a symlink per destination. Use resolve to reuse a spelling.
+
 ## Cleanup
 
 ### When do I call `discard()`?
