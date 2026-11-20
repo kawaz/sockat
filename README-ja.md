@@ -29,7 +29,7 @@
 - 戻り値は、その言語の標準の bind / connect が返すのと同じソケットの型
 - 長いパスでも、ソケットファイルは渡したパスにできる
 - 長いパスは、利用者ごとの置き場 B (`/tmp` を先に、`$XDG_RUNTIME_DIR`、`$TMPDIR`、ソケットのディレクトリの順) の中に、プロセスごとのディレクトリ D と symlink E を作り、それを通る短い綴りに言い換えて (resolve) bind / connect する
-- bind の綴りは消さずに残す。綴りが生きている間は、`getsockname` の綴りで消す上のライブラリや DGRAM の返信が元のパスと同じに働く
+- bind の綴りは消さずに残す。綴りが生きている間は、`getsockname` の綴りで消す上のライブラリや DGRAM の返信が元のパスと同じに働く。そのため長いパスの bind は、アプリの置き場の外 (`/tmp/sockat-<uid>` 等) に D と E を残す (OS の一時ディレクトリの掃除か `sweep()` で消える。[置き場に残る物](./docs/SPEC-ja.md#置き場に残る物))
 - 綴りが収まらない長さの bind は、使い捨てのスレッドの cwd (FreeBSD は `bindat`) で届かせる。bind が最後の要素の symlink を辿る OS (macOS 等) では、ソケットのファイルを指す symlink を通し、ファイル名の長さの上限が無い
 - connect は、書き込みもスレッドも要らない経路 (/proc、相対パス、広げた sockaddr、`connectat`) を先に、次に使い捨てのスレッド、最後に置き場の symlink を試す。既定の connect はプロセスの中に状態を残さない
 - 綴りを自分で標準ライブラリに渡したい時は resolve (`resolve_for_bind` / `resolve_for_connect`) を使う
