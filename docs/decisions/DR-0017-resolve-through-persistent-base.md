@@ -356,7 +356,7 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 - bind したソケットのファイルの realpath と `(st_dev, st_ino)` を覚え、そのパスの `(st_dev, st_ino)` が同じ時だけ消す
 - 置き換えの見分けは `(st_dev, st_ino)` だけで行い、約束するのは listener を開いている間の置き換えまで。閉じた後に消して作り直された物は、番号をすぐ使い回すファイルシステム (ext4、BSD の UFS / FFS) で見分けられない。`remove` は listener を閉じる前に呼ぶよう勧める (kawaz 裁定 2026-11-19。実測は [findings](../findings/2026-11-19-inode-reuse-after-close.md))
 - 相対パスの時は、パスを何も引く前と、bind と覚えるための realpath の両方の後でプロセスの cwd の `(st_dev, st_ino)` を比べ、違えば覚えられない時と同じに扱う (間の cwd の変更で、元の cwd の無関係なファイルを覚えて消さないため。sockat-go の指摘 2026-11-19)
-- bind の後、元のパスの最後の要素が symlink なら (macOS・NetBSD では標準の bind が辿り、その先にソケットを作る)、辿った先の実パスと `(st_dev, st_ino)` を覚える。辿った先がソケットでなければ覚えられない扱い (`bind_ex` は listener を閉じ E を片付けてエラー、`socket_file()` はエラー)。`remove` が利用者の symlink を消さないため (統括)
+- bind の後、元のパスの最後の要素が symlink なら (macOS・NetBSD では標準の bind が辿り、その先にソケットを作る)、辿った先の実パスと `(st_dev, st_ino)` を覚える。`remove` が利用者の symlink を消さないため。最後の要素が symlink でない時も含め、覚える物がソケットでなければ覚えられない扱い (`bind_ex` は listener を閉じ E を片付けてエラー、`socket_file()` はエラー。bind の直後に置き換わった物を覚えると `remove` がそれを消すため) (統括)
 - `remove()` が失敗した時も `cleanup` まで行い、remove のエラーを返す
 - listener を閉じた時: 既定の bind (Go の `Listen`) は標準と同じにする。閉じる時に綴りで unlink する標準 (Go) では、link-dir の綴りは途中の E を辿って実体を消し (標準と同じ)、link-file の綴りは unlink が最後の symlink を辿らないので E 自体が消えてソケットのファイルは残る (標準と違う。README に書く)。`Dangling` の綴りは unlink させない (Go は `SetUnlinkOnClose(false)`)。`_ex` の bind は、どの綴りでも閉じた時に消さない。消すのは `SocketFile` の `remove()` だけ (綴りで消すと、置き換わったファイルを見分けずに消すため)
 
