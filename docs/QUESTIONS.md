@@ -26,3 +26,13 @@
 - [ ] F1: 型ごとに std の形で置く (stream は crate の直下、`datagram::`、`seqpacket::`)。操作ごとに `_ex(…, Options)`。resolve は用途ごとに 2 つ (`resolve_for_bind` / `resolve_for_connect`)
 - [ ] F2: 型を引数で渡す (`bind(path, Type)`)。std の形から外れる
 - [ ] F3: builder (`Options::new().usable_cross_uid(true).bind(path)`)。`_ex` の数は減るが、型ごとの操作が builder に集まる
+
+### RS-Q4: 既定の `bind` も消さない綴りを使うか
+
+既定の `bind` も resolve の綴り (消さない D) を使う方向で合意していたが、hyoui の統括から異論 ([issue](issue/2026-11-20-resolve-and-persistent-base.md) の「利用者の回答」)。既定の `bind` は std の型しか返さないので、利用者に片付けの手がかりが無く、長命の daemon・試験・exec をまたぐプロセスで D と B が溜まる。
+
+統括の推し: b。消さない綴りの利点 (綴りで消す上のライブラリ、DGRAM の返信、運用の道具) を使う利用者は、片付けの口を受け取る `_ex` / resolve を選べば足りる。Python は `getsockname` を差し替えて元のパスを返すので、上のライブラリの問題は既定でも起きない。既定の操作が呼び出しの外に状態を残さないのは、std の置き換えとして自然。2 人の利用者 (llm-gateway、hyoui) はどちらも綴りを使わない。
+
+- [ ] a: 既定の `bind` も消さない綴りを使う。既定の利用者にも綴りの利点が届くが、片付け損ねた B・D の掃除が必須になる (exec をまたぐプロセスにも効く掃除の作り方が要る)
+- [ ] b: 既定の `bind` は呼び出しの中で片付ける (綴りは `Dangling`。B は使うが D を消す)。消さない綴りは `_ex` / resolve を選んだ人だけ
+

@@ -239,6 +239,16 @@ llm-gateway の統括 (sockat-rs 0.4.1 を使用):
 - 気になる点: 監督者や unit は落ちて起こし直されるので長いパスでは B が残る (次の sockat の掃除で足りる)。試験は並行して多数の bind / connect を長いパスで行うので、B の作成と片付けが並行で競合しないか、試験の後に残骸が残らないか。状態がアプリの置き場の外 ($XDG_RUNTIME_DIR / $TMPDIR / /tmp) に増える (MANUAL に書く)。connect の後の片付けで待ちが入ると tokio の上で困る (`connect_nonblocking` は待たずに返ること)
 - 確かめてほしい点: macOS には $XDG_RUNTIME_DIR が無く、$TMPDIR が長い (113 バイト) 環境で B の綴りが収まるか
 
+hyoui の統括 (sockat-rs 0.4.1 を使用):
+
+- 使うのは `bind`・`connect`・`connect_nonblocking` だけ。STREAM だけ。Unix socket の `local_addr()` / `peer_addr()` は読まず、unlink・stat は元のパスで行う。別の uid とは通信せず、PrivateTmp の指定も無い。OS は Linux と macOS
+- 実運用のパスは 55〜82 バイト (ファイル名 41 / 15)。長くなるのは状態の root を深い所に向けた時、`--socket` の指定、試験 (104〜305 バイト)
+- fork をやめても困らない。fork-cwd に当たるのは Linux の seccomp の下で `--socket` にファイル名 80〜96 バイトを指定した時だけ (実測)。fork の子が親の fd を複製する副作用が無くなるのは良い点
+- connect する側 (CLI) は短命で数が多く、sandbox の中で書ける置き場が無いことがある。connect は書き込みもスレッドも要らない経路を先に、を保ってほしい
+- 確かめてほしい点 1: 既定の `bind` が消さない D を作ると、std の型しか返らないので利用者に片付けの手がかりが無い。長命の daemon や、1 プロセスで長いパスの bind を数十回行う試験で D が溜まる。「既定の `bind` は呼び出しの中で片付ける今の形、消さない綴りは `_ex` / resolve を選んだ人だけ」と比べてほしい
+- 確かめてほしい点 2: exec をまたぐプロセス (`hyoui upgrade` は pid を変えずに execve し、listener の fd と path を引き継ぐ)。B の fd は CLOEXEC で閉じるので、旧い B / D は片付けられずに残る。B の名前に PID を入れる掃除の案では「その PID は生きている」ので消されない。procB の綴りは fd が閉じた時点で辿れなくなる
+- 1 マシンで数十の daemon が動くので、掃除は生きている他のプロセスの B を消さない判定が要る
+
 ## 未決
 
 ### 整理案で案を出した (判断待ち。[docs/QUESTIONS.md](../QUESTIONS.md))
