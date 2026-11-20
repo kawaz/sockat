@@ -32,15 +32,16 @@
 - どの経路も呼び出し元のプロセスとスレッドの cwd を変えない
 - `connect` は fork しない。fork するのは `bind` と、最終手段を使う `connect_ex` 系だけで、他の手段が使えない時の最後の手
 - 経路が実際に bind / connect して失敗したら、そのエラーを返し、次の経路でやり直さない
-- カーネルが返すアドレス (`getsockname` / `getpeername`) は元のパスでない (普段は後で解決しても何にも当たらない綴り。消す時は元のパスで消す)。標準の型のまま差し替えられる言語は元のパスを返し、それ以外は元のパスを呼び出し元が持つ
+- 長いパスでは、カーネルが返すアドレス (`getsockname` / `getpeername`) は元のパスでない (普段は後で解決しても何にも当たらない綴り。消す時は元のパスで消す)。標準の型のまま差し替えられる言語は元のパスを返し、それ以外は元のパスを呼び出し元が持つ
 - 後始末つきの bind (`bind_ex` 等) の `discard()` は、自分が作ったソケットのファイルだけを消す (listener は閉じない)
 - Windows は対象外
 
 ## ドキュメント
 
-- [docs/SPEC-ja.md](./docs/SPEC-ja.md) — 言語によらない仕様 (経路、試す順番、安全条件、エラー、各実装に求めること)
-- [docs/decisions/](./docs/decisions/INDEX.md) — このリポの構成の判断 (DR)
+- [docs/SPEC-ja.md](./docs/SPEC-ja.md) — 言語によらない仕様 (経路、試す順番、失うもの、使ってはいけない書き方、エラー、各実装に求めること)
+- [docs/decisions/](./docs/decisions/INDEX.md) — 仕様と構成の判断 (DR)
 - [docs/decisions/DR-0012](./docs/decisions/DR-0012-own-directory-and-thread-cwd.md) — 長いパスの経路の判断と却下した案
+- [docs/design/conformance.md](./docs/design/conformance.md) — 言語によらない適合試験 (各言語の試験用 CLI の入出力、場面の表)
 
 ## ライセンス
 

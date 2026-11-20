@@ -16,7 +16,7 @@
 | 元のパスに既に物がある (通常ファイル、生きたソケット、古いソケットのファイル) | `EADDRINUSE`。元の物はそのまま | `EADDRINUSE` (先が無い時と同じエラー)。元の物はそのまま |
 | ソケットの fd の `fstat` と元のパスの `lstat` の `(st_dev, st_ino)` | 一致しない (`st_dev` が -1) | 該当なし |
 
-- FreeBSD・NetBSD・OpenBSD・illumos で辿るかは未確認
+- FreeBSD 15.1・NetBSD 11.1・OpenBSD 8.0・illumos (OmniOS r151060) は sockat-py の CI の VM で実測 (2026-11-19)。辿るのは NetBSD だけで、他は辿らない ([findings](../findings/2026-11-19-bind-through-file-symlink.md))
 - 経路の名前の `symlink` は、connect (ソケットのファイルを指す symlink) と `bind_ex` の最終手段 (ソケットのディレクトリを指す symlink) の別の経路を同じ名前で呼んでいた。bind にファイルを指す symlink の経路を足すと、bind にも 2 つが並ぶ。1.0.0 の前なので名前を変えられる
 
 ## Decision
@@ -61,10 +61,10 @@
 
 ## Consequences
 
-- SPEC の経路の名前の表 (bind)、試す順番、各経路の節 (symlink-file の節に bind の段を足し、symlink-dir の節を作る)、symlink の置き場と名前、どこから届かなくなるか (macOS の bind はファイル名の上限が無くなる。他の OS は辿るかが未確認なので数えない)、失うもの、試験の観点を直す
+- SPEC の経路の名前の表 (bind)、試す順番、各経路の節 (symlink-file の節に bind の段を足し、symlink-dir の節を作る)、symlink の置き場と名前、どこから届かなくなるか (macOS と NetBSD の bind はファイル名の上限が無くなる。辿らない OS と未確認の OS では数えない)、失うもの、試験の観点を直す
 - 経路の名前を `fork-cwd`・`fork-cwd-sockdir`・`fork-cwd-direct`・`symlink-file`・`symlink-dir` に変える (SPEC の表・見出し・リンク・本文、[DR-0012](DR-0012-own-directory-and-thread-cwd.md)、[DR-0015](DR-0015-ex-with-last-resort-and-diagnostics.md))
 - 試験: 辿る OS で通り `losses` が `respelled` だけ、辿らない OS で `skipped` に入り何も残らない、元のパスに物がある時は `EADDRINUSE` で次を試さない
-- FreeBSD・NetBSD・OpenBSD・illumos で辿るかは、各言語の CI の VM で確かめる
+- 実測していない OS と版で辿るかは実行時に見分け、各言語の試験は起動時の探りの結果を出力に出す
 
 ## 関連
 

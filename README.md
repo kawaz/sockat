@@ -32,15 +32,16 @@ Usage is in each repository's README.
 - No route changes the cwd of the calling process or thread
 - `connect` never forks. Only `bind` and the `connect_ex` variants with the last resort fork, and only as the last resort when no other means works
 - When a route actually binds / connects and fails, that error is returned and no later route is tried
-- The address the kernel reports (`getsockname` / `getpeername`) is not the original path (a spelling that normally matches nothing when resolved later; remove by the original path). Languages that can substitute it while keeping the standard type return the original path; elsewhere the caller keeps the original path
+- For a long path, the address the kernel reports (`getsockname` / `getpeername`) is not the original path (a spelling that normally matches nothing when resolved later; remove by the original path). Languages that can substitute it while keeping the standard type return the original path; elsewhere the caller keeps the original path
 - The bind with cleanup (`bind_ex` and the like) has `discard()`, which removes only the socket file it created (it does not close the listener)
 - Windows is not supported
 
 ## Documentation
 
-- [docs/SPEC.md](./docs/SPEC.md) — the language-independent specification (routes, order, safety conditions, errors, what each implementation must do)
-- [docs/decisions/](./docs/decisions/INDEX.md) — decisions on how this repository is organized (DR, Japanese)
+- [docs/SPEC.md](./docs/SPEC.md) — the language-independent specification (routes, order, what is lost, patterns not to use, errors, what each implementation must do)
+- [docs/decisions/](./docs/decisions/INDEX.md) — decisions on the specification and how this repository is organized (DR, Japanese)
 - [docs/decisions/DR-0012](./docs/decisions/DR-0012-own-directory-and-thread-cwd.md) — the decision on the long-path routes and rejected alternatives (Japanese)
+- [docs/design/conformance.md](./docs/design/conformance.md) — the language-independent conformance test (each language's test CLI input and output, the table of cases) (Japanese)
 
 ## License
 

@@ -42,5 +42,5 @@
 ## 関連
 
 - [docs/SPEC-ja.md](../SPEC-ja.md)
-- [sockat-rs の DR-0001](https://github.com/kawaz/sockat-rs/blob/main/docs/decisions/DR-0001-long-socket-path-routes.md)
+- [sockat-rs の DR-0001](https://github.com/kawaz/sockat-rs/blob/main/docs/decisions/archive/DR-0001-long-socket-path-routes.md)
 - [docs/research/2026-11-18-ports-to-other-languages.md](../research/2026-11-18-ports-to-other-languages.md)

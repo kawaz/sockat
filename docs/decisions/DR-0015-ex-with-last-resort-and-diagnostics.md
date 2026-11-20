@@ -6,7 +6,7 @@
 ## Context
 
 - 既定の bind / connect は、標準と同じに振る舞い、安全でない綴りを残さない経路だけを使う ([DR-0012](DR-0012-own-directory-and-thread-cwd.md))。そのため届かない環境が残る
-  - fork の無い言語 (Python、Go) の bind: NetBSD / OpenBSD / illumos の長いパス全部、スレッド cwd も `/proc` も使えない Linux、`pthread_fchdir_np` が無い Apple の OS
+  - fork の経路を作れない言語 (Python、Go) の bind: NetBSD / OpenBSD / illumos の長いパス全部、スレッド cwd も `/proc` も使えない Linux、`pthread_fchdir_np` が無い Apple の OS
   - connect: fork でしか届かない所
 - 届かせる手はあるが、どれも何かを失う (fork の副作用、他の利用者が作り直せる綴り)。失ってでも届かせたい人と、失いたくない人がいる
 - 長いパスでは、カーネルが覚えている綴りが元のパスでないので、標準が listener を閉じる時にソケットのファイルを消す言語 (Go) でも消えない。元のパスで、自分が作ったファイルだけを消す口が要る
@@ -19,13 +19,13 @@
 - any 系 (`bind_any`、`connect_any`、`connect_any_nonblocking`、Rust の feature `any`、Python の `sockat.any`、Go の `atanycost`) は作らない
 - 代わりに、後始末つき・診断つきの `_ex` を、既定の操作ごとに 1 つずつ置く
 
-| 既定の操作 | `_ex` | Go |
-|---|---|---|
-| `bind` | `bind_ex` | `ListenEx` |
-| `connect` | `connect_ex` | `DialEx` |
-| `connect_nonblocking` | `connect_nonblocking_ex` | なし |
+| 既定の操作 | `_ex` | Python | Go |
+|---|---|---|---|
+| `bind` | `bind_ex` | `sockat.ex.bind` | `ListenEx` |
+| `connect` | `connect_ex` | `sockat.ex.connect` | `DialEx` |
+| `connect_nonblocking` | `connect_nonblocking_ex` | `sockat.ex.connect_nonblocking` | なし |
 
-- 名前は仮。各言語の慣習で決める
+- 名前は各言語の慣習で決める
 - 既定の操作 (`bind`、`connect`、`connect_nonblocking`) は変えない。最終手段は使わず、診断も返さない
 
 ### 最終手段
@@ -35,7 +35,7 @@
 
 | 操作 | 最終手段 |
 |---|---|
-| `connect_ex`、`connect_nonblocking_ex` | 既定の connect の順が全部使えない時に fork-cwd-direct (ソケットのディレクトリの fd とファイル名)。fork のある言語だけ。無い言語は fork-cwd-direct を `skipped` に理由付きで入れて次へ進む |
+| `connect_ex`、`connect_nonblocking_ex` | 既定の connect の順が全部使えない時に fork-cwd-direct (ソケットのディレクトリの fd とファイル名)。fork の経路を作れる言語だけ。作れない言語は fork-cwd-direct を `skipped` に理由付きで入れて次へ進む |
 | `bind_ex` | 既定の bind の順が全部使えない時に symlink-dir (置き場のソケットのディレクトリを指す symlink) |
 
 - bind の fork-cwd は今まで通り既定の経路で、最終手段ではない
@@ -84,6 +84,7 @@
 | Go | `ListenEx` の戻り値に `discard func() error` を含める。短いパスでも消すのは discard だけにする (`SetUnlinkOnClose(false)`) |
 
 - `discard` の確かめ方・成功と失敗の条件は SPEC の「公開する操作」
+- 相対パスの時は、パスを何も引く前と、bind と覚えるための realpath の両方の後でプロセスの cwd の `(st_dev, st_ino)` を比べ、違えば覚えられない時と同じに扱う (間の cwd の変更で、元の cwd の無関係なファイルを覚えて消さないため。sockat-go の指摘 2026-11-19。入口で絶対パスにする案は、短い相対パスが標準と違う経路に回り振る舞いが変わるので採らない)
 - 置き換えの見分けは `(st_dev, st_ino)` だけで行い、約束するのは listener を開いている間の置き換えまで。閉じた後に消して作り直された物は、番号をすぐ使い回すファイルシステム (ext4、BSD の UFS / FFS) で見分けられない。`discard()` は listener を閉じる前に呼ぶよう勧める (kawaz 裁定 2026-11-19。実測は [findings](../findings/2026-11-19-inode-reuse-after-close.md))
 
 ### 失敗した時
@@ -95,13 +96,12 @@
 
 - 最終手段を使う引数を渡す手間が「失うものを受け入れる」という意思表示になる
 - 別の関数・別のパッケージにすると API が増え、推奨コードと結び付けにくい (案 A)
+  - Python だけは、`_ex` を子モジュール `sockat.ex` の `bind` / `connect` / `connect_nonblocking` (引数 `last_resort`) に置く。標準の `socket.connect_ex` と紛れるため (kawaz 裁定 2026-11-19)
 - 経路の名前を契約にすると、経路の追加・変更が破壊的変更になる。利用者が知りたいのは経路でなく失ったもの
 - 失うものには大小が無く (fork と共有の置き場の symlink-dir は互いを含まない)、標準の経路でも失うものが出うる。名前の並びなら、包含や順を考えずに足せる (kawaz 裁定 2026-11-19)
 - 失敗した時こそ、なぜ届かなかったかを知りたい (kawaz 裁定 2026-11-19)
 - `discard` が消すだけなら 3 言語でそろい、listener を他のライブラリに渡した後で二重に閉じることが起きない
 - `discard` が無ければ利用者は元のパスで消す。閉じた後の置き換えを見分けられなくても、それより悪くならない。閉じた後まで見分けるために fd を持ち続けると、`discard` を使わない利用者にも fd と umount の妨げを背負わせる (kawaz 2026-11-19)
-
-- 相対パスの時は、パスを何も引く前と、bind と覚えるための realpath の両方の後でプロセスの cwd の `(st_dev, st_ino)` を比べ、違えば覚えられない時と同じに扱う (間の cwd の変更で、元の cwd の無関係なファイルを覚えて消さないため。sockat-go の指摘 2026-11-19。入口で絶対パスにする案は、短い相対パスが標準と違う経路に回り振る舞いが変わるので採らない)
 
 ## Alternatives Considered
 
@@ -109,7 +109,7 @@
   - 不採用理由: API が増える。Go のパッケージ名の問題がある。feature の後ろに隠すと推奨コードと結び付けにくい
 - 案 B: 経路を自由に選べる引数を `_ex` に持たせる
   - 不採用理由: 素人が下手な組み合わせで微妙な使い方をする意味は無い (kawaz)
-- 案 C: fork の無い言語の既定の bind に symlink-dir を戻す
+- 案 C: fork の経路を作れない言語の既定の bind に symlink-dir を戻す
   - 不採用理由: 選んでいない利用者にも安全でない綴りを残す
 - 案 D: 最終手段の symlink-dir の置き場を持ち主だけが書ける置き場に限る
   - 不採用理由: BSD 等で `/tmp` しか無いと届かない。「何かを失ってでも届かせる」の意図に合わない (共有の置き場は最後で、`recreatable-spelling` で知らせる)
@@ -131,7 +131,7 @@
 ## Consequences
 
 - 各言語の実装の any 系 (Rust の feature `any` と `bind_any`・`connect_any` 系等) を `_ex` に置き換える
-- fork の無い言語 (Python、Go) も `connect_ex` 系を出す。最終手段を使っても fork-cwd-direct は `skipped` に入り、届く所は既定の connect と同じ
+- fork の経路を作れない言語 (Python、Go) も `connect_ex` 系を出す。最終手段を使っても fork-cwd-direct は `skipped` に入り、届く所は既定の connect と同じ
 - SPEC の「公開する操作」と、any 系を書いていた所を `_ex` に直す
 
 ## 関連

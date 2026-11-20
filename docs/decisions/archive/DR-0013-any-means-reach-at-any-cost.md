@@ -28,7 +28,7 @@
 | 操作 | 既定の操作との違い |
 |---|---|
 | `bind_any` | 既定の bind の経路を全部試した後、最後に置き場の symlink を試す。fork のある言語 (Rust) にも置く (3 言語で API をそろえる) |
-| `connect_any` 系 | 既定の connect の経路を全部試した後、最後に fork を試す。fork を作れない言語は、既定の connect と何も変わらないので出さない ([DR-0002](../DR-0002-no-connect-any-without-fork.md)) |
+| `connect_any` 系 | 既定の connect の経路を全部試した後、最後に fork を試す。fork を作れない言語は、既定の connect と何も変わらないので出さない ([DR-0002](DR-0002-no-connect-any-without-fork.md)) |
 
 ### bind_any の置き場の symlink
 
@@ -99,4 +99,4 @@ any 系は、標準の型 (listener / stream) と一緒に、次の 3 つを返�
 ## 関連
 
 - 裁定: kawaz (2026-11-19。any の意味、Rust にも `bind_any`、置き場の順、失ったものは名前の並び、経路は通った経路と飛ばした経路 (理由つき) で診断用、失敗した時も飛ばした経路を返す)
-- [DR-0002](../DR-0002-no-connect-any-without-fork.md)、[DR-0012](../DR-0012-own-directory-and-thread-cwd.md)
+- [DR-0002](DR-0002-no-connect-any-without-fork.md)、[DR-0012](../DR-0012-own-directory-and-thread-cwd.md)

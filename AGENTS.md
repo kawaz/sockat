@@ -7,6 +7,7 @@ sockat は、`sun_path` の上限を超えるパスでも Unix domain socket を
 - [docs/SPEC-ja.md](docs/SPEC-ja.md) — 言語によらない仕様の正本
 - [docs/decisions/DR-0001](docs/decisions/DR-0001-hub-and-per-language-repos.md) — リポの分け方と、仕様をここに置く理由
 - [docs/decisions/DR-0012](docs/decisions/DR-0012-own-directory-and-thread-cwd.md) — 長いパスの経路の判断と却下した案
+- [docs/decisions/DR-0015](docs/decisions/DR-0015-ex-with-last-resort-and-diagnostics.md) — 公開 API の形 (`_ex`、最終手段、`losses`・`route`・`skipped`、`discard()`)
 
 ## 構成
 
@@ -14,8 +15,11 @@ sockat は、`sun_path` の上限を超えるパスでも Unix domain socket を
 |---|---|
 | `README-ja.md` / `README.md` | 何を解決するか、言語ごとの実装の表 |
 | `docs/SPEC-ja.md` / `docs/SPEC.md` | 言語によらない仕様 |
-| `docs/decisions/` | このリポの構成の判断 (DR) |
-| `docs/research/` | 他言語への移植等の調査 |
+| `docs/decisions/` | 仕様と構成の判断 (DR) |
+| `docs/research/` | 決める前に外の事実を集めた調査 (他言語の標準、需要、先行例)。判断の材料 |
+| `docs/findings/` | 実機で確かめた結果 (環境・手順・出力つき)。SPEC・DR の主張の根拠 |
+| `docs/issue/` | 未着手・検討中の課題 (local-issue の形式、`INDEX.md` は生成物) |
+| `docs/QUESTIONS.md` | kawaz の裁定を待つ問い (統括が書く) |
 | `docs/design/conformance.md` | 適合試験の決まり (各言語の試験用 CLI の入出力、表の書き方) |
 | `conformance/` | 適合試験の表と、それを流して突き合わせるスクリプト |
 
@@ -23,7 +27,7 @@ sockat は、`sun_path` の上限を超えるパスでも Unix domain socket を
 
 - **仕様の正本はここ。** 各言語の実装の振る舞いを変える前に、先に SPEC を直す
 - SPEC には言語によらないことだけを書く。言語固有の話 (型、ランタイム連携、メモリ安全の扱い) は各言語のリポに置き、リンクで済ませる
-- SPEC の主張は sockat-rs の実装・DR と食い違わせない。食い違いに気づいたら、どちらを直すかを決めてから直す
+- SPEC の主張は各言語の実装 (sockat-rs・sockat-py・sockat-go) とその DR と食い違わせない。食い違いに気づいたら、どちらを直すかを決めてから直す
 - 言語版を公開したら README の実装の表を直す (日本語版と英語版の両方)
 
 ## VCS と push

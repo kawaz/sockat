@@ -7,6 +7,7 @@
 
 - Rust 版は `connect` (ブロックする) と `connect_nonblocking` を分けて出す
 - Node.js 等は標準の connect が元から待たない (コールバック・Promise で結果を返す)
+- Go の標準の `net.DialUnix` も元から待たない (backlog が満杯なら Linux は即 `EAGAIN`、macOS は `ECONNREFUSED`。[sockat-go の DR-0001](https://github.com/kawaz/sockat-go/blob/main/docs/decisions/DR-0001-public-api.md) で実測)
 - その言語でも 2 つに分けるか決める必要がある
 
 ## Decision
@@ -26,6 +27,7 @@
 ## Consequences
 
 - 言語によって公開する connect の数が違う。名前と形はその言語の標準に合わせる
+- Go は `Dial` と `DialEx` を 1 つずつ出す
 
 ## 関連
 

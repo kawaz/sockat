@@ -1,9 +1,10 @@
 ---
 title: "SOCK_DGRAM と SOCK_SEQPACKET も長いパスで使えるようにする"
-status: open
+status: blocked
 category: task
 created: 2026-11-18
 origin: "自リポ TODO"
+blocked_by: resolve-and-persistent-base
 ---
 
 # SOCK_DGRAM と SOCK_SEQPACKET も長いパスで使えるようにする
@@ -11,7 +12,9 @@ origin: "自リポ TODO"
 ## 概要
 
 - SOCK_DGRAM と SOCK_SEQPACKET も同じ `sun_path` の上限に当たる
-- 今の対象は SOCK_STREAM だけ。作る (kawaz 承認 2026-11-18)。今の SPEC の変更 (sockat-rs 0.4.0 等) を出し終えてから着手する
+- 今の対象は SOCK_STREAM だけ。作る (kawaz 承認 2026-11-18)
+- 経路を組み直す resolve の案 ([2026-11-20-resolve-and-persistent-base](2026-11-20-resolve-and-persistent-base.md)) の上に作るので、その案が決まってから着手する
+- 調査: [docs/research/2026-11-19-datagram-and-seqpacket.md](../research/2026-11-19-datagram-and-seqpacket.md)
 
 | 型 | 考えること |
 |---|---|

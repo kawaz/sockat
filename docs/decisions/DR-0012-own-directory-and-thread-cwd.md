@@ -27,17 +27,17 @@
 3. D の中に、ソケットのディレクトリの realpath を指す乱数の名前 (62 種 10 文字) の symlink R を `symlinkat` で作る。D の中に他のディレクトリは挟まない
 4. D の fd を基準に `R/<ファイル名>` で bind / connect する
 5. R は自分が作れた時だけ消す。D は手順 2 の確認が通り、名前の `(st_dev, st_ino)` が fd と一致する時だけ消す。成功でも失敗でも片付ける。作った直後の D を開けない時 (umask が持ち主の権限を削った時) は、名前で `fstatat(AT_SYMLINK_NOFOLLOW)` して手順 2 と同じ条件なら `unlinkat(AT_REMOVEDIR)` で消す (空のディレクトリしか消えないので、すり替えられても最悪は他人の空のディレクトリが 1 つ消えるだけ。残すと呼ぶたびに積もる。kawaz 裁定 2026-11-19)
-6. D は 1 回の呼び出しで 1 度だけ作り、D を使う経路 (スレッド cwd・/proc 版・fork・fd で掴む形) で共有する。どこにも作れなかったら、D を使う経路はどれも使えないとして飛ばし、作り直さない
+6. D は 1 回の呼び出しで 1 度だけ作り、D を使う経路 (thread-cwd・at・proc・fork-cwd・proc-held) で共有する。どこにも作れなかったら、D を使う経路はどれも使えないとして飛ばし、作り直さない
 
-| D の fd を基準にする手段 | OS |
-|---|---|
-| 使い捨てのスレッドで cwd を D に移す (`unshare(CLONE_FS)` → `fchdir`) | Linux / Android |
-| 使い捨てのスレッドで `pthread_fchdir_np(Dfd)` | Apple の OS |
-| `bindat` / `connectat` に D の fd を渡す (スレッドを使わない。kawaz 承認 2026-11-19、実機未確認) | FreeBSD |
-| /proc 版: `/proc/self/fd/<Dfd>/R/<ファイル名>` (スレッドを使わない) | `/proc` を使える Linux / Android |
-| fork した子が `fchdir(Dfd)` (bind だけ) | 全部 |
+| 経路 | D の fd を基準にする手段 | OS |
+|---|---|---|
+| thread-cwd | 使い捨てのスレッドで cwd を D に移す (`unshare(CLONE_FS)` → `fchdir`) | Linux / Android |
+| thread-cwd | 使い捨てのスレッドで `pthread_fchdir_np(Dfd)` | Apple の OS |
+| at | `bindat` / `connectat` に D の fd を渡す (スレッドを使わない。kawaz 承認 2026-11-19。sockat-rs と sockat-py の CI の FreeBSD の VM で試験している) | FreeBSD |
+| proc | `/proc/self/fd/<Dfd>/R/<ファイル名>` (スレッドを使わない) | `/proc` を使える Linux / Android |
+| fork-cwd | fork した子が `fchdir(Dfd)` (bind だけ) | 全部 |
 
-- スレッド cwd は、seccomp の filter が掛かっているか確かめられない時 (`prctl(PR_GET_SECCOMP)` が 0 以外か失敗)、`unshare` が断られた時、`pthread_fchdir_np` が無い・失敗した時、スレッドを作れない時、NetBSD / OpenBSD / illumos では使えない
+- thread-cwd は、seccomp の filter が掛かっているか確かめられない時 (`prctl(PR_GET_SECCOMP)` が 0 以外か失敗)、`unshare` が断られた時、`pthread_fchdir_np` が無い・失敗した時、スレッドを作れない時、NetBSD / OpenBSD / illumos では使えない
 - 呼び出し元のスレッドには触らない
 
 ### D の置き場
@@ -49,9 +49,9 @@
 | 3 | ソケットのディレクトリ (2 でも作れない時だけ。名前は `.sockat.XXXXXXXXXX`) |
 
 - 置き場の安全と長さは問わない
-- どこにも作れない時、bind は D 無しの形 (ソケットのディレクトリに R `.sockat.XXXXXXXXXX` を作り、ソケットのディレクトリの fd を基準に `.sockat.XXXXXXXXXX/<ファイル名>`) で、D と同じく「スレッド cwd (FreeBSD は bindat) → /proc 版 → fork」の順に試す。R も作れなければ `ENAMETOOLONG`。connect 系は connect の順のうち D を使わない経路だけを試す
+- どこにも作れない時、bind は D 無しの形 (ソケットのディレクトリに R `.sockat.XXXXXXXXXX` を作り、ソケットのディレクトリの fd を基準に `.sockat.XXXXXXXXXX/<ファイル名>`) で、D と同じく「thread-cwd-sockdir (FreeBSD は at-sockdir) → proc-sockdir → fork-cwd-sockdir」の順に試す。R も作れなければ `ENAMETOOLONG`。connect 系は connect の順のうち D を使わない経路だけを試す
 - ソケットのディレクトリに作る物 (D と D 無しの形の R) は名前の先頭にドットを付ける。利用者のディレクトリなので、残っても sockat の物と分かり目立たない (kawaz 裁定)
-- 置き場の 3 番目と、どこにも作れない時に D 無しの形で fork の前にスレッド cwd と /proc 版を試すことは kawaz 裁定 (2026-11-19。fork は最終手段)
+- 置き場の 3 番目と、どこにも作れない時に D 無しの形で fork-cwd-sockdir の前に thread-cwd-sockdir と proc-sockdir を試すことは kawaz 裁定 (2026-11-19。fork は最終手段)
 
 ### 試す順番
 
@@ -59,37 +59,38 @@ bind (bind が最後の要素の symlink を辿る OS では、standard の次�
 
 | 順 | bind |
 |---|---|
-| 1 | 標準に渡す長さ以下なら標準にそのまま |
-| 2 | 中心の経路 (スレッド cwd。FreeBSD は bindat) |
-| 3 | 中心の経路の /proc 版 (`/proc` を使える Linux / Android) |
-| 4 | 中心の経路を fork で |
+| 1 | standard (標準に渡す長さ以下なら標準にそのまま) |
+| 2 | thread-cwd (FreeBSD は at) |
+| 3 | proc (`/proc` を使える Linux / Android) |
+| 4 | fork-cwd |
 | 5 | `ENAMETOOLONG` |
 
 connect は、書き込みもスレッドも要らない経路を先に、D を作る経路とスレッドを立てる経路をその後にする (kawaz 裁定 2026-11-19)。標準に渡す長さ以下なら標準にそのまま、その後は OS ごとに次の順。最終手段を使う `connect_ex` 系は最後に fork-cwd-direct (ソケットのディレクトリの fd とファイル名)。
 
 | OS | connect の順 |
 |---|---|
-| Linux / Android (`/proc` あり) | R を通さない /proc → スレッド cwd → 中心の経路の /proc 版 → fd で掴む形 (D の中のファイルを指す symlink) → symlink-file |
-| Linux / Android (`/proc` 無し) | 相対パス → スレッド cwd → symlink-file |
-| Apple の OS | 相対パス → 広げた sockaddr → スレッド cwd → symlink-file |
-| FreeBSD | connectat (ソケットのディレクトリの fd とファイル名) → connectat (D の fd と `R/<ファイル名>`) |
-| NetBSD / OpenBSD / illumos / その他の Unix | 相対パス → symlink-file |
+| Linux / Android (`/proc` あり) | proc-direct (R を通さない `/proc/self/fd/<fd>/<ファイル名>`) → thread-cwd → proc → proc-held (D の中のファイルを指す symlink) → symlink-file |
+| Linux / Android (`/proc` 無し) | relative → thread-cwd → symlink-file |
+| Apple の OS | relative → widened → thread-cwd → symlink-file |
+| FreeBSD | at-direct (ソケットのディレクトリの fd とファイル名) → at (D の fd と `R/<ファイル名>`) |
+| NetBSD / OpenBSD / illumos / その他の Unix | relative → symlink-file |
 
-- bind は R を通さない /proc (`/proc/self/fd/<fd>/<ファイル名>`)・相対パス・広げた sockaddr・置き場の symlink-dir を使わない
-- connect の綴りは相手に残らない (connect した側のソケットは bind されない) ので、R を挟む理由が無い。どの経路でも失うものは無い。書き込み (D・R・symlink を作る) もスレッドも要らない経路が速く、相対パスや広げた sockaddr は中心の経路より遠くまで届く場面がある。相対パスの経路は途中で cwd が変わると一般のエラーになる (事後に確かめるので、別の所へ届くことは無い)
+- bind は proc-direct・relative・widened・at-direct・symlink-dir を使わない
+- connect の綴りは相手に残らない (connect した側のソケットは bind されない) ので、R を挟む理由が無い。connect で失うのは最終手段の fork-cwd-direct の `forked` だけで、既定の connect の経路は何も失わない。書き込み (D・R・symlink を作る) もスレッドも要らない経路が速く、relative や widened は D を通す経路より遠くまで届く場面がある。relative は途中で cwd が変わると一般のエラーになる (事後に確かめるので、別の所へ届くことは無い)
+- 最終手段の fork-cwd-direct と FreeBSD の at-direct (connect の順の最初) は、D を通さず、ソケットのディレクトリの fd とファイル名で connect する (kawaz 裁定 2026-11-19)。connect の綴りはどこにも残らないので、R を挟むと届くファイル名が 11 バイト短くなるだけ
 
 理由:
 
 - 綴りの中に既に消した乱数の名前 R があるので、後で fd の番号が使い回されても、cwd に同じ名前の物がたまたまある以外は当たらない (綴りは他の利用者に見えうるので、プロセスの cwd が他人も書ける場所だと、見て作り直されうる。元のパスで消せば当たらない)
 - D を fd で掴むので、置き場が安全でなくても深くても使える。名前を差し替えられても fd は変わらず、作ってから開くまでのすり替えは `fstat` で弾く
-- スレッド cwd と /proc 版は副作用が無い (sockat-go の実測: peer の pid は呼び出し元のまま、fd の複製も無い、並行する `getcwd` は変わらない)。`connect` も fork 無しで届く
+- thread-cwd と proc は副作用が無い (sockat-go の実測: peer の pid は呼び出し元のまま、fd の複製も無い、並行する `getcwd` は変わらない)。`connect` も fork 無しで届く
 - seccomp の filter はプロセスの kill (SIGSYS) で `unshare` を断ることがある (systemd の `SystemCallFilter=` の既定) ので、filter が掛かっていれば呼ばない
 - `pthread_fchdir_np(-1)` で戻す形は、呼び出し元がスレッドに付けた cwd を消しうる。使い捨てのスレッドなら触らずに済む
-- bind が使わない経路は、綴りが後で無関係なファイルに当たる (/proc、相対パス)、アドレスが切れて読む側を壊す (広げた sockaddr)、中心の経路で足りる (置き場の symlink-dir)
+- bind が使わない経路は、綴りが後で無関係なファイルに当たる (proc-direct、relative、at-direct)、アドレスが切れて読む側を壊す (widened)、D を通す経路で足りる (symlink-dir)
 
 悪い面:
 
-- ファイル名の上限が `R/` の 11 バイト分短い (Linux / illumos 96、Apple の OS / BSD 92。/proc 版はおよそ 79、D 無しの形は 88 / 84 で /proc 版はおよそ 72)
+- ファイル名の上限が `R/` の 11 バイト分短い (Linux / illumos 96、Apple の OS / BSD 92。proc はおよそ 79、`-sockdir` の経路は 88 / 84 で proc-sockdir はおよそ 72)
 - 長いパスの bind / connect のたびに D と R を作って消す
 - 途中でプロセスが死ぬと D や R が残る (置き場に `sockat.XXXXXXXXXX`、ソケットのディレクトリに `.sockat.XXXXXXXXXX`)
 - R はソケットのディレクトリの realpath を指すので、R を作った後のディレクトリの rename や symlink の張り替えは反映されない
@@ -106,18 +107,13 @@ connect は、書き込みもスレッドも要らない経路を先に、D を�
   - 不採用理由: 綴りが伸びるだけで、R だけで何にも当たらない (kawaz 裁定)
 - 案 D: Apple の OS の bind で広げた sockaddr を使う
   - 不採用理由: アドレスが切れて CPython / Go の標準を壊す。bind は fork でも相手から見える副作用が無い ([DR-0010](DR-0010-fork-bind-listen-by-parent.md))
-- 案 E: スレッド cwd を使わず fork だけにする
+- 案 E: thread-cwd を使わず fork-cwd だけにする
   - 不採用理由: fork の副作用があり、`connect` は fork しないので届かない範囲が残る
 
 ## Consequences
 
-- 試験 (中心の経路を強制して): プロセスの cwd が変わらない、元のパスにソケットができ届く、返る綴りを unlink / stat しても無関係なファイルに当たらない、片付けの後に置き場に何も残らない、差し替えたディレクトリを使わず中身も消さない、`TMPDIR` に作れない時は `/tmp`、それも作れない時はソケットのディレクトリ、スレッド cwd が使えない時は /proc 版、それも使えない時は bind は fork・connect は connect の順の次の経路
-- 各言語の実装は経路を作り直す (bind の /proc・symlink-dir・相対パスの経路を外し、中心の経路を足す)
-
-### connect の fork と FreeBSD の connectat (ソケットのディレクトリの fd) は D を通さない
-
-- 最終手段の fork (fork-cwd-direct) と FreeBSD の connectat (connect の順の最初) は、ソケットのディレクトリの fd とファイル名で connect する (kawaz 裁定 2026-11-19)
-- connect した側のソケットは bind されないので、connect の綴りはどこにも残らない。R を挟む理由が無く、挟むと届くファイル名が 11 バイト短くなるだけ
+- 試験 (D を通す経路を強制して): プロセスの cwd が変わらない、元のパスにソケットができ届く、返る綴りを unlink / stat しても無関係なファイルに当たらない、片付けの後に置き場に何も残らない、差し替えたディレクトリを使わず中身も消さない、`TMPDIR` に作れない時は `/tmp`、それも作れない時はソケットのディレクトリ、thread-cwd が使えない時は proc、proc の綴りが収まらない時は bind は fork-cwd・connect は connect の順の次の経路
+- 各言語の実装は経路を作り直す (bind の proc-direct・symlink-dir・relative を外し、D を通す経路を足す)
 
 ## 関連
 

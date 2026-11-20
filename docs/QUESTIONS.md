@@ -19,13 +19,6 @@
 
 経路を resolve と消さない置き場 B で組み直す案 ([issue](issue/2026-11-20-resolve-and-persistent-base.md) の「整理案」) の判断。
 
-### RS-Q1: bind の綴りの性質をどう返すか
-
-統括の推し: S1。利用者が知りたいのは「この綴りを後で使えるか」の 1 点で、性質は互いに排他な種類と、種類ごとの属性で表せる。
-
-- [ ] S1: 1 つの値で返す。`Spelling` = `Original` / `CwdRelative` / `Linked { removable, until, usable_cross_uid, usable_with_private_tmp }` / `Dangling`。fork したかは別の `forked: bool`
-- [ ] S2: 名前の並びで返す (`forked`・`cwd-relative`・`dangling`・`unremovable-by-spelling`・`temporary`・`owner-only` 等)。種類と属性が混ざり、組み合わせの意味を利用者が考えることになる
-
 ### RS-Q2: 最終手段を残すか
 
 bind の最終手段 (共有の置き場の symlink-dir) は tmpB として既定の順に入るので無くなる。残るのは connect の `fork-cwd-direct` だけで、thread-cwd-direct と link-file の後なので、出番はスレッドも B も使えない環境だけ。

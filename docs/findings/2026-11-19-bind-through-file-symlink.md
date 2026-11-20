@@ -1,4 +1,4 @@
-# ファイルを指す symlink を通した bind の実測 (macOS / Linux)
+# ファイルを指す symlink を通した bind の実測 (macOS / Linux / BSD / illumos)
 
 2026-11-19。[docs/issue/archive/2026-11-19-bind-through-file-symlink.md](../issue/archive/2026-11-19-bind-through-file-symlink.md) の「確かめること」のうち、手元の macOS と Linux (docker) で確かめられるものを実測した。
 
@@ -124,9 +124,27 @@ Linux: `bind ERR errno=98(EADDRINUSE)`、`orig=なし(ENOENT)`。
 
 macOS の `$TMPDIR` はユーザーごとの `/var/folders/.../T/`。`/tmp` は `/private/tmp`。上の全場面で、どちらの置き場でも通る・通らないは同じだった (違うのは綴りの長さとカーネルが返す長さだけ)。
 
+## BSD と illumos (sockat-py の CI)
+
+手元に無い OS は、sockat-py の CI の VM で、試験の起動時の探り (まだ無い先を指す symlink に bind して、元のパスにソケットができたかを見る) の結果で確かめた。探りの結果は試験の skip の理由として 1 行出る。
+
+- run: kawaz/sockat-py の Actions の run 44468917295 (v0.2.0 の release の CI、2026-11-19、commit acf95f780a5c)
+- VM は vmactions (FreeBSD / NetBSD / OpenBSD / OmniOS)、Linux は docker、macOS は GitHub の `macos-latest`
+
+| OS (版) | 探りの結果 (試験の出力) |
+|---|---|
+| macOS (`macos-latest`) | `probe on darwin: a bind follows a symlink in the last component` |
+| NetBSD 11.1 | `probe on netbsd11: a bind follows a symlink in the last component` |
+| Linux (docker) | `probe on linux: a bind does not follow a symlink in the last component` |
+| FreeBSD 15.1 | `probe on freebsd15: a bind does not follow a symlink in the last component` |
+| OpenBSD 8.0 | `probe on openbsd8: a bind does not follow a symlink in the last component` |
+| illumos (OmniOS r151060) | `probe on sunos5: a bind does not follow a symlink in the last component` |
+
+- 辿る: macOS・NetBSD。辿らない: Linux・FreeBSD・OpenBSD・illumos
+- この run は NetBSD と OpenBSD で試験がいくつか落ちている。sockat-py は実装を変えずに試験を直した (commit 035cce8d8fcd)。探りの結果は、全部の試験が通った run 44503495582 (v0.2.1 の release の CI、2026-11-19) でも同じ
+
 ## 未確認
 
-- FreeBSD・NetBSD・OpenBSD・illumos で辿るか (手元に無い)
 - Linux のカーネルを複数 (docker の VM の 1 つしか見ていない)
 - Linux で `/tmp` 以外の置き場、macOS の共有でも持ち主だけでもない置き場 (権限の違いによる差は見ていない)
 - sockat-rs など実装側の API を通した動き (ここでは Python の標準ライブラリで素のシステムコールを見ただけ)
