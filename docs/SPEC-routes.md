@@ -17,9 +17,9 @@ How the routes are built, for each language's implementers. The promise to users
 The same steps for the automatic bases and for `Options.base`.
 
 1. Make the base's path (the parent's path for `Options.base`) a real path with realpath (macOS's `/tmp` → `/private/tmp` etc.). The checks, opening and spelling below all use this real path
-2. Check every directory from the root to the parent: each is owned by root or by oneself and not writable by others, or has the sticky bit (the same idea as OpenSSH's StrictModes; if an ancestor is writable by others, the parent can be swapped out). Only once, the first time in the process
+2. Check every directory from the root to the parent: each is owned by root or by oneself, and is either not writable by others or has the sticky bit (the owner of a sticky directory can still swap what is inside, so the owner condition is kept. the same idea as OpenSSH's StrictModes; if an ancestor is writable by others, the parent can be swapped out). Only once, the first time in the process
 3. Open the parent with `O_DIRECTORY | O_NOFOLLOW`, hold it by fd, and create B with `mkdirat(parent fd, name, 0700)`
-4. Open what was created with `O_NOFOLLOW`, check with `fstat` that it is a real directory owned by oneself, then `fchmod` it to 0711. When the umask has taken away the owner's r or x and it cannot be opened, remove the empty directory one just created and go on to the next base (`Options.base` is an error)
+4. Right after creating it, set the mode with `fchmodat(parent fd, name, 0711)` (restoring what the umask took away; the parent has been checked and others cannot swap it), then open it with `O_DIRECTORY | O_NOFOLLOW` and check with `fstat` that it is a real directory owned by oneself. When the mode cannot be set or it cannot be opened, remove the empty directory one just created and go on to the next base (`Options.base` is an error)
 5. On `EEXIST`, check what already exists in the same way (a real directory, owned by oneself, not writable by others). Use it even if its mode is not 0711, and do not change the mode. If it fails, an automatic base falls back to `sockat-<uid>.<10 random characters>`, and `Options.base` is an error
 
 - "Not writable by others" includes the group (`mode & 022 == 0`)
@@ -87,7 +87,7 @@ sockat decides by itself. From the top, the first that fits.
 Creating D:
 
 1. Relative to B's fd, `mkdirat(B's fd, name, 0700)` with a random name. On `EEXIST`, draw a new name, giving up after 16 tries
-2. Open the created D with `O_DIRECTORY | O_NOFOLLOW`, check with `fstat` that it is a real directory owned by oneself, then `fchmod` it to 0711. When the umask has taken away the owner's r or x and it cannot be opened, remove the empty directory one just created and go on to the next base
+2. Right after creating it, set the mode with `fchmodat(B's fd, name, 0711)`, then open it with `O_DIRECTORY | O_NOFOLLOW` and check with `fstat` that it is a real directory owned by oneself. When the mode cannot be set or it cannot be opened, remove the empty directory one just created and go on to the next base
 3. Put a flock (shared lock) on that fd and keep holding it. The fd is close-on-exec
 4. Check that the `(st_dev, st_ino)` from `lstat` by name is the same as the fd's. If not (another process's `sweep()` removed it between 1 and 3), close the fd and start again from 1
 
