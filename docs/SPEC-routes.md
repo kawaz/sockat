@@ -25,6 +25,7 @@ The same steps for the automatic bases and for `Options.base`.
 - When a directory on the way is missing, sockat does not create it and returns an error (how a place the app manages is created is up to the app)
 - The name is `sockat-<uid>` (`sockat` under `$XDG_RUNTIME_DIR`, `.sockat.<10 random characters>` under the socket's directory). `Options.base` is the path of B itself, and its last component is the name
 - Errors for `Options.base`: `ENOENT` when a directory on the way is missing, `ENOTDIR` when the base is not a directory, `EPERM` when the owner / permission checks fail
+- The check of `Options.base` (the directories on the way, and B itself if it exists; nothing is created) is done for a long path after the socket's directory is looked up and before any route is tried, for both bind and connect. On failure `route` is none and `skipped` is empty. B is created only when a route that uses B is reached
 
 ### Where B is created
 
