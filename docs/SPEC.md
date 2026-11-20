@@ -208,7 +208,7 @@ Attributes of `Linked`:
 
 - `remove` only removes the file and does not close the listener. The user closes it
 - It remembers the realpath and `(st_dev, st_ino)` of the bound socket file and removes it only when that path still has the same `(st_dev, st_ino)`
-  - It remembers them right after the bind succeeds (before returning the listener). If they cannot be remembered, it closes the listener, leaves the file, and returns an error (it does not hand back a `remove()` that cannot remove anything as a success)
+  - It remembers them right after the bind succeeds (before returning the listener). If they cannot be remembered, it closes the listener, cleans up the E it made, leaves the socket file, and returns an error (it does not hand back a `remove()` that cannot remove anything as a success; nothing could be checked, so removing could remove a replaced file)
   - For a relative path, compare the process's cwd `(st_dev, st_ino)` before anything about the path is looked up and after both the bind and the realpath taken for remembering; if they differ, treat it like the case where they cannot be remembered (so that a cwd change in between does not make it remember and remove an unrelated file under the old cwd. A change and change back is not seen)
   - The path argument is turned into a string once at the entry, and that value is used for remembering, binding and returning alike
 - It succeeds when the file is already gone and when it has been replaced by another file and is left alone. It fails when the check cannot be made (`lstat` fails with something other than `ENOENT` / `ENOTDIR`) and when the removal itself fails
@@ -389,7 +389,7 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 | no route can be used (the spelling does not fit, the means is missing) | `ENAMETOOLONG` |
 | `resolve_for_bind` at a length only thread-cwd / at reaches | `ENAMETOOLONG` |
 | `resolve_for_connect` when link-file cannot be used (B cannot be created, the spelling does not fit) | `ENAMETOOLONG` |
-| `Options.base` is a relative path, or its last component is not a file name (`dir/`, `..`, `/`). Regardless of the path's length (a check of the argument's form, like a NUL not at the start) | invalid argument |
+| `Options.base` is a relative path, or its last component is not a file name (`dir/`, `..`, `/`). Regardless of the path's length, and checked before telling whether it is an abstract name (a check of the argument's form, like a NUL not at the start) | invalid argument |
 | `Options.base` is a symlink | `EPERM` (not a real directory; the check fails) |
 | `Options.base` is neither a directory nor a symlink | `ENOTDIR` |
 | a directory on the way to `Options.base` is missing | `ENOENT` |

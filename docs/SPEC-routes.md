@@ -41,7 +41,11 @@ Where B's real directory is created and how B is spelled ([Spelling forms](#spel
 
 - When `$TMPDIR` or `$XDG_RUNTIME_DIR` is empty or a relative path, that base is not used
 - A process using one B applies to bases 1 to 3. A B in base 4 (the socket's directory) is one per socket directory
-- When it is known beforehand that the spelling will not fit (estimable from the length of the base's real path), B is not created
+- When it is known beforehand that the spelling will not fit (estimable from the length of the base's real path), B is not created. It does not move on to the next base either; the routes that use B are skipped as unusable (the process's B is the first base where it could be created, and does not change with the path's length)
+- A B once held (bases 1 to 3) is used for the rest of the process. A base where creation failed is not remembered and is tried again on the next call. When D cannot be created, the routes that use D are unusable for that call, and no other B is looked for
+- The `usable_cross_uid` judgement (whether every directory on the way gives other x) is remembered from when B was created and is not re-checked later
+- When B cannot be created after the check of `Options.base` passed, that error is returned (`route` none, `skipped` what came before)
+- A B in the socket's directory is used only with the procB spelling, not with the real path spelling
 - When the default connect creates B for the first time with link-file, that B (and its fd) is also used as the process's B from then on (no D is created)
 - When `Options.base` is given, that path is B. sockat only creates the per-process D inside, and leaves cleaning B to the app. When the checks fail it is an error, and it does not fall back to the automatic bases
 - Passing a different `Options.base` per call makes one process hold several B, with a D per (process, B)
