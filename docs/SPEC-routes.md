@@ -22,7 +22,8 @@ The same steps for the automatic bases and for `Options.base`.
 4. On `EEXIST`, check what already exists in the same way (a real directory, owned by oneself, not writable by others). If it fails, an automatic base falls back to a random name, and `Options.base` is an error
 
 - When a directory on the way is missing, sockat does not create it and returns an error (how a place the app manages is created is up to the app)
-- The name is `sockat-<uid>` (`sockat` under `$XDG_RUNTIME_DIR`, `.sockat.XXXXXXXXXX` under the socket's directory)
+- The name is `sockat-<uid>` (`sockat` under `$XDG_RUNTIME_DIR`, `.sockat.XXXXXXXXXX` under the socket's directory). `Options.base` is the path of B itself, and its last component is the name
+- Errors for `Options.base`: `ENOENT` when a directory on the way is missing, `ENOTDIR` when the base is not a directory, `EPERM` when the owner / permission checks fail
 
 ### Where B is created
 
@@ -35,7 +36,8 @@ Where B's real directory is created and how B is spelled ([Spelling forms](#spel
 | 3 | `$TMPDIR` | dirhelper may remove D in macOS's `$TMPDIR` after 3 days (live ones too) |
 | 4 | the socket's directory | when it can be created in none of 1–3 |
 
-- When `Options.base` is given, B is created there. sockat only creates the per-process D inside, and leaves cleaning B to the app. When the checks fail it is an error, and it does not fall back to the automatic bases
+- When `Options.base` is given, that path is B. sockat only creates the per-process D inside, and leaves cleaning B to the app. When the checks fail it is an error, and it does not fall back to the automatic bases
+- Passing a different `Options.base` per call makes one process hold several B, with a D per (process, B)
 - How B is chosen with `usable_cross_uid` is in "[Another uid and PrivateTmp](#another-uid-and-privatetmp)"
 
 ### Spelling forms
@@ -57,7 +59,8 @@ sockat decides by itself. From the top, the first that fits.
   - `/tmp` (1777) always qualifies
   - `$XDG_RUNTIME_DIR` (`/run/user/<uid>`) and macOS's `$TMPDIR` are 0700, so they do not. An environment that points `$TMPDIR` at a traversable place qualifies
 - When nothing qualifies, or that B's spelling does not fit, it goes on to thread-cwd / at (`Dangling`) rather than falling back to a spelling that does not meet it
-- When this B is a different place from the usual B, it is used as one more B (the only case where a process uses more than one B)
+- Together with `Options.base`, it is checked that every directory on the way to that base gives x to other; if not, `EPERM` (no fallback to the automatic bases)
+- When this B is a different place from the usual B, it is used as one more B (the only case where a process uses more than one B in the automatic bases)
 - A peer whose `/tmp` is isolated (systemd's `PrivateTmp`, etc.) is not an option (procB is tried first, so on Linux this rarely happens). Whether it can be followed is told by `usable_with_private_tmp` of the resulting `Spelling`
 
 ## D and E
@@ -70,6 +73,13 @@ sockat decides by itself. From the top, the first that fits.
 | mode | 0711 (so that another uid can follow the spelling of B in `/tmp`) | none (a symlink's mode does not affect the right to follow it) |
 | While alive | the process keeps an fd holding a flock (shared lock) | resolve's E is not removed |
 | Cleanup | not by sockat. Only when `sweep()` is called are the D whose lock has been released removed | resolve's E by `cleanup`. A per-call E is unlinked within the call |
+
+Creating D:
+
+1. Relative to B's fd, `mkdirat` with a random name. On `EEXIST`, draw a new name, giving up after 16 tries (the name's length is in [the SPEC's Open questions](SPEC.md#open-questions))
+2. Open the created D with `O_DIRECTORY | O_NOFOLLOW`, and check with `fstat` that it is a real directory owned by oneself
+3. Put a flock (shared lock) on that fd and keep holding it. The fd is close-on-exec
+4. `sweep()` takes the owner of a D in B to be dead when `flock(LOCK_EX | LOCK_NB)` on that D succeeds, and removes it
 
 - D's name is not a counter, so that the spelling does not become the same when another process with the same PID and the same fd number appears after the process exits
 - While D lives it is protected by flock, and B and D are 0711, so the spelling does not later hit an unrelated file (procB cannot be followed after the process exits; a real-path spelling points to the same place until D is removed)
@@ -89,8 +99,8 @@ The sections follow the order of the table in [the SPEC's Route names](SPEC.md#r
 
 ### link-dir
 
-- How: create in D an E pointing to the socket's directory, and bind by `B/D/E/<file name>`. E is kept until `cleanup`
-- Used when: 2 (procB) and 3 (real path) of the bind order. The spelling `resolve_for_bind` chooses first
+- How: create in D an E pointing to the realpath of the socket's directory, and bind by `B/D/E/<file name>`. E is kept until `cleanup`
+- Used when: 2 (procB) and 3 (real path) of the bind order. The spelling `resolve_for_bind` chooses first. Trying it with procB and with the real path is one element in `skipped` (with the last reason)
 - Unusable when: the spelling does not fit in a sockaddr, B / D / E cannot be created; for procB, `/proc` is not usable or `usable_cross_uid` is given
 - File name reached: sockaddr length − (B's spelling + D + E + 3 separators). About 70 for procB on Linux ([the SPEC's Open questions](SPEC.md#open-questions))
 - Spelling properties: `Linked` (`removable` is true)
@@ -98,9 +108,9 @@ The sections follow the order of the table in [the SPEC's Route names](SPEC.md#r
 ### link-file
 
 - How: create an E pointing to the socket file's spelling (with the cwd prepended for a relative path), and bind / connect by its spelling
-  - bind, `resolve_for_bind` and `resolve_for_connect`: E inside D, the spelling `B/D/E`. E is kept until `cleanup`
-  - the default connect variants: create no D, create an E with a random name right under B, connect by `B/E`, and unlink E right after the connect. Cleanup is only the unlink, with no wait
-- Used when: 4 of the bind order (real path only; there is no procB link-file, since Linux, which has `/proc`, does not follow a symlink on bind). 4 of the connect order
+  - bind, `resolve_for_bind` and `resolve_for_connect`: E inside D, the spelling `B/D/E` (B spelled as procB or the real path, per "[Spelling forms](#spelling-forms)"). E is kept until `cleanup`
+  - the default connect variants: create no D, create an E with a random name right under B, connect by `B/E` with B's real path (procB is not used; B is in `/tmp` first, so it is short), and unlink E right after the connect. Cleanup is only the unlink, with no wait
+- Used when: 4 of the bind order (real path only; there is no procB link-file, since Linux, which has `/proc`, does not follow a symlink on bind). 4 of the connect order. `resolve_for_bind` uses it only on the OSes measured to follow a symlink on bind (macOS, NetBSD), not on OSes not yet checked (resolve does not bind, so the telling below cannot be used). `resolve_for_connect` uses only this, and gives `ENAMETOOLONG` when it cannot be used
 - Unusable when: the spelling does not fit in a sockaddr, B / D / E cannot be created. On bind, the kernel did not follow the symlink (below)
 - File name reached: the file name does not appear in the spelling, so whatever its length (the spelling up to the sockaddr length; the whole original path up to PATH_MAX)
 - Spelling properties (bind): `Linked` (`removable` is false: unlinking by the spelling does not follow the last symlink, and removes E)
@@ -109,7 +119,7 @@ The sections follow the order of the table in [the SPEC's Route names](SPEC.md#r
 Telling whether bind follows a symlink in the last component:
 
 - Not tried on the OSes measured not to follow (Linux / Android, FreeBSD 15, OpenBSD 8, illumos (OmniOS)). macOS 26 and NetBSD 11 follow it (measured 2026-11-19, [findings](findings/2026-11-19-bind-through-file-symlink.md), Japanese)
-- On other OSes, when the bind fails, `lstat` the original path; if something is there, return that error (`EADDRINUSE` etc.) and do not try the next. If nothing is there or it cannot be checked, take it that the kernel did not follow, treat this route as unusable and go on (it goes into `skipped`, and the E created does not remain). A real failure fails the same way on the next route and is returned there
+- On other OSes (the default `bind` and `bind_ex`), when the bind fails, `lstat` the original path; if something is there, return that error (`EADDRINUSE` etc.) and do not try the next. If nothing is there or it cannot be checked, take it that the kernel did not follow, treat this route as unusable and go on (it goes into `skipped`, and the E created does not remain). A real failure fails the same way on the next route and is returned there
 - When a symlink was already at the last component of the original path before the bind, the bind following it is a property of the standard bind, and sockat does not check it
 
 ### thread-cwd
@@ -168,7 +178,7 @@ Telling whether bind follows a symlink in the last component:
 ### thread-cwd-direct
 
 - How: open the socket's directory, move [a throwaway thread](#the-throwaway-thread)'s cwd there (the same means as [thread-cwd](#thread-cwd)), and connect by the file name. Needs neither D nor E (a connect's spelling does not stay with the peer)
-- Used when: 3 of the connect order. Linux / Android, Apple OSes
+- Used when: 3 of the connect order (stream and DGRAM). Linux / Android, Apple OSes
 - Unusable when: those of [thread-cwd](#thread-cwd)'s "unusable when" that do not depend on B / D, the socket's directory cannot be opened, the file name is over the sockaddr length
 - File name reached: the sockaddr length
 

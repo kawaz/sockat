@@ -4,7 +4,7 @@
 
 sockat を使う前に出やすい問いと答え。仕様の正本は [SPEC](../docs/SPEC-ja.md)、届く場面の一覧は [届く範囲の表](reach/README-ja.md)。
 
-「作り直し後」と書いた答えは、経路を組み直す案 ([issue](../docs/issue/2026-11-20-resolve-and-persistent-base.md)、未実装) の設計に対するもの。
+答えは [DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md) の設計に対するもの。各言語の実装はこの設計へ作り直し中で、公開済みの版の振る舞いは各言語のリポの README にある。
 
 ## そもそも
 
@@ -18,21 +18,25 @@ sockat を使う前に出やすい問いと答え。仕様の正本は [SPEC](..
 
 ### 長いパスで何が標準と違う?
 
-カーネルが覚える綴り (`getsockname` や listener のアドレス) が元のパスでなくなる。その綴りでファイルを消したり調べたりしない。消すのは元のパスか `discard()` で行う ([SPEC の「使ってはいけない書き方」](../docs/SPEC-ja.md#使ってはいけない書き方))。
+カーネルが覚える綴り (`getsockname` や listener のアドレス) が元のパスでなく、置き場 B の中の D と symlink E を通る綴りになる。綴りが生きている間は元のパスと同じ所を指すが、綴りの種類によっては綴りで消してもファイルが残る・どこにも届かない。綴りを後で使えるかは `_ex` が返す `Spelling` で分かる。消すのは元のパスか `remove()` で行う ([SPEC の「使ってはいけない書き方」](../docs/SPEC-ja.md#使ってはいけない書き方))。
 
 ## 環境
 
 ### `$TMPDIR` が長い環境でも使える?
 
-使える。作り直し後の設計では、置き場の綴りは Linux なら `/proc/<pid>/fd/<fd>/…` (procB、`$TMPDIR` の長さによらない)、`/proc` の無い OS では `/tmp` の下 (tmpB) を使う。`$TMPDIR` の下の綴り (dirB) は短い時だけ使う。普通は procB か tmpB のどちらかが使える。
+使える。B は `/tmp` に先に作る (`/tmp` → `$XDG_RUNTIME_DIR` → `$TMPDIR` → ソケットのディレクトリの順で最初に作れた所)。綴りは Linux なら `/proc/<pid>/fd/<fd>/…` (procB、置き場の長さによらない)、それ以外は B の実パス (`/tmp` の下なら短い) を使う。`$TMPDIR` を使うのは `/tmp` にも `$XDG_RUNTIME_DIR` にも作れない時だけ。
 
 ### PrivateTmp (systemd 等で `/tmp` が隔離された) の環境では?
 
-Linux では procB の綴りが `/tmp` を通らないので、自分か相手のどちらかが `/tmp` を隔離していても相手から辿れる。`/proc` の無い macOS で PrivateTmp のような隔離はまず無い。「`/proc` が無く、かつ `/tmp` が隔離されている」組み合わせはまれ。
+Linux では procB の綴りが `/tmp` を通らないので、自分か相手のどちらかが `/tmp` を隔離していても相手から辿れる。`/proc` の無い macOS で PrivateTmp のような隔離はまず無い。「`/proc` が無く、かつ `/tmp` が隔離されている」組み合わせはまれ。辿れるかは `Spelling` の `usable_with_private_tmp` で分かる。
 
 ### 別の uid のプロセスと通信する時は?
 
-connect は自分で綴りを解決するので、相手の uid は届くかに影響しない。影響するのは、bind した側の綴りを相手が辿る場面 (DGRAM の返信等) だけ。procB と、持ち主だけが入れる置き場 (`/run/user/<uid>`、macOS の `$TMPDIR`) の下の綴りは、別の uid から辿れない。作り直し後の設計では、`usable_cross_uid` を指定すると別の uid も辿れる置き場 (`/tmp` の下等) の綴りを選ぶ。
+connect は自分で綴りを解決するので、相手の uid は届くかに影響しない。影響するのは、bind した側の綴りを相手が辿る場面 (DGRAM の返信等) だけ。procB と、持ち主だけが入れる置き場 (`/run/user/<uid>`、macOS の `$TMPDIR`) の下の綴りは、別の uid から辿れない。`Options.usable_cross_uid` を指定すると、別の uid も辿れる置き場 (`/tmp` 等) の B の綴りを選ぶ。満たせない時は満たさない綴りに落とさず、スレッドの cwd 等の経路 (綴りは `Dangling`) に進むので、結果の `Spelling` を確かめる。
+
+### 置き場を自分で決めたい
+
+`Options.base` に B そのもののパス (例 `/tmp/app-<uid>/sockat`) を渡す。sockat はその中にプロセスごとの D を作るだけで、B の掃除はアプリに任せる。B が確かめに外れたらエラーで、自動の置き場に落とさない。
 
 ### 共有の volume を通してコンテナどうしで通信したい
 
@@ -46,7 +50,7 @@ connect は自分で綴りを解決するので、相手の uid は届くかに�
 
 ### sockat は fork する?
 
-作り直し後はしない。fork の副作用 (全部の fd の複製、`SIGCHLD`、`waitpid(-1)` の取り違え、`pthread_atfork`、connect では相手に見える pid) はプロセス全体に及ぶため。fork をやめて届かなくなる場面と、利用者が自分で fork する時の手法と注意は [fork-cwd](fork-cwd-ja.md)。
+しない。fork の副作用 (全部の fd の複製、`SIGCHLD`、`waitpid(-1)` の取り違え、`pthread_atfork`、connect では相手に見える pid) はプロセス全体に及ぶため。fork でしか届かない場面と、利用者が自分で fork する時の手法と注意は [fork-cwd](fork-cwd-ja.md)。
 
 ## DGRAM
 
@@ -56,7 +60,7 @@ connect は自分で綴りを解決するので、相手の uid は届くかに�
 
 ### 長いパスに bind した送り手に返信は届く?
 
-今の実装では届かない (綴りを bind の直後に片付けるため)。作り直し後の設計では、綴りが生きている間は届く (procB は同じ uid、`/tmp` の下の綴りは別の uid も)。
+綴りが生きている間は届く (procB は同じ uid、`/tmp` の B の実パスは別の uid も)。スレッドの cwd 等で bind した綴り (`Dangling`) と、`cleanup` の後は届かない。
 
 ### 返信を受けたい送り手が、長いパスに bind する必要はある?
 
@@ -66,11 +70,11 @@ connect は自分で綴りを解決するので、相手の uid は届くかに�
 
 ### 同じパスに何度も connect する時は速い?
 
-作り直し後の設計では、`resolve_for_connect` で 1 度作った綴りを何度も connect に使い、使い終わったら `cleanup` する。綴りを作る手数 (置き場のディレクトリと symlink の作成・削除) が 1 回で済む。既定の `connect` は呼ぶたびに作って片付け、プロセスの中に状態を残さない。
+`resolve_for_connect` で 1 度作った綴りを何度も connect に使い、使い終わったら `cleanup` する。綴りを作る手数 (置き場の symlink の作成・削除) が 1 回で済む。既定の `connect` は綴りを残さず、プロセスの中に状態を残さない。
 
 ### 既定の `connect` は重い?
 
-普段は軽い。最初に試すのは置き場への書き込みもスレッドも要らない経路 (Linux の `/proc/self/fd/<dirfd>/<名前>`、macOS の相対パス・広げた sockaddr) で、CLI の 1 回だけの connect は普通ここで終わる。置き場に symlink を作る経路まで進むのは、ファイル名がかなり長く、スレッドの cwd も使えない時。
+普段は軽い。最初に試すのは置き場への書き込みもスレッドも要らない経路 (Linux の `/proc/self/fd/<dirfd>/<名前>`、macOS の相対パス・広げた sockaddr、FreeBSD の `connectat`) で、CLI の 1 回だけの connect は普通ここで終わる。次に使い捨てのスレッドの cwd を試し、置き場 B の直下に symlink を作って connect し、すぐ消す経路まで進むのは、ファイル名がかなり長く、スレッドの cwd も使えない時。
 
 ### 既定の `connect` が綴りをキャッシュしないのはなぜ?
 
@@ -78,9 +82,13 @@ connect は自分で綴りを解決するので、相手の uid は届くかに�
 
 ## 後始末
 
-### `discard()` はいつ呼ぶ?
+### 既定の `bind` は何を残す?
 
-listener を閉じる前に呼ぶ。`discard()` は bind したファイルの `(st_dev, st_ino)` と今のパスを比べて同じ時だけ消す。listener が開いている間はカーネルがファイルを掴んでいて番号が使い回されないが、閉じた後に消して作り直された物は ext4 や BSD の UFS / FFS で同じ番号になり、見分けられない ([findings](../docs/findings/2026-11-19-inode-reuse-after-close.md))。
+長いパスでは、置き場 B の中にプロセスの D と、ソケットのディレクトリかファイルを指す E を残す (スレッドの cwd 等で bind した時は E をすぐ消し、D だけ)。既定の `bind` は片付けの口を返さないので、E はプロセスが終わるまで残り、D と一緒に OS の一時ディレクトリの掃除で消える (Linux の `/tmp` は 10 日、macOS の `/tmp` は再起動まで)。片付けたい時は `_ex` の `remove()` / `cleanup()` か resolve を使う。死んだプロセスの D は `sweep()` を呼べば消える。
+
+### `remove()` はいつ呼ぶ?
+
+listener を閉じる前に呼ぶ。`remove()` は bind したファイルの `(st_dev, st_ino)` と今のパスを比べて同じ時だけ消す (listener は閉じない)。listener が開いている間はカーネルがファイルを掴んでいて番号が使い回されないが、閉じた後に消して作り直された物は ext4 や BSD の UFS / FFS で同じ番号になり、見分けられない ([findings](../docs/findings/2026-11-19-inode-reuse-after-close.md))。
 
 ### 置き場を片付けた後の綴りを他人が作り直せるのは危なくない?
 

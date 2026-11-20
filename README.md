@@ -24,16 +24,20 @@ Usage is in each repository's README.
 
 ## Common behavior
 
+The design of [DR-0017](./docs/decisions/DR-0017-resolve-through-persistent-base.md) (Japanese). Each language's implementation is being rebuilt to this design; the behavior of the published versions is in each repository's README.
+
 - Returns the same socket types the language's standard bind / connect return
 - Even for a long path, the socket file is created at the path given
-- A long path is bound / connected through a short spelling: sockat creates a directory of its own, holds it by fd, and goes through a randomly named symlink placed inside it, then cleans up
-- The means of resolving against that directory's fd are tried per OS in a fixed order (thread cwd, bindat / connectat, /proc, fork). `connect` tries routes that need neither writing nor a thread (/proc, relative path, widened sockaddr) first
-- On OSes where bind follows a final symlink (macOS etc.), a bind goes through a symlink to the socket file, so there is no limit on the file name's length
+- A long path is turned (resolved) into a short spelling that goes through a directory D per process and a symlink E, created inside a base B per user (`/tmp` first, then `$XDG_RUNTIME_DIR`, `$TMPDIR`, the socket's directory), and bound / connected with it
+- A bind's spelling is kept. While it lives, upper libraries that remove by the `getsockname` spelling and DGRAM replies work as with the original path
+- A bind at a length whose spelling does not fit is reached with a throwaway thread's cwd (`bindat` on FreeBSD). On OSes where bind follows a final symlink (macOS etc.), a bind goes through a symlink to the socket file, so there is no limit on the file name's length
+- `connect` tries routes that need neither writing nor a thread (/proc, relative path, widened sockaddr, `connectat`) first, then a throwaway thread, and a symlink in the base last. The default connect leaves no state in the process
+- To hand the spelling to the standard library yourself, use resolve (`resolve_for_bind` / `resolve_for_connect`)
+- sockat never forks
 - No route changes the cwd of the calling process or thread
-- `connect` never forks. Only `bind` and the `connect_ex` variants with the last resort fork, and only as the last resort when no other means works
 - When a route actually binds / connects and fails, that error is returned and no later route is tried
-- For a long path, the address the kernel reports (`getsockname` / `getpeername`) is not the original path (a spelling that normally matches nothing when resolved later; remove by the original path). Languages that can substitute it while keeping the standard type return the original path; elsewhere the caller keeps the original path
-- The bind with cleanup (`bind_ex` and the like) has `discard()`, which removes only the socket file it created (it does not close the listener)
+- For a long path, the address the kernel reports (`getsockname` / `getpeername`) is the bind's spelling, not the original path. Whether it can be used later is told by the spelling properties (`Spelling`) `_ex` returns. Languages that can substitute it while keeping the standard type return the original path
+- `remove()` of `_ex` removes only the socket file it created (it does not close the listener). sockat does not clean up B and D and leaves them to the OS's temporary-directory cleaning (`sweep()` removes the D of dead processes when called)
 - Windows is not supported
 
 ## Documentation

@@ -22,7 +22,8 @@
 4. `EEXIST` なら、既にある物を同じく確かめる (実ディレクトリ・持ち主が自分・他人が書けない)。外れたら、自動の置き場は乱数の名前に落とし、`Options.base` はエラー
 
 - 途中のディレクトリが無い時、sockat は作らずにエラー (アプリの管理する場所の作り方はアプリが決める)
-- 名前は `sockat-<uid>` (`$XDG_RUNTIME_DIR` の下は `sockat`、ソケットのディレクトリの下は `.sockat.XXXXXXXXXX`)
+- 名前は `sockat-<uid>` (`$XDG_RUNTIME_DIR` の下は `sockat`、ソケットのディレクトリの下は `.sockat.XXXXXXXXXX`)。`Options.base` は B そのもののパスで、その最後の要素が名前
+- `Options.base` のエラー: 途中のディレクトリが無い時は `ENOENT`、base がディレクトリでない時は `ENOTDIR`、持ち主・権限の確かめに外れた時は `EPERM`
 
 ### 実体の置き場
 
@@ -35,7 +36,8 @@ B の実体をどこに作るかと、B をどう綴るか ([綴りの形](#綴�
 | 3 | `$TMPDIR` | macOS の `$TMPDIR` は dirhelper が 3 日で消しうる (生きている D も) |
 | 4 | ソケットのディレクトリ | 1〜3 のどこにも作れない時 |
 
-- `Options.base` を指定した時は、その所に B を作る。sockat は中にプロセスごとの D を作るだけで、B の掃除はアプリに任せる。確かめて外れたらエラーで、自動の置き場に落とさない
+- `Options.base` を指定した時は、そのパスを B にする。sockat は中にプロセスごとの D を作るだけで、B の掃除はアプリに任せる。確かめて外れたらエラーで、自動の置き場に落とさない
+- 呼び出しごとに違う `Options.base` を渡せば、1 つのプロセスが複数の B を持ち、D は (プロセス, B) ごとに作る
 - `usable_cross_uid` の時の B の選び方は「[別の uid と PrivateTmp](#別の-uid-と-privatetmp)」
 
 ### 綴りの形
@@ -57,7 +59,8 @@ sockat が自分で判断する。上から順に、収まる物。
   - `/tmp` (1777) はいつも当たる
   - `$XDG_RUNTIME_DIR` (`/run/user/<uid>`) と macOS の `$TMPDIR` は 0700 なので外れる。`$TMPDIR` を辿れる場所に向けた環境なら当たる
 - 当たる所が無いか、その B の綴りが収まらなければ、満たさない綴りに落とさず thread-cwd / at (`Dangling`) に進む
-- この B が普段の B と違う所になる時は、もう 1 つの B として使う (1 つのプロセスが複数の B を使うのはこの時だけ)
+- `Options.base` と一緒の時は、その base までの途中が全部 other に x を持つかを確かめ、外れたら `EPERM` (自動の置き場に落とさない)
+- この B が普段の B と違う所になる時は、もう 1 つの B として使う (自動の置き場で 1 つのプロセスが複数の B を使うのはこの時だけ)
 - 相手の `/tmp` が隔離されている場合 (systemd の `PrivateTmp` 等) は選択肢にしない (procB を先に試すので Linux ではまず起きない)。辿れるかは結果の `Spelling` の `usable_with_private_tmp` で分かる
 
 ## D と E
@@ -70,6 +73,13 @@ sockat が自分で判断する。上から順に、収まる物。
 | mode | 0711 (`/tmp` の B の綴りを別の uid が辿れるように) | 無し (symlink の mode は辿る権限に効かない) |
 | 生きている間 | プロセスが flock (共有ロック) を掛けた fd を持ち続ける | resolve の E は消さない |
 | 片付け | sockat はしない。`sweep()` を呼んだ時だけ、ロックの外れた D を消す | resolve の E は `cleanup`。呼び出しごとの E は呼び出しの中で unlink |
+
+D の作り方:
+
+1. B の fd を基準に、乱数の名前で `mkdirat` する。`EEXIST` なら名前を引き直し、16 回で打ち切る (名前の長さは [SPEC の未確定](SPEC-ja.md#未確定))
+2. 作った D を `O_DIRECTORY | O_NOFOLLOW` で開き、`fstat` で実ディレクトリ・持ち主が自分を確かめる
+3. その fd に flock (共有ロック) を掛けて持ち続ける。fd は close-on-exec
+4. `sweep()` は、B の中の D に `flock(LOCK_EX | LOCK_NB)` が取れたら持ち主が死んだとみなして消す
 
 - D の名前をカウンタにしないのは、プロセスが終わった後に同じ PID・同じ fd 番号の別のプロセスが現れても綴りが同じにならないため
 - D が生きている間は flock で守られ、B と D が 0711 なので、綴りが後で無関係なファイルに当たらない (procB はプロセスが終われば辿れない、実パスの綴りは D が消えるまで同じ所を指す)
@@ -89,8 +99,8 @@ sockat が自分で判断する。上から順に、収まる物。
 
 ### link-dir
 
-- やり方: D の中にソケットのディレクトリを指す E を作り、`B/D/E/<ファイル名>` で bind する。E は `cleanup` まで残す
-- 使う時: bind の順の 2 (procB) と 3 (実パス)。`resolve_for_bind` が先に選ぶ綴り
+- やり方: D の中にソケットのディレクトリの realpath を指す E を作り、`B/D/E/<ファイル名>` で bind する。E は `cleanup` まで残す
+- 使う時: bind の順の 2 (procB) と 3 (実パス)。`resolve_for_bind` が先に選ぶ綴り。procB と実パスで試しても `skipped` には 1 件 (理由は最後の物)
 - 使えない時: 綴りが sockaddr に入らない、B・D・E を作れない、procB では `/proc` を使えないか `usable_cross_uid`
 - 届くファイル名: sockaddr に入る長さ − (B の綴り + D + E + 区切り 3)。procB の Linux はおよそ 70 ([SPEC の未確定](SPEC-ja.md#未確定))
 - 綴りの性質: `Linked` (`removable` は true)
@@ -98,9 +108,9 @@ sockat が自分で判断する。上から順に、収まる物。
 ### link-file
 
 - やり方: ソケットのファイルの綴り (相対パスなら cwd を前に付ける) を指す E を作り、その綴りで bind / connect する
-  - bind と `resolve_for_bind`・`resolve_for_connect`: E は D の中、綴りは `B/D/E`。E は `cleanup` まで残す
-  - 既定の connect 系: D を作らず、B の直下に乱数の名前の E を作り `B/E` で connect し、connect の後すぐ E を unlink する。片付けは unlink だけで待ちは入らない
-- 使う時: bind の順の 4 (実パスだけ。procB の link-file は無い: `/proc` のある Linux は bind が symlink を辿らない)。connect の順の 4
+  - bind と `resolve_for_bind`・`resolve_for_connect`: E は D の中、綴りは `B/D/E` (B の綴りは「[綴りの形](#綴りの形)」の procB か実パス)。E は `cleanup` まで残す
+  - 既定の connect 系: D を作らず、B の直下に乱数の名前の E を作り、B の実パスの `B/E` で connect し (procB は使わない。B は `/tmp` が先なので短い)、connect の後すぐ E を unlink する。片付けは unlink だけで待ちは入らない
+- 使う時: bind の順の 4 (実パスだけ。procB の link-file は無い: `/proc` のある Linux は bind が symlink を辿らない)。connect の順の 4。`resolve_for_bind` は bind が symlink を辿ると実測した OS (macOS・NetBSD) だけで使い、未確認の OS では使わない (resolve の時点では bind しないので、下の見分け方を使えない)。`resolve_for_connect` はこれだけを使い、使えなければ `ENAMETOOLONG`
 - 使えない時: 綴りが sockaddr に入らない、B・D・E を作れない。bind では、カーネルが symlink を辿らなかった (下)
 - 届くファイル名: 綴りにファイル名が出ないので、ファイル名の長さによらない (綴りが sockaddr に入る長さ以内。元のパス全体は PATH_MAX まで)
 - 綴りの性質 (bind): `Linked` (`removable` は false: 綴りで unlink しても、最後の symlink は辿られず E が消える)
@@ -109,7 +119,7 @@ sockat が自分で判断する。上から順に、収まる物。
 bind が最後の要素の symlink を辿るかの見分け方:
 
 - 辿らないと実測した OS (Linux / Android、FreeBSD 15、OpenBSD 8、illumos (OmniOS)) では試さない。辿るのは macOS 26 と NetBSD 11 (実測 2026-11-19、[findings](findings/2026-11-19-bind-through-file-symlink.md))
-- 他の OS では、bind が失敗した時に元のパスを `lstat` し、物があればそのエラー (`EADDRINUSE` 等) を返して次は試さない。無いか確かめられなければ、カーネルが辿らなかったとみなしてこの経路を使えないとして次へ進む (`skipped` に入り、作った E は残さない)。本当の失敗なら次の経路でも同じ失敗になり、そこで返る
+- 他の OS では (既定の `bind` と `bind_ex`)、bind が失敗した時に元のパスを `lstat` し、物があればそのエラー (`EADDRINUSE` 等) を返して次は試さない。無いか確かめられなければ、カーネルが辿らなかったとみなしてこの経路を使えないとして次へ進む (`skipped` に入り、作った E は残さない)。本当の失敗なら次の経路でも同じ失敗になり、そこで返る
 - 元のパスの最後の要素に bind の前から symlink が置かれていた時に bind がそれを辿るのは標準の bind の性質で、sockat は確かめない
 
 ### thread-cwd
@@ -168,7 +178,7 @@ bind が最後の要素の symlink を辿るかの見分け方:
 ### thread-cwd-direct
 
 - やり方: ソケットのディレクトリを開き、[使い捨てのスレッド](#使い捨てのスレッド)の cwd をそこへ移して (手段は [thread-cwd](#thread-cwd) と同じ)、ファイル名で connect する。D も E も要らない (connect の綴りは相手に残らない)
-- 使う時: connect の順の 3。Linux / Android・Apple の OS
+- 使う時: connect の順の 3 (stream と DGRAM)。Linux / Android・Apple の OS
 - 使えない時: [thread-cwd](#thread-cwd) の「使えない時」のうち B・D によらないもの、ソケットのディレクトリを開けない、ファイル名が sockaddr に入る長さを超える
 - 届くファイル名: sockaddr に入る長さ
 

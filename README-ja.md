@@ -24,16 +24,20 @@
 
 ## 共通の振る舞い
 
+[DR-0017](./docs/decisions/DR-0017-resolve-through-persistent-base.md) の設計。各言語の実装はこの設計へ作り直し中で、公開済みの版の振る舞いは各リポの README にある。
+
 - 戻り値は、その言語の標準の bind / connect が返すのと同じソケットの型
 - 長いパスでも、ソケットファイルは渡したパスにできる
-- 長いパスは、sockat 専用のディレクトリを作って fd で掴み、その中に置いた乱数の名前の symlink を通す短い綴りで bind / connect し、終わったら片付ける
-- そのディレクトリの fd を基準にする手段は、OS ごとに決まった順に試す (スレッド cwd、bindat / connectat、/proc、fork)。connect は、書き込みもスレッドも要らない経路 (/proc、相対パス、広げた sockaddr) を先に試す
-- bind が最後の要素の symlink を辿る OS (macOS 等) では、ソケットのファイルを指す symlink を通して bind し、ファイル名の長さの上限が無い
+- 長いパスは、利用者ごとの置き場 B (`/tmp` を先に、`$XDG_RUNTIME_DIR`、`$TMPDIR`、ソケットのディレクトリの順) の中に、プロセスごとのディレクトリ D と symlink E を作り、それを通る短い綴りに言い換えて (resolve) bind / connect する
+- bind の綴りは消さずに残す。綴りが生きている間は、`getsockname` の綴りで消す上のライブラリや DGRAM の返信が元のパスと同じに働く
+- 綴りが収まらない長さの bind は、使い捨てのスレッドの cwd (FreeBSD は `bindat`) で届かせる。bind が最後の要素の symlink を辿る OS (macOS 等) では、ソケットのファイルを指す symlink を通し、ファイル名の長さの上限が無い
+- connect は、書き込みもスレッドも要らない経路 (/proc、相対パス、広げた sockaddr、`connectat`) を先に、次に使い捨てのスレッド、最後に置き場の symlink を試す。既定の connect はプロセスの中に状態を残さない
+- 綴りを自分で標準ライブラリに渡したい時は resolve (`resolve_for_bind` / `resolve_for_connect`) を使う
+- sockat は fork しない
 - どの経路も呼び出し元のプロセスとスレッドの cwd を変えない
-- `connect` は fork しない。fork するのは `bind` と、最終手段を使う `connect_ex` 系だけで、他の手段が使えない時の最後の手
 - 経路が実際に bind / connect して失敗したら、そのエラーを返し、次の経路でやり直さない
-- 長いパスでは、カーネルが返すアドレス (`getsockname` / `getpeername`) は元のパスでない (普段は後で解決しても何にも当たらない綴り。消す時は元のパスで消す)。標準の型のまま差し替えられる言語は元のパスを返し、それ以外は元のパスを呼び出し元が持つ
-- 後始末つきの bind (`bind_ex` 等) の `discard()` は、自分が作ったソケットのファイルだけを消す (listener は閉じない)
+- 長いパスでは、カーネルが返すアドレス (`getsockname` / `getpeername`) は元のパスでなく bind の綴り。後で使えるかは `_ex` が返す綴りの性質 (`Spelling`) で分かる。標準の型のまま差し替えられる言語は元のパスを返す
+- `_ex` の `remove()` は、自分が作ったソケットのファイルだけを消す (listener は閉じない)。B と D は sockat が片付けず、OS の一時ディレクトリの掃除に任せる (`sweep()` を呼べば死んだプロセスの D を消す)
 - Windows は対象外
 
 ## ドキュメント

@@ -22,7 +22,7 @@ How sockat behaves, independent of the language (the promise to users and to tho
 | route | a way to build another spelling of the same place as the original path and bind / connect with it. The names are in "[Route names](#route-names)" |
 | try | check whether a route can be used, and if so bind / connect with its spelling. If not, go on to the next route |
 | unusable / failure | unusable: the route itself cannot be used (the spelling does not fit, the means is missing, B / D / E cannot be created). failure: the bind / connect was actually made and the OS returned an error ([How a failing route is treated](SPEC-routes.md#how-a-failing-route-is-treated)) |
-| base | where B is created. One of `/tmp`, `$XDG_RUNTIME_DIR`, `$TMPDIR` and the socket's directory, or the place the user gives in `Options.base` ([Where B is created](SPEC-routes.md#where-b-is-created)) |
+| base | where B is created. One of `/tmp`, `$XDG_RUNTIME_DIR`, `$TMPDIR` and the socket's directory ([Where B is created](SPEC-routes.md#where-b-is-created)). Not used when the user gives B itself in `Options.base` |
 | B | a real directory created in the base. One per user, reused across processes |
 | D | a directory created in B, one per (process, B). Its name is random |
 | E | a symlink. One kind points to the socket's directory (link-dir and thread-cwd / at), the other to the socket file (link-file) |
@@ -83,13 +83,14 @@ Shown with the Rust names.
 
 - On failure, the default operations return the standard's error type; `_ex` and resolve return an error type that carries diagnostics ([Diagnostics](#diagnostics))
 - For DGRAM, only the functions of the standard `UnixDatagram` that take a path, and `unbound` used with them, are mirrored. `pair` is not
+- A DGRAM connect tries the routes in the same order as a stream connect ([Connect order](#connect-order)). The routes of `send_to` are in "[Open questions](#open-questions)"
 
 ### `Options`
 
 | Field | What it is |
 |---|---|
 | `usable_cross_uid: bool` | asks for a spelling that a peer of another uid can also follow. It affects how B is chosen and keeps procB from being used. When it cannot be met, thread-cwd / at is used ([Another uid and PrivateTmp](SPEC-routes.md#another-uid-and-privatetmp)). Whether it was met is told by the resulting `Spelling` |
-| `base: Option<Path>` | the user gives where B lives (an app passes a place it manages, e.g. `/tmp/app-<uid>/sockat`). B is created there; when the checks fail it is an error, and it does not fall back to the automatic bases. The spelling form is chosen in the same order as in the automatic case |
+| `base: Option<Path>` | the user gives the path of B itself (an app passes a place it manages, e.g. `/tmp/app-<uid>/sockat`). B is created there; when the checks fail it is an error, and it does not fall back to the automatic bases ([Errors](#errors)). Together with `usable_cross_uid`, it is also checked that every directory on the way to that base gives x to other. Passing a different `base` per call makes one process hold several B. The spelling form is chosen in the same order as in the automatic case |
 
 ### What is returned
 
@@ -126,8 +127,10 @@ On success `_ex` and resolve return the following.
 | Field | What it is |
 |---|---|
 | `route` | the name of the route taken |
-| `base` | the spelling of the B a bind used (`proc`, `sockdir`, `runtime`, `tmpdir`, `tmp`) |
+| `base` | the spelling of the B a bind used (`proc`, `sockdir`, `runtime`, `tmpdir`, `tmp`). It has a value only when the spelling goes through B (link-dir, link-file), and none otherwise (standard, thread-cwd, at). `Connected` and `Report` have none |
 | `skipped` | the routes tried and found unusable, in the order tried. Each element is `{ name: the route name, reason: why it was unusable }`. For a long path `standard` is included |
+
+- `skipped` has one element per route name. Trying link-dir with procB and with the real path is still one element, with the `reason` of the last try. Not using procB because of `usable_cross_uid` is not skipping a route, so nothing is added
 
 - Every route tried before `route` was unusable (when a route actually binds / connects and fails, the error is returned there and the next is not tried; only when a bind's link-file is told apart at run time does it go on). So there is no "was it usable" bool
 - The names in `route`, `base` and `skipped` and the `reason` are for diagnostics and promise nothing about their content (routes are added and changed). Branch on `Spelling`
@@ -142,12 +145,13 @@ It turns a long path into a short spelling that keeps pointing to the same place
 | | `resolve_for_bind` | `resolve_for_connect` |
 |---|---|---|
 | Spelling | `B/D/E/<file name>` (link-dir) first, then `B/D/E` (link-file) | `B/D/E` (link-file), whatever the file name's length |
-| Why link-file is or is not chosen | on Linux and others, bind does not follow a symlink in the last component, so link-file cannot be used | connect always follows a symlink in the last component |
+| Where link-file is used | only on the OSes measured to follow a symlink on bind (macOS, NetBSD). On OSes not yet checked, link-dir only (resolve does not bind, so whether bind follows cannot be told) | every OS (connect always follows a symlink in the last component) |
 | Returns | `ForBind` (`spelling`, `remove()`, `cleanup()`) | `ForConnect` (`cleanup()`) |
+| When it cannot | `ENAMETOOLONG` (a length only thread-cwd / at reaches) | `ENAMETOOLONG` (link-file cannot be used, e.g. B cannot be created) |
 
 - A path up to the standard length is returned unchanged (`Original` for an absolute path, `CwdRelative` for a relative one)
-- resolve only returns a spelling, so at a length only thread-cwd / at reaches it gives `ENAMETOOLONG`. Those who want that reached too use `bind` / `connect`
-- How B is spelled (procB or the real path) is chosen as for the default operations ([Spelling forms](SPEC-routes.md#spelling-forms))
+- resolve only returns a spelling, so those who want the `ENAMETOOLONG` cases reached too use `bind` / `connect`. The default `bind` can try thread-cwd / at, and the default `connect` the routes needing no write and thread-cwd-direct
+- resolve spells B as procB or the real path, chosen as for the default bind ([Spelling forms](SPEC-routes.md#spelling-forms))
 - resolve does not list B on each call (so as not to add steps to resolve)
 - To connect to the same path repeatedly, use the spelling made once by `resolve_for_connect` for every connect and `cleanup` at the end
 - The default `bind` uses resolve internally and reaches lengths resolve cannot with thread-cwd / at. The default `connect` creates no D ([Connect order](#connect-order)). The default bind keeps its spelling; the default connect does not
@@ -218,7 +222,7 @@ Attributes of `Linked`:
 
 | | B | D | E |
 |---|---|---|---|
-| Unit | one per user, reused across processes. A process uses one B (one more only with `usable_cross_uid`) | one per (process, B). Created only by a bind that keeps its spelling (including thread-cwd / at) and by `resolve_for_connect` | one per resolve. One per call for thread-cwd / at and for the default connect's link-file |
+| Unit | one per user, reused across processes. A process uses one B in the automatic bases (one more only with `usable_cross_uid`). A B in `Options.base` is one per given path | one per (process, B). Created only by a bind that keeps its spelling (including thread-cwd / at) and by `resolve_for_connect` | one per resolve. One per call for thread-cwd / at and for the default connect's link-file |
 | While alive | not removed | the process keeps an fd holding a flock (shared lock) | resolve's E is not removed |
 | Cleanup | not by sockat (B in `Options.base` is managed by the app) | not by sockat. A dead process's D is removed by the OS's temporary-directory cleaning. Only when `sweep()` is called are the D whose lock has been released removed | resolve's E by `cleanup`. A per-call E is unlinked within the call |
 
@@ -240,7 +244,7 @@ The OS's temporary-directory cleaning ([research](research/2026-11-20-tmp-cleane
 
 ### `sweep`
 
-- Only when called, it removes the D in B whose owners are dead (D whose lock has been released). It does not remove the D of other live processes
+- Only when called, it removes the D in B whose owners are dead (D whose lock has been released). It does not remove the D of other live processes (how it tells is in [D and E](SPEC-routes.md#d-and-e))
 - It is never called automatically (resolve does not list B on each call)
 
 ## Short paths
@@ -275,7 +279,7 @@ A name is "means + what it is about". The suffix `-direct` is the form that pass
 |---|---|---|
 | `standard` | hand the path to the standard unchanged | bind, connect |
 | `link-dir` | `B/D/E/<file name>` through an E pointing to the socket's directory | bind |
-| `link-file` | `B/D/E` through an E pointing to the socket file (`B/E` for the default connect) | bind, connect |
+| `link-file` | `B/D/E` through an E pointing to the socket file (`B/E` with B's real path for the default connect) | bind, connect |
 | `thread-cwd` | move a throwaway thread's cwd into D, then `E/<file name>` through an E removed at once | bind |
 | `at` | the same spelling as thread-cwd, passed to `bindat` with D's fd and no thread | bind |
 | `proc-direct` | `/proc/self/fd/<fd of the socket's directory>/<file name>` | connect |
@@ -309,7 +313,7 @@ Routes needing neither a write nor a thread come first; routes that start a thre
 | 1 | `standard` | the original path |
 | 2 | `proc-direct` / `relative` / `widened` / `at-direct` | needs neither a write nor a thread (per OS, table below) |
 | 3 | `thread-cwd-direct` | needs neither D nor E |
-| 4 | `link-file` | create an E with a random name right under B, connect by `B/E`, and unlink E at once. Reaches whatever the file name's length |
+| 4 | `link-file` | create an E with a random name right under B, connect by `B/E` with B's real path, and unlink E at once (procB is not used). Reaches whatever the file name's length. Unusable when the spelling does not fit |
 | 5 | `ENAMETOOLONG` | |
 
 | OS | Routes of 2 |
@@ -323,6 +327,7 @@ Routes needing neither a write nor a thread come first; routes that start a thre
 - A connect's spelling does not stay with the peer (the connecting socket is not bound), so no E is kept. A one-off connect from a CLI usually ends at 2, and reaches even in a sandbox with no writable base
 - relative and widened sometimes reach farther than the routes through the base
 - 3 can be used on Linux / Android and Apple OSes ([thread-cwd-direct](SPEC-routes.md#thread-cwd-direct))
+- A DGRAM connect uses the same order
 
 ## What differs from the standard for a long path
 
@@ -331,7 +336,7 @@ Routes needing neither a write nor a thread come first; routes that start a thre
 | The address the kernel returns | `getsockname` on the bound side, and `getpeername` on a side that connected to it, return the bind's spelling, not the original path. Whether it can be used later is told by `Spelling`. A language that can replace, within the standard type, what returns the address (Python) returns the original path. On illumos, the connecting side's `getpeername` returns the spelling passed to connect rather than the one bound (measured in sockat-rs's CI, 2026-11-19) |
 | How it looks in operational tools | the address shown by `ss -x`, `lsof`, `/proc/net/unix`, etc. is the bind's spelling. For link-dir and thread-cwd / at the file name stays at the end of the spelling. A link-file spelling does not show the file name |
 | When the listener is closed | a standard that removes by the address's spelling on close (Go's `UnixListener.Close`, etc.) removes the file at the original path when the spelling's `removable` is true. With a link-file spelling E is removed and the file stays; with `Dangling` nothing is removed |
-| The directory is looked up first | thread-cwd / at's E points to the realpath of the socket's directory, and proc-direct, at-direct and thread-cwd-direct look up the directory before passing the file name. A rename or a symlink swap in between is not reflected |
+| The directory is looked up first | link-dir's and thread-cwd / at's E point to the realpath of the socket's directory, and proc-direct, at-direct and thread-cwd-direct look up the directory before passing the file name. A rename or a symlink swap in between is not reflected |
 | Another thread's chdir | relative gives a general error when the cwd changed in between and stayed changed. A change and change back is not seen |
 | State grows outside the app's own place | B / D / E stay in `/tmp`, `$XDG_RUNTIME_DIR`, `$TMPDIR`. The default `bind`'s E and a dead process's D stay until the OS cleans them ([What stays in the base](#what-stays-in-the-base)) |
 | Environments where a live D can be removed | Linux with systemd older than v242, and B in macOS's `$TMPDIR` ([What stays in the base](#what-stays-in-the-base)). The spelling only stops being followable |
@@ -364,13 +369,17 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 | a socket file nobody listens on | `ECONNREFUSED` |
 | the backlog is full | Linux gives `EAGAIN` for a non-blocking connect (a blocking connect waits); macOS gives `ECONNREFUSED` |
 | no route can be used (the spelling does not fit, the means is missing) | `ENAMETOOLONG` |
-| resolve at a length only thread-cwd / at reaches | `ENAMETOOLONG` |
-| `Options.base` failed the checks; a directory on the way to B is missing | an error (no fallback to the automatic bases) |
+| `resolve_for_bind` at a length only thread-cwd / at reaches | `ENAMETOOLONG` |
+| `resolve_for_connect` when link-file cannot be used (B cannot be created, the spelling does not fit) | `ENAMETOOLONG` |
+| a directory on the way to `Options.base` is missing | `ENOENT` |
+| `Options.base` is not a directory | `ENOTDIR` |
+| `Options.base` failed the owner / permission checks (including, with `usable_cross_uid`, whether every directory on the way gives x to other) | `EPERM` |
 | a path over the standard length that does not end in a name | invalid argument |
 | a path containing NUL anywhere but at the start (whatever its length) | invalid argument |
 | the cwd changed during relative | general error |
 
 - The directory is looked up first, so `ENOENT` and `ENOTDIR` are decided before the length on every OS
+- An `Options.base` error does not fall back to the automatic bases
 - OS errors are returned in a form from which the errno can be read in that language's way
 - Which type represents "invalid argument" and "general error" is up to each implementation
 

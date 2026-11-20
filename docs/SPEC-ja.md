@@ -22,7 +22,7 @@
 | 経路 | 元のパスと同じ所を指す別の綴りを作り、それで bind / connect するやり方。名前は「[経路の名前](#経路の名前)」 |
 | 試す | 経路が使えるかを確かめ、使えればその綴りで bind / connect すること。使えなければ次の経路へ進む |
 | 使えない / 失敗 | 使えない: 経路自体が使えない (綴りが収まらない、手段が無い、B・D・E を作れない)。失敗: 実際に bind / connect して OS がエラーを返した ([経路の失敗の扱い](SPEC-routes-ja.md#経路の失敗の扱い)) |
-| 置き場 | B を作る場所。`/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR`・ソケットのディレクトリのどれかか、利用者が `Options.base` で指定した所 ([実体の置き場](SPEC-routes-ja.md#実体の置き場)) |
+| 置き場 | B を作る場所。`/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR`・ソケットのディレクトリのどれか ([実体の置き場](SPEC-routes-ja.md#実体の置き場))。利用者が `Options.base` で B そのものを指定した時は使わない |
 | B | 置き場の中に作る実在のディレクトリ。利用者ごとで、プロセスをまたいで使い回す |
 | D | B の中に (プロセス, B) ごとに 1 つ作るディレクトリ。名前は乱数 |
 | E | symlink。ソケットのディレクトリを指す物 (link-dir と thread-cwd・at) と、ソケットのファイルを指す物 (link-file) がある |
@@ -83,13 +83,14 @@ Rust の名前で示す。
 
 - 失敗は、既定の操作は標準と同じエラーの型、`_ex` と resolve はエラーに診断を付けた型 ([診断](#診断))
 - DGRAM は std の `UnixDatagram` の、パスを取る関数と、それと組で使う `unbound` だけを写す。`pair` は写さない
+- DGRAM の connect は stream の connect と同じ順で経路を試す ([connect の順](#connect-の順))。`send_to` の経路は「[未確定](#未確定)」
 
 ### `Options`
 
 | 項目 | 中身 |
 |---|---|
 | `usable_cross_uid: bool` | 別の uid の相手も辿れる綴りを求める。B の選び方と、procB を使わないことに効く。満たせなければ thread-cwd / at に進む ([別の uid と PrivateTmp](SPEC-routes-ja.md#別の-uid-と-privatetmp))。満たせたかは結果の `Spelling` で分かる |
-| `base: Option<Path>` | 利用者が B の実体の場所を指定する (アプリが自分の管理する場所を渡す。例 `/tmp/app-<uid>/sockat`)。その所に B を作り、確かめて外れたらエラーで、自動の置き場に落とさない。綴りの形は自動の時と同じ順で選ぶ |
+| `base: Option<Path>` | B そのもののパスを利用者が指定する (アプリが自分の管理する場所を渡す。例 `/tmp/app-<uid>/sockat`)。そこに B を作り、確かめて外れたらエラーで、自動の置き場に落とさない ([エラー](#エラー))。`usable_cross_uid` と一緒の時は、その base までの途中が全部 other に x を持つかも確かめる。呼び出しごとに違う `base` を渡せば、1 つのプロセスが複数の B を持つ。綴りの形は自動の時と同じ順で選ぶ |
 
 ### 返す物
 
@@ -126,8 +127,10 @@ Rust の名前で示す。
 | 項目 | 中身 |
 |---|---|
 | `route` | 通った経路の名前 |
-| `base` | bind で使った B の綴り (`proc`・`sockdir`・`runtime`・`tmpdir`・`tmp`) |
+| `base` | bind で使った B の綴り (`proc`・`sockdir`・`runtime`・`tmpdir`・`tmp`)。綴りが B を通る時 (link-dir・link-file) だけ値を持ち、他 (standard・thread-cwd・at) は無し。`Connected` と `Report` には無い |
 | `skipped` | 試して使えなかった経路の並び (試した順)。各要素は `{ name: 経路の名前, reason: 使えなかった理由 }`。長いパスでは `standard` も入る |
+
+- `skipped` は経路の名前ごとに 1 件。link-dir を procB と実パスで試しても 1 件で、`reason` は最後に試した物。`usable_cross_uid` で procB を使わないのは経路を飛ばすことではないので、何も足さない
 
 - `route` より前に試した経路はすべて使えなかったもの (実際に bind / connect して失敗したら、そこでエラーを返して次を試さない。bind の link-file を実行時に見分ける時だけは次へ進む)。そのため「使えたか」の真偽値は持たない
 - `route`・`base`・`skipped` の名前と `reason` は診断用で、中身を約束しない (経路は増えたり変わったりする)。分岐には `Spelling` を使う
@@ -142,12 +145,13 @@ Rust の名前で示す。
 | | `resolve_for_bind` | `resolve_for_connect` |
 |---|---|---|
 | 綴り | `B/D/E/<ファイル名>` (link-dir) を先に、`B/D/E` (link-file) をその後に | `B/D/E` (link-file)。ファイル名の長さによらない |
-| link-file を選ぶ理由 | Linux 等では bind が最後の要素の symlink を辿らず、link-file を使えない | connect は最後の要素の symlink をいつも辿る |
+| link-file を使う所 | bind が symlink を辿ると実測した OS (macOS・NetBSD) だけ。未確認の OS では link-dir だけ (resolve の時点では bind しないので、辿るかを見分けられない) | どの OS も (connect は最後の要素の symlink をいつも辿る) |
 | 返す物 | `ForBind` (`spelling`、`remove()`、`cleanup()`) | `ForConnect` (`cleanup()`) |
+| 使えない時 | `ENAMETOOLONG` (thread-cwd・at でしか届かない長さ) | `ENAMETOOLONG` (B を作れない等で link-file を使えない) |
 
 - 標準に渡す長さ以下のパスはそのまま返す (絶対パスは `Original`、相対パスは `CwdRelative`)
-- resolve は綴りを返すだけなので、thread-cwd・at でしか届かない長さでは `ENAMETOOLONG`。それも届かせたい人は `bind` / `connect` を使う
-- B の綴り (procB か実パス) の選び方は既定の操作と同じ ([綴りの形](SPEC-routes-ja.md#綴りの形))
+- resolve は綴りを返すだけなので、`ENAMETOOLONG` の所も届かせたい人は `bind` / `connect` を使う。既定の `bind` は thread-cwd・at を、既定の `connect` は書き込みの要らない経路と thread-cwd-direct を試せる
+- resolve の B の綴りは procB か実パスで、選び方は既定の bind と同じ ([綴りの形](SPEC-routes-ja.md#綴りの形))
 - resolve のたびに B の中を一覧しない (resolve の手数を増やさない)
 - 同じパスへの connect を繰り返す時は、`resolve_for_connect` で 1 度作った綴りを何度も connect に使い、最後に `cleanup` する
 - 既定の `bind` は内部で resolve を使い、resolve で済まない長さには thread-cwd・at で届かせる。既定の `connect` は D を作らない ([connect の順](#connect-の順))。既定の bind は綴りを残し、既定の connect は残さない
@@ -218,7 +222,7 @@ pub enum Spelling {
 
 | | B | D | E |
 |---|---|---|---|
-| 作る単位 | 利用者ごと。プロセスをまたいで使い回す。1 つのプロセスが使う B は 1 つ (`usable_cross_uid` の時だけ、もう 1 つ使いうる) | (プロセス, B) ごとに 1 つ。作るのは、綴りを残す bind (thread-cwd・at を含む) と `resolve_for_connect` だけ | resolve ごと。thread-cwd・at と既定の connect の link-file は呼び出しごと |
+| 作る単位 | 利用者ごと。プロセスをまたいで使い回す。1 つのプロセスが使う自動の置き場の B は 1 つ (`usable_cross_uid` の時だけ、もう 1 つ使いうる)。`Options.base` の B は指定ごと | (プロセス, B) ごとに 1 つ。作るのは、綴りを残す bind (thread-cwd・at を含む) と `resolve_for_connect` だけ | resolve ごと。thread-cwd・at と既定の connect の link-file は呼び出しごと |
 | 生きている間 | 消さない | プロセスが flock (共有ロック) を掛けた fd を持ち続ける | resolve の E は消さない |
 | 片付け | sockat はしない (`Options.base` の B はアプリが管理) | sockat はしない。死んだプロセスの D は OS の一時ディレクトリの掃除で消える。`sweep()` を呼んだ時だけ、ロックの外れた D を消す | resolve の E は `cleanup`。呼び出しごとの E は呼び出しの中で unlink |
 
@@ -240,7 +244,7 @@ OS の一時ディレクトリの掃除 ([research](research/2026-11-20-tmp-clea
 
 ### `sweep`
 
-- 呼んだ時だけ、B の中の持ち主の死んだ D (ロックの外れた D) を消す。生きている他のプロセスの D は消さない
+- 呼んだ時だけ、B の中の持ち主の死んだ D (ロックの外れた D) を消す。生きている他のプロセスの D は消さない (見分け方は [D と E](SPEC-routes-ja.md#d-と-e))
 - 自動では呼ばない (resolve のたびに B の中を一覧しない)
 
 ## 短いパス
@@ -275,7 +279,7 @@ OS の一時ディレクトリの掃除 ([research](research/2026-11-20-tmp-clea
 |---|---|---|
 | `standard` | 標準にそのまま渡す | bind、connect |
 | `link-dir` | ソケットのディレクトリを指す E を通す `B/D/E/<ファイル名>` | bind |
-| `link-file` | ソケットのファイルを指す E を通す `B/D/E` (既定の connect は `B/E`) | bind、connect |
+| `link-file` | ソケットのファイルを指す E を通す `B/D/E` (既定の connect は B の実パスの `B/E`) | bind、connect |
 | `thread-cwd` | 使い捨てのスレッドの cwd を D に移し、すぐ消す E を通す `E/<ファイル名>` | bind |
 | `at` | thread-cwd と同じ綴りを、スレッドを使わず `bindat` に D の fd で渡す | bind |
 | `proc-direct` | `/proc/self/fd/<ソケットのディレクトリの fd>/<ファイル名>` | connect |
@@ -309,7 +313,7 @@ OS の一時ディレクトリの掃除 ([research](research/2026-11-20-tmp-clea
 | 1 | `standard` | 元のパス |
 | 2 | `proc-direct` / `relative` / `widened` / `at-direct` | 書き込みもスレッドも要らない (OS ごと、下の表) |
 | 3 | `thread-cwd-direct` | D も E も要らない |
-| 4 | `link-file` | B の直下に乱数の名前の E を作って `B/E` で connect し、すぐ E を unlink する。ファイル名の長さによらず届く |
+| 4 | `link-file` | B の直下に乱数の名前の E を作って、B の実パスの `B/E` で connect し、すぐ E を unlink する (procB は使わない)。ファイル名の長さによらず届く。綴りが収まらなければ使えない |
 | 5 | `ENAMETOOLONG` | |
 
 | OS | 2 の経路 |
@@ -323,6 +327,7 @@ OS の一時ディレクトリの掃除 ([research](research/2026-11-20-tmp-clea
 - connect の綴りは相手に残らない (connect した側のソケットは bind されない) ので、E を残さない。CLI の 1 回だけの connect は普通 2 で終わり、置き場に書けない sandbox でも届く
 - relative と widened は、置き場を通す経路より遠くまで届く場面がある
 - 3 を使える OS は Linux / Android・Apple の OS ([thread-cwd-direct](SPEC-routes-ja.md#thread-cwd-direct))
+- DGRAM の connect も同じ順
 
 ## 長いパスで標準と違う点
 
@@ -331,7 +336,7 @@ OS の一時ディレクトリの掃除 ([research](research/2026-11-20-tmp-clea
 | カーネルが返すアドレス | bind した側の `getsockname` と、そこへ connect した側の `getpeername` は元のパスでなく bind の綴りを返す。後で使えるかは `Spelling` で分かる。標準の型でアドレスを返す口を差し替えられる言語 (Python) は元のパスを返す。illumos では connect した側の `getpeername` が、bind した綴りでなく connect に渡した綴りを返す (sockat-rs の CI で実測 2026-11-19) |
 | 運用の道具での見え方 | `ss -x`・`lsof`・`/proc/net/unix` 等に出るアドレスが bind の綴りになる。link-dir と thread-cwd・at はファイル名が綴りの最後に残る。link-file の綴りにはファイル名が出ない |
 | listener を閉じた時 | 閉じる時にアドレスの綴りで消す標準 (Go の `UnixListener.Close` 等) は、`removable` が true の綴りなら元のパスのファイルを消す。link-file の綴りでは E が消えてファイルは残り、`Dangling` では何も消えない |
-| ディレクトリを先に引く | thread-cwd・at の E はソケットのディレクトリの realpath を指し、proc-direct・at-direct・thread-cwd-direct はディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない |
+| ディレクトリを先に引く | link-dir と thread-cwd・at の E はソケットのディレクトリの realpath を指し、proc-direct・at-direct・thread-cwd-direct はディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない |
 | 他のスレッドの chdir | relative は、間に cwd が変わったままなら一般のエラー。変えて戻した場合は見えない |
 | 状態がアプリの置き場の外に増える | B・D・E が `/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR` に残る。既定の `bind` の E と死んだプロセスの D は OS の掃除まで残る ([置き場に残る物](#置き場に残る物)) |
 | 生きている D が消されうる環境 | systemd v242 より古い Linux と、B が macOS の `$TMPDIR` にある時 ([置き場に残る物](#置き場に残る物))。綴りが辿れなくなるだけ |
@@ -364,13 +369,17 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 | 誰も listen していないソケットファイル | `ECONNREFUSED` |
 | backlog が満杯 | Linux はブロックしない connect で `EAGAIN` (ブロックする connect は待つ)、macOS は `ECONNREFUSED` |
 | どの経路も使えない (綴りが収まらない、手段が無い) | `ENAMETOOLONG` |
-| resolve で、thread-cwd・at でしか届かない長さ | `ENAMETOOLONG` |
-| `Options.base` の確認に外れた。B までの途中のディレクトリが無い | エラー (自動の置き場に落とさない) |
+| `resolve_for_bind` で、thread-cwd・at でしか届かない長さ | `ENAMETOOLONG` |
+| `resolve_for_connect` で、link-file を使えない (B を作れない、綴りが収まらない) | `ENAMETOOLONG` |
+| `Options.base` までの途中のディレクトリが無い | `ENOENT` |
+| `Options.base` がディレクトリでない | `ENOTDIR` |
+| `Options.base` の持ち主・権限の確かめに外れた (`usable_cross_uid` と一緒の時の、途中が other に x を持つかを含む) | `EPERM` |
 | 標準に渡す長さを超えるパスで、名前で終わらない | 引数の誤り |
 | 先頭以外に NUL を含むパス (長さによらない) | 引数の誤り |
 | relative の途中で cwd が変わった | 一般のエラー |
 
 - ディレクトリを先に引くので、`ENOENT` と `ENOTDIR` はどの OS でも長さの判定より前に決まる
+- `Options.base` のエラーでは自動の置き場に落とさない
 - OS のエラーは、その言語の作法で errno を取り出せる形で返す
 - 「引数の誤り」「一般のエラー」をどの型で表すかは各実装が決める
 
