@@ -57,7 +57,7 @@ kawaz との議論 (2026-11-19〜20) で方向が出たものの記録。[DR-001
 |---|---|---|
 | procB | 同じ uid・同じ PID 名前空間だけ (root は辿れる) | 辿れない |
 | dirB | 置き場までの途中が全部 other に x を持てば別の uid も、そうでなければ同じ uid だけ (`/run/user/<uid>` と macOS の `$TMPDIR` は 0700) | `cleanup` まで残る |
-| tmpB | 別の uid も (B が 0711、D は乱数) | `cleanup` まで残る。`cleanup` の後は他人が同じ名前で作り直しうる |
+| tmpB | 別の uid も (B が 0711、D は乱数) | `cleanup` まで残る。`cleanup` の後は他人が同じ名前で作り直しうる (std の元のパスを消した後に、そのディレクトリに書ける人が作り直せるのと同じ。片付けた後の綴りは使わない、と説明に書く) |
 
 ## 整理案 (統括、2026-11-20。kawaz の判断待ち)
 
@@ -109,13 +109,12 @@ pub enum Spelling {
         until: Until,                // Process (procB) / Cleanup (dirB・tmpB)
         usable_cross_uid: bool,        // 別の uid の相手が辿れるか
         usable_with_private_tmp: bool, // 自分と相手のどちらかが /tmp を隔離していても (systemd の PrivateTmp 等) 相手が辿れるか (綴りが /tmp・/var/tmp を通らなければ true。mount 名前空間が丸ごと違う相手 (コンテナ等) までは保証しない)
-        recreatable_after_cleanup: bool, // cleanup の後に他人が作り直せるか (tmpB)
     },
     Dangling,     // 片付け済みの R を含む綴り。どこにも届かない (thread-cwd・at・fork-cwd)
 }
 ```
 
-S2: `forked`・`cwd-relative`・`dangling`・`unremovable-by-spelling`・`temporary`・`owner-only`・`recreatable-after-cleanup` の名前の並び。種類と属性が混ざり、組み合わせの意味を利用者が考えることになる。
+S2: `forked`・`cwd-relative`・`dangling`・`unremovable-by-spelling`・`temporary`・`owner-only` の名前の並び。種類と属性が混ざり、組み合わせの意味を利用者が考えることになる。
 
 fork したかは別の `forked: bool` にする。
 
