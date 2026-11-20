@@ -108,6 +108,7 @@ pub enum Spelling {
         removable: bool,             // 綴りで unlink すると実体が消えるか (link-dir: true、link-file: false)
         until: Until,                // Process (procB) / Cleanup (dirB・tmpB)
         others_can_follow: bool,     // 別の uid が辿れるか
+        through_tmp: bool,           // 綴りが /tmp か /var/tmp を通るか (通るなら /tmp を隔離した相手 (systemd の PrivateTmp 等) からは辿れない。tmpB と、$TMPDIR が /tmp の下の dirB)
         recreatable_after_cleanup: bool, // cleanup の後に他人が作り直せるか (tmpB)
     },
     Dangling,     // 片付け済みの R を含む綴り。どこにも届かない (thread-cwd・at・fork-cwd)
