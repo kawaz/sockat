@@ -31,7 +31,7 @@ How sockat behaves, independent of the language (the promise to users and to tho
 | resolve | turning a long path into a short spelling through B / D / E and returning it ([resolve](#resolve)) |
 | spelling properties | whether a bind's spelling can be used later. Returned as `Spelling` ([Spelling properties: `Spelling`](#spelling-properties-spelling)). `Dangling` is a spelling that contains an E already removed, and reaches nothing |
 | the connect variants | `connect`, `connect_nonblocking`, and the `_ex` of each |
-| `/proc` usable | `/proc/self/fd/<fd>` and `/proc/<pid>/fd/<fd>` can be looked up |
+| `/proc` usable | `/proc/self/fd/<fd>` and `/proc/<pid>/fd/<fd>` can be looked up (how it is checked with B's fd is in [Spelling forms](SPEC-routes.md#spelling-forms)) |
 
 OSes are grouped as follows.
 
@@ -85,6 +85,7 @@ Shown with the Rust names.
 - On failure, the default operations return the standard's error type; `_ex` and resolve return an error type that carries diagnostics ([Diagnostics](#diagnostics))
 - For DGRAM, only the functions of the standard `UnixDatagram` that take a path, and `unbound` used with them, are mirrored. `pair` is not
 - A DGRAM connect tries the routes in the same order as a stream connect ([Connect order](#connect-order)). The routes of `send_to` are in "[Open questions](#open-questions)"
+- Go's DGRAM connect is `DialUnixgram(path)` (creating the socket and connecting in one call; Go's standard form). Those who want to connect a bound socket to a long path make the spelling with resolve and hand it to the standard
 
 ### `Options`
 
@@ -132,6 +133,7 @@ On success `_ex` and resolve return the following.
 | `skipped` | the routes tried and found unusable, in the order tried. Each element is `{ name: the route name, reason: why it was unusable }`. For a long path `standard` is included |
 
 - `skipped` has one element per route name. Trying link-dir with procB and with the real path is still one element, with the `reason` of the last try. Not using procB because of `usable_cross_uid` is not skipping a route, so nothing is added
+- `skipped` contains only the routes in that call's row of the order tables (for bind the row is decided by the OS, for connect by the OS and whether `/proc` is usable). The connect row of Linux without `/proc` usable has no proc-direct, so it is not included
 
 - Every route tried before `route` was unusable (when a route actually binds / connects and fails, the error is returned there and the next is not tried; only when a bind's link-file is told apart at run time does it go on). So there is no "was it usable" bool
 - The names in `route`, `base` and `skipped` and the `reason` are for diagnostics and promise nothing about their content (routes are added and changed). Branch on `Spelling`
@@ -185,7 +187,7 @@ Attributes of `Linked`:
 | `removable` | whether unlinking by the spelling removes the real file | true for link-dir (the E in the middle is followed). false for link-file (the last symlink is not followed and E is removed; removing the file needs `remove`) |
 | `until` | until when the spelling can be followed | `Process` (procB: not after the process exits). `Cleanup` (real-path spelling: E stays until `cleanup`, D until the OS cleaning after the process exits) |
 | `usable_cross_uid` | whether a peer of another uid can follow it | false for procB (same uid and same PID namespace only; root can follow). For a real-path spelling, true when every directory on the way to B and B itself give x to other (B in `/tmp`), otherwise false (`/run/user/<uid>` and macOS's `$TMPDIR` are 0700, and so is an existing B that is 0700) |
-| `usable_with_private_tmp` | whether the peer can follow it even when either side has its `/tmp` isolated (systemd's `PrivateTmp`, etc.) | false when either the path of B's base before realpath or the spelling (the real path) passes through `/tmp` or `/var/tmp` (B in macOS's `/tmp` is false even though its spelling is `/private/tmp`), true when neither does. A peer in a wholly different mount namespace (a container, etc.) is not covered |
+| `usable_with_private_tmp` | whether the peer can follow it even when either side has its `/tmp` isolated (systemd's `PrivateTmp`, etc.) | always true for a procB spelling (the spelling does not pass through `/tmp`). For a spelling with B's real path, false when either the path of B's base before realpath or the spelling (the real path) passes through `/tmp` or `/var/tmp` (B in macOS's `/tmp` is false even though its spelling is `/private/tmp`), true when neither does. "Passes through" means that, component by component, it is `/tmp` or `/var/tmp`, or is under the realpath of either. A peer in a wholly different mount namespace (a container, etc.) is not covered |
 
 - A connect's spelling does not stay with the peer, so its properties are not returned
 
@@ -210,6 +212,7 @@ Attributes of `Linked`:
   - For a relative path, compare the process's cwd `(st_dev, st_ino)` before anything about the path is looked up and after both the bind and the realpath taken for remembering; if they differ, treat it like the case where they cannot be remembered (so that a cwd change in between does not make it remember and remove an unrelated file under the old cwd. A change and change back is not seen)
   - The path argument is turned into a string once at the entry, and that value is used for remembering, binding and returning alike
 - It succeeds when the file is already gone and when it has been replaced by another file and is left alone. It fails when the check cannot be made (`lstat` fails with something other than `ENOENT` / `ENOTDIR`) and when the removal itself fails
+- Even when it fails, it goes on to `cleanup`, and returns the error of removing the file
 - A replacement is told apart by `(st_dev, st_ino)` only, and what is promised is a replacement while the listener is open. Something removed and recreated after the listener is closed cannot be told apart on a filesystem that reuses numbers at once (ext4, BSD UFS / FFS). Each language's docs recommend calling `remove` before closing the listener ([findings](findings/2026-11-19-inode-reuse-after-close.md), Japanese)
 - Someone who can write to the socket's directory swapping the file between the check and the removal, or between the bind and the remembering, cannot be prevented (POSIX has no way to remove by inode)
 
@@ -217,7 +220,7 @@ Attributes of `Linked`:
 |---|---|
 | Rust | `remove` of `SocketFile` |
 | Python | the return value includes a function without arguments |
-| Go | the return value includes a `func() error`. Even for a short path, only this removes the file (`SetUnlinkOnClose(false)`) |
+| Go | the methods `Remove()` / `Cleanup()` of `*SocketFile`. The listener of `ListenEx` does not remove the file when closed, even for a short path; only this removes it (`SetUnlinkOnClose(false)`) |
 
 ### `SocketFile` of `ForBind`
 
@@ -238,6 +241,7 @@ At resolve time nothing is bound, so `ForBind` cannot remember the socket file's
 
 - The default `bind` returns no `SocketFile`, so its E stays until the process exits and is removed with D by the OS's temporary-directory cleaning. There is no mechanism for cleaning up after a process that execs. Users who care about cleanup use `_ex` or resolve
 - The default `connect` leaves no D or E in the process (it creates no D, and unlinks the E right under B right after the connect). When it creates B for the first time, that B and its fd are used as the process's B from then on
+- A B in the socket's directory (`.sockat.<random>`) and a B fallen back to after the checks failed (`sockat-<uid>.<random>`) are not covered by `sweep`, and may not be removed by the OS's cleaning either. A B in the socket's directory stays in the user's directory
 
 The OS's temporary-directory cleaning ([research](research/2026-11-20-tmp-cleaners-and-persistent-base.md), Japanese):
 
@@ -258,6 +262,7 @@ The OS's temporary-directory cleaning ([research](research/2026-11-20-tmp-cleane
 - `sweep()` covers the B with the default names in bases 1 to 3 (`sockat-<uid>`, `sockat`). Only those that exist; it creates no B
 - `sweep_base(path)` (the name follows each language's convention) removes the dead D in the B passed as `Options.base`. The app that manages that B calls it
 - A B with a random name (fallen back to after the checks failed) and a B in the socket's directory are not covered
+- It does not touch the E right under B (the default connect's). A D containing something other than a symlink is left
 - It is never called automatically (resolve does not list B on each call)
 
 ## Short paths
@@ -265,7 +270,7 @@ The OS's temporary-directory cleaning ([research](research/2026-11-20-tmp-cleane
 A path up to the standard length is handed to the standard unchanged. Nothing is added and no environment variable is read. A longer path goes to the routes ([DR-0004](decisions/DR-0004-standard-length-per-language.md), Japanese).
 
 - A path containing NUL anywhere but at the start is never handed to the standard, whatever its length; it is an invalid-argument error ([DR-0006](decisions/DR-0006-nul-is-invalid-at-any-length.md), Japanese)
-- On Linux / Android a path starting with NUL (abstract namespace) is out of scope and is handed to the standard unchanged, whatever its length. A language's own abstract notation (Go's `@` etc.) likewise
+- On Linux / Android a path starting with NUL (abstract namespace) is out of scope and is handed to the standard unchanged, whatever its length. A language's own abstract notation (Go's `@` etc.) likewise. The `Spelling` of `_ex` and resolve is `Original`
 - On OSes without an abstract namespace, a path starting with NUL is an invalid argument too, whatever its length
 - In a language whose standard has no non-blocking connect, a non-blocking connect alone uses the implementation's own socket, connected to the same address as the standard would
 - When the standard does not accept a route's spelling (a language whose standard length is shorter than the sockaddr length), the implementation's own socket is used with the same address too
@@ -315,7 +320,7 @@ A name is "means + what it is about". The suffix `-direct` is the form that pass
 - The spelling is kept, so while it lives, upper libraries that remove by the `getsockname` spelling and DGRAM replies work as with the original path. thread-cwd / at come after, for when resolve's spelling does not fit
 - link-file is not tried on the OSes measured not to follow a symlink on bind (Linux / Android, FreeBSD, OpenBSD, illumos). macOS and NetBSD follow it (measured 2026-11-19, [findings](findings/2026-11-19-bind-through-file-symlink.md), Japanese). On other OSes it is tried and whether it follows is told apart at run time
 - bind does not use proc-direct, relative, widened or at-direct. Their spelling later hits an unrelated file (proc-direct, relative, at-direct), or the address is cut in the middle and breaks the reading side (widened)
-- When no B meets `usable_cross_uid`, or its spelling does not fit, it goes to 5 rather than falling back to a spelling that does not meet it
+- When no B meets `usable_cross_uid`, or its spelling does not fit, it goes to 5 rather than falling back to a spelling that does not meet it. The D then is created in the usual B that does not look at `usable_cross_uid` (in the order of bases 1 to 4)
 
 ### Connect order
 
@@ -348,7 +353,7 @@ Routes needing neither a write nor a thread come first; routes that start a thre
 |---|---|
 | The address the kernel returns | `getsockname` on the bound side, and `getpeername` on a side that connected to it, return the bind's spelling, not the original path. Whether it can be used later is told by `Spelling`. A language that can replace, within the standard type, what returns the address (Python) returns the original path. On illumos, the connecting side's `getpeername` returns the spelling passed to connect rather than the one bound (measured in sockat-rs's CI, 2026-11-19) |
 | How it looks in operational tools | the address shown by `ss -x`, `lsof`, `/proc/net/unix`, etc. is the bind's spelling. For link-dir and thread-cwd / at the file name stays at the end of the spelling. A link-file spelling does not show the file name |
-| When the listener is closed | a standard that removes by the address's spelling on close (Go's `UnixListener.Close`, etc.) removes the file at the original path when the spelling's `removable` is true. With a link-file spelling E is removed and the file stays; with `Dangling` nothing is removed |
+| When the listener is closed | the default bind (Go's `Listen`, etc.) behaves as the standard does. With a standard that unlinks by the address's spelling on close (Go's `UnixListener.Close`), a link-dir spelling follows the E in the middle and removes the file at the original path (same as the standard). With a link-file spelling the unlink does not follow the last symlink, so E itself is removed and the socket file stays (differs from the standard; each language's README says so). A `Dangling` spelling is not unlinked (Go uses `SetUnlinkOnClose(false)`). The bind of `_ex` does not remove anything on close, whatever the spelling; only `remove()` of `SocketFile` removes the file (removing by the spelling would remove a replaced file without telling it apart) |
 | The directory is looked up first | link-dir's and thread-cwd / at's E point to the realpath of the socket's directory, and proc-direct, at-direct and thread-cwd-direct look up the directory before passing the file name. A rename or a symlink swap in between is not reflected |
 | Another thread's chdir | relative gives a general error when the cwd changed in between and stayed changed. A change and change back is not seen |
 | State grows outside the app's own place | B / D / E stay in `/tmp`, `$XDG_RUNTIME_DIR`, `$TMPDIR`. The default `bind`'s E and a dead process's D stay until the OS cleans them ([What stays in the base](#what-stays-in-the-base)) |
@@ -384,6 +389,7 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 | no route can be used (the spelling does not fit, the means is missing) | `ENAMETOOLONG` |
 | `resolve_for_bind` at a length only thread-cwd / at reaches | `ENAMETOOLONG` |
 | `resolve_for_connect` when link-file cannot be used (B cannot be created, the spelling does not fit) | `ENAMETOOLONG` |
+| `Options.base` is a relative path, or its last component is not a file name (`dir/`, `..`, `/`) | invalid argument |
 | a directory on the way to `Options.base` is missing | `ENOENT` |
 | `Options.base` is not a directory | `ENOTDIR` |
 | `Options.base` failed the owner / permission checks (including, on the bind side with `usable_cross_uid`, whether every directory on the way and the base itself give x to other) | `EPERM` |
@@ -404,7 +410,7 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 - Routes are not exposed in the public API. Tests force each route by calling it directly from inside the package
 - The parts that read the environment (the base candidates, where `/proc` is, whether Apple OSes accept a widened sockaddr, whether the thread cwd can be used) can be replaced from tests
 - The README and manual link to this specification. Before adding behavior that disagrees with it, fix this specification first
-- What the user-facing docs state: that state grows outside the app's own place, that a spelling is not used after cleanup, a peer with `PrivateTmp`, and that a live D can be removed in environments with systemd older than v242 and in macOS's `$TMPDIR` (each item is in "[What differs from the standard for a long path](#what-differs-from-the-standard-for-a-long-path)" and "[Patterns not to use](#patterns-not-to-use)")
+- What the user-facing docs state: that state grows outside the app's own place, that a spelling is not used after cleanup, a peer with `PrivateTmp`, and that a live D can be removed in environments with systemd older than v242 and in macOS's `$TMPDIR`, that closing the listener of a link-file spelling leaves the socket file (each item is in "[What differs from the standard for a long path](#what-differs-from-the-standard-for-a-long-path)" and "[Patterns not to use](#patterns-not-to-use)"), and that a B in the socket's directory and a B fallen back to after the checks failed can stay, removed neither by `sweep` nor by the OS's cleaning ([What stays in the base](#what-stays-in-the-base))
 
 ## What implementations test
 

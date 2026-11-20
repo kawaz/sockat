@@ -19,12 +19,13 @@ The same steps for the automatic bases and for `Options.base`.
 1. Make the base's path (the parent's path for `Options.base`) a real path with realpath (macOS's `/tmp` → `/private/tmp` etc.). The checks, opening and spelling below all use this real path
 2. Check every directory from the root to the parent: each is owned by root or by oneself and not writable by others, or has the sticky bit (the same idea as OpenSSH's StrictModes; if an ancestor is writable by others, the parent can be swapped out). Only once, the first time in the process
 3. Open the parent with `O_DIRECTORY | O_NOFOLLOW`, hold it by fd, and create B with `mkdirat(parent fd, name, 0700)`
-4. Open what was created with `O_NOFOLLOW`, check with `fstat` that it is a real directory owned by oneself, then `fchmod` it to 0711
+4. Open what was created with `O_NOFOLLOW`, check with `fstat` that it is a real directory owned by oneself, then `fchmod` it to 0711. When the umask has taken away the owner's r or x and it cannot be opened, remove the empty directory one just created and go on to the next base (`Options.base` is an error)
 5. On `EEXIST`, check what already exists in the same way (a real directory, owned by oneself, not writable by others). Use it even if its mode is not 0711, and do not change the mode. If it fails, an automatic base falls back to `sockat-<uid>.<10 random characters>`, and `Options.base` is an error
 
+- "Not writable by others" includes the group (`mode & 022 == 0`)
 - When a directory on the way is missing, sockat does not create it and returns an error (how a place the app manages is created is up to the app)
 - The name is `sockat-<uid>` (`sockat` under `$XDG_RUNTIME_DIR`, `.sockat.<10 random characters>` under the socket's directory). `Options.base` is the path of B itself, and its last component is the name
-- Errors for `Options.base`: `ENOENT` when a directory on the way is missing, `ENOTDIR` when the base is not a directory, `EPERM` when the owner / permission checks fail
+- Errors for `Options.base`: an invalid argument when it is a relative path or its last component is not a file name (`dir/`, `..`, `/`), `ENOENT` when a directory on the way is missing, `ENOTDIR` when the base is not a directory, `EPERM` when the owner / permission checks fail
 - The check of `Options.base` (the directories on the way, and B itself if it exists; nothing is created) is done for a long path after the socket's directory is looked up and before any route is tried, for both bind and connect. On failure `route` is none and `skipped` is empty. B is created only when a route that uses B is reached
 
 ### Where B is created
@@ -56,6 +57,7 @@ sockat decides by itself. From the top, the first that fits.
 | real path | B's real path `…/B/D/…` | it fits | B's base (`tmp` / `runtime` / `tmpdir`; `given` when B is the one of `Options.base`) | other uids too when every directory on the way to B and B itself give x to other (B in `/tmp`), otherwise the same uid only (`/run/user/<uid>` and macOS's `$TMPDIR` are 0700) |
 
 - procB has the same form wherever B's real directory is
+- `/proc` is taken as usable only when the `(st_dev, st_ino)` from stat-ing `/proc/<pid>/fd/<B's fd>` is the same as `fstat` of B's fd (in case the PID namespace and the `/proc` mount disagree)
 - The diagnostic `base` shows the spelling form when B is in a temporary base (`/tmp`, `$XDG_RUNTIME_DIR`, `$TMPDIR`) (`proc` for procB, the base's name for the real path), and shows that B regardless of the spelling form when B is not in a temporary base (the socket's directory, `Options.base`) (`sockdir`, `given`). Whether the spelling is procB or the real path is told by `until` of `Spelling`
 - When B is in the socket's directory, the real-path spelling is longer than the original path, so only the procB spelling can be used. On an OS where `/proc` is not usable, resolve's spelling cannot be used, and thread-cwd / at is next
 - When no spelling fits, thread-cwd / at is next
@@ -65,7 +67,7 @@ sockat decides by itself. From the top, the first that fits.
 - With `Options.usable_cross_uid`, only the bases in the order above where every directory on the way to B and B itself give x (the right to traverse) to other are used for B (the first of them where it can be created; an existing B that is 0700 does not qualify), and the procB spelling is not used (even if the child is 0711, another uid cannot traverse it when the parent is 0700; measured)
   - `/tmp` (1777) always qualifies
   - `$XDG_RUNTIME_DIR` (`/run/user/<uid>`) and macOS's `$TMPDIR` are 0700, so they do not. An environment that points `$TMPDIR` at a traversable place qualifies
-- When nothing qualifies, or that B's spelling does not fit, it goes on to thread-cwd / at (`Dangling`) rather than falling back to a spelling that does not meet it
+- When nothing qualifies, or that B's spelling does not fit, it goes on to thread-cwd / at (`Dangling`) rather than falling back to a spelling that does not meet it. That D is created in the usual B that does not look at `usable_cross_uid` (in the order of bases 1 to 4)
 - Together with `Options.base`, it is checked that every directory on the way to that base and the base itself give x to other; if not, `EPERM` (no fallback to the automatic bases)
 - The connect side (the default connect, `connect_ex`, `resolve_for_connect`) does not look at `usable_cross_uid` (a connect's spelling does not stay with the peer). `Options.base` is used as the base for B on the connect side too
 - When this B is a different place from the usual B, it is used as one more B (the only case where a process uses more than one B in the automatic bases)
@@ -84,12 +86,12 @@ sockat decides by itself. From the top, the first that fits.
 
 Creating D:
 
-1. Relative to B's fd, `mkdirat` with a random name. On `EEXIST`, draw a new name, giving up after 16 tries
-2. Open the created D with `O_DIRECTORY | O_NOFOLLOW`, and check with `fstat` that it is a real directory owned by oneself
+1. Relative to B's fd, `mkdirat(B's fd, name, 0700)` with a random name. On `EEXIST`, draw a new name, giving up after 16 tries
+2. Open the created D with `O_DIRECTORY | O_NOFOLLOW`, check with `fstat` that it is a real directory owned by oneself, then `fchmod` it to 0711. When the umask has taken away the owner's r or x and it cannot be opened, remove the empty directory one just created and go on to the next base
 3. Put a flock (shared lock) on that fd and keep holding it. The fd is close-on-exec
 4. Check that the `(st_dev, st_ino)` from `lstat` by name is the same as the fd's. If not (another process's `sweep()` removed it between 1 and 3), close the fd and start again from 1
 
-- `sweep()` and `sweep_base(path)` take the owner of a D in B to be dead when `flock(LOCK_EX | LOCK_NB)` on that D succeeds, and remove it (which B are covered is in [the SPEC's `sweep`](SPEC.md#sweep))
+- `sweep()` and `sweep_base(path)` take the owner of a D in B to be dead when `flock(LOCK_EX | LOCK_NB)` on that D succeeds, and remove it (which B are covered is in [the SPEC's `sweep`](SPEC.md#sweep)). They do not touch the E right under B (the default connect's), and leave a D containing something other than a symlink
 - Random names use 62 alphanumeric characters from the OS's secure random source. The names are made the same way in the 3 languages
 - D's name is not a counter, so that the spelling does not become the same when another process with the same PID and the same fd number appears after the process exits
 - While D lives it is protected by flock, and B and D are 0711, so the spelling does not later hit an unrelated file (procB cannot be followed after the process exits; a real-path spelling points to the same place until D is removed)

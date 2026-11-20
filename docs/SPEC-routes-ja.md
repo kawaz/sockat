@@ -19,12 +19,13 @@
 1. 置き場のパス (`Options.base` は親のパス) を realpath で実パスにする (macOS の `/tmp` → `/private/tmp` 等)。以後の確かめ・開く・綴るは、この実パスで行う
 2. ルートから親までの途中を全部確かめる: どれも、持ち主が root か自分で他人が書けない、か、sticky が立っている (OpenSSH の StrictModes と同じ考え。祖先が他人に書けると親ごと付け替えられる)。プロセスで最初の 1 回だけ
 3. 親を `O_DIRECTORY | O_NOFOLLOW` で開いて fd で掴み、`mkdirat(親の fd, 名前, 0700)` で作る
-4. 作った物を `O_NOFOLLOW` で開き、`fstat` で実ディレクトリ・持ち主が自分を確かめてから `fchmod` で 0711
+4. 作った物を `O_NOFOLLOW` で開き、`fstat` で実ディレクトリ・持ち主が自分を確かめてから `fchmod` で 0711。umask が持ち主の r か x を削って開けない時は、作った自分の空のディレクトリを消して次の置き場へ (`Options.base` はエラー)
 5. `EEXIST` なら、既にある物を同じく確かめる (実ディレクトリ・持ち主が自分・他人が書けない)。mode が 0711 でなくても使い、mode を変えない。外れたら、自動の置き場は `sockat-<uid>.<乱数 10 文字>` に落とし、`Options.base` はエラー
 
+- 「他人が書けない」は group も含む (`mode & 022 == 0`)
 - 途中のディレクトリが無い時、sockat は作らずにエラー (アプリの管理する場所の作り方はアプリが決める)
 - 名前は `sockat-<uid>` (`$XDG_RUNTIME_DIR` の下は `sockat`、ソケットのディレクトリの下は `.sockat.<乱数 10 文字>`)。`Options.base` は B そのもののパスで、その最後の要素が名前
-- `Options.base` のエラー: 途中のディレクトリが無い時は `ENOENT`、base がディレクトリでない時は `ENOTDIR`、持ち主・権限の確かめに外れた時は `EPERM`
+- `Options.base` のエラー: 相対パスの時と、最後がファイル名でない時 (`dir/`・`..`・`/`) は引数の誤り、途中のディレクトリが無い時は `ENOENT`、base がディレクトリでない時は `ENOTDIR`、持ち主・権限の確かめに外れた時は `EPERM`
 - `Options.base` の確かめ (途中と、既にあれば B 自身。何も作らない) は、長いパスでソケットのディレクトリを引いた後、経路を試す前に bind でも connect でも行う。外れたら `route` は無し、`skipped` は空。B を作るのは、B を使う経路に来た時だけ
 
 ### 実体の置き場
@@ -56,6 +57,7 @@ sockat が自分で判断する。上から順に、収まる物。
 | 実パス | B の実パス `…/B/D/…` | 収まる時 | B の置き場 (`tmp` / `runtime` / `tmpdir`。`Options.base` の B の時は `given`) | B までの途中と B 自身が全部 other に x を持てば別の uid も (`/tmp` の B)、そうでなければ同じ uid だけ (`/run/user/<uid>` と macOS の `$TMPDIR` は 0700) |
 
 - procB は実体の置き場がどこでも同じ形
+- `/proc` を使えるかは、`/proc/<pid>/fd/<B の fd>` を stat した `(st_dev, st_ino)` が、B の fd の `fstat` と同じ時だけ使えるとする (PID 名前空間と `/proc` の mount の食い違いに備える)
 - 診断の `base` は、B が一時の置き場 (`/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR`) の時は綴りの形 (procB は `proc`、実パスは置き場の名前)、一時の置き場でない B (ソケットのディレクトリ・`Options.base`) の時は綴りの形によらずその B (`sockdir`・`given`) を表す。綴りが procB か実パスかは `Spelling` の `until` で分かる
 - B をソケットのディレクトリに作った時は、実パスの綴りは元のパスより長くなるので、使えるのは procB の綴りだけ。`/proc` を使えない OS では resolve の綴りを使えず、thread-cwd / at へ
 - どの綴りも収まらなければ thread-cwd / at へ
@@ -65,7 +67,7 @@ sockat が自分で判断する。上から順に、収まる物。
 - `Options.usable_cross_uid` の時は、実体の置き場の順のうち、B までの途中のディレクトリと B 自身が全部 other に x (辿る権限) を持つ所だけを B に使い (その中で最初に作れた所。既にある B が 0700 なら満たさない)、procB の綴りは使わない (子が 0711 でも親が 0700 なら別の uid は辿れない。実測)
   - `/tmp` (1777) はいつも当たる
   - `$XDG_RUNTIME_DIR` (`/run/user/<uid>`) と macOS の `$TMPDIR` は 0700 なので外れる。`$TMPDIR` を辿れる場所に向けた環境なら当たる
-- 当たる所が無いか、その B の綴りが収まらなければ、満たさない綴りに落とさず thread-cwd / at (`Dangling`) に進む
+- 当たる所が無いか、その B の綴りが収まらなければ、満たさない綴りに落とさず thread-cwd / at (`Dangling`) に進む。その D は、`usable_cross_uid` を見ない普段の B (置き場 1〜4 の順) に作る
 - `Options.base` と一緒の時は、その base までの途中と base 自身が全部 other に x を持つかを確かめ、外れたら `EPERM` (自動の置き場に落とさない)
 - connect 系 (既定の connect、`connect_ex`、`resolve_for_connect`) は `usable_cross_uid` を見ない (connect の綴りは相手に残らない)。`Options.base` は connect 系でも B の置き場として使う
 - この B が普段の B と違う所になる時は、もう 1 つの B として使う (自動の置き場で 1 つのプロセスが複数の B を使うのはこの時だけ)
@@ -84,12 +86,12 @@ sockat が自分で判断する。上から順に、収まる物。
 
 D の作り方:
 
-1. B の fd を基準に、乱数の名前で `mkdirat` する。`EEXIST` なら名前を引き直し、16 回で打ち切る
-2. 作った D を `O_DIRECTORY | O_NOFOLLOW` で開き、`fstat` で実ディレクトリ・持ち主が自分を確かめる
+1. B の fd を基準に、乱数の名前で `mkdirat(B の fd, 名前, 0700)` する。`EEXIST` なら名前を引き直し、16 回で打ち切る
+2. 作った D を `O_DIRECTORY | O_NOFOLLOW` で開き、`fstat` で実ディレクトリ・持ち主が自分を確かめてから `fchmod` で 0711。umask が持ち主の r か x を削って開けない時は、作った自分の空のディレクトリを消して次の置き場へ
 3. その fd に flock (共有ロック) を掛けて持ち続ける。fd は close-on-exec
 4. 名前で `lstat` した `(st_dev, st_ino)` が fd と同じかを確かめる。違えば (1 と 3 の間に他のプロセスの `sweep()` が消した) fd を閉じて 1 から作り直す
 
-- `sweep()` と `sweep_base(path)` は、B の中の D に `flock(LOCK_EX | LOCK_NB)` が取れたら持ち主が死んだとみなして消す (対象の B は [SPEC の `sweep`](SPEC-ja.md#sweep))
+- `sweep()` と `sweep_base(path)` は、B の中の D に `flock(LOCK_EX | LOCK_NB)` が取れたら持ち主が死んだとみなして消す (対象の B は [SPEC の `sweep`](SPEC-ja.md#sweep))。B の直下の E (既定の connect の物) には触らず、symlink でない物がある D は残す
 - 乱数は英数 62 種の文字で、OS の安全な乱数から作る。名前の作り方は 3 言語でそろえる
 - D の名前をカウンタにしないのは、プロセスが終わった後に同じ PID・同じ fd 番号の別のプロセスが現れても綴りが同じにならないため
 - D が生きている間は flock で守られ、B と D が 0711 なので、綴りが後で無関係なファイルに当たらない (procB はプロセスが終われば辿れない、実パスの綴りは D が消えるまで同じ所を指す)

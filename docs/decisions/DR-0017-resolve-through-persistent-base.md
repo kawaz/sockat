@@ -93,8 +93,8 @@
 
 ### D の作り方
 
-1. B の fd を基準に、乱数の名前で `mkdirat` する。`EEXIST` なら名前を引き直し、16 回で打ち切る
-2. 作った D を `O_DIRECTORY | O_NOFOLLOW` で開き、`fstat` で実ディレクトリ・持ち主が自分を確かめる
+1. B の fd を基準に、乱数の名前で `mkdirat(B の fd, 名前, 0700)` する。`EEXIST` なら名前を引き直し、16 回で打ち切る
+2. 作った D を `O_DIRECTORY | O_NOFOLLOW` で開き、`fstat` で実ディレクトリ・持ち主が自分を確かめてから `fchmod` で 0711。umask が持ち主の r か x を削って開けない時は、作った自分の空のディレクトリを消して次の置き場へ (B の作り方の 4 も同じ)
 3. その fd に flock (共有ロック) を掛けて持ち続ける。fd は close-on-exec
 4. 名前で `lstat` した `(st_dev, st_ino)` が fd と同じかを確かめる。違えば (1 と 3 の間に他のプロセスの `sweep()` が消した) fd を閉じて 1 から作り直す
 
@@ -103,7 +103,8 @@
 - B の中の D に `flock(LOCK_EX | LOCK_NB)` が取れたら、持ち主が死んだとみなして消す
 - `sweep()` の対象は、置き場 1〜3 の既定の名前の B (`sockat-<uid>`・`sockat`)。あるものだけで、B を作らない
 - `sweep` に base を渡す形 (Rust は `sweep_base(path)`、名前は各言語の慣習) は、`Options.base` の B の中の死んだ D を消す。その B を管理するアプリが呼ぶ
-- 乱数の名前の B (`sockat-<uid>.<乱数>`) とソケットのディレクトリの B は対象にしない
+- 乱数の名前の B (`sockat-<uid>.<乱数>`) とソケットのディレクトリの B は対象にしない。この 2 つは OS の掃除でも消えないことがある (ソケットのディレクトリの B は利用者のディレクトリに残る)。SPEC の「置き場に残る物」に書き、各言語の README にも書く
+- B の直下の E (既定の connect の物) には触らない。symlink でない物がある D は残す
 
 ### B の作り方
 
@@ -112,11 +113,12 @@
 1. 置き場のパス (`Options.base` は親のパス) を realpath で実パスにする (macOS の `/tmp` → `/private/tmp` 等)。以後の確かめ・開く・綴るは、この実パスで行う
 2. ルートから親までの途中を全部確かめる: どれも、持ち主が root か自分で他人が書けない、か、sticky が立っている (OpenSSH の StrictModes と同じ考え。祖先が他人に書けると親ごと付け替えられる)。プロセスで最初の 1 回だけ
 3. 親を `O_DIRECTORY | O_NOFOLLOW` で開いて fd で掴み、`mkdirat(親の fd, 名前, 0700)` で作る
-4. 作った物を `O_NOFOLLOW` で開き、`fstat` で実ディレクトリ・持ち主が自分を確かめてから `fchmod` で 0711
+4. 作った物を `O_NOFOLLOW` で開き、`fstat` で実ディレクトリ・持ち主が自分を確かめてから `fchmod` で 0711。umask が持ち主の r か x を削って開けない時は、作った自分の空のディレクトリを消して次の置き場へ (`Options.base` はエラー)
 5. `EEXIST` なら、既にある物を同じく確かめる (実ディレクトリ・持ち主が自分・他人が書けない)。mode が 0711 でなくても使い、mode を変えない。外れたら、自動の置き場は `sockat-<uid>.<乱数 10 文字>` に落とし、`Options.base` はエラー
 
+- 「他人が書けない」は group も含む (`mode & 022 == 0`)
 - 途中のディレクトリが無い時、sockat は作らずにエラー (アプリの管理する場所の作り方はアプリが決める)
-- `Options.base` のエラーの種類: 途中のディレクトリが無い時は `ENOENT`、base がディレクトリでない時は `ENOTDIR`、持ち主・権限の確かめに外れた時は `EPERM`
+- `Options.base` のエラーの種類: 相対パスの時と、最後がファイル名でない時 (`dir/`・`..`・`/`) は引数の誤り、途中のディレクトリが無い時は `ENOENT`、base がディレクトリでない時は `ENOTDIR`、持ち主・権限の確かめに外れた時は `EPERM`
 
 ### 実体の置き場
 
@@ -149,6 +151,7 @@ sockat が自分で判断する。上から順に、収まる物。
 | 実パス | B の実パス `…/B/D/…` | 収まる時 | B の置き場 (`tmp` / `runtime` / `tmpdir`。`Options.base` の B の時は `given`) | B までの途中が全部 other に x を持てば別の uid も (`/tmp` の B)、そうでなければ同じ uid だけ (`/run/user/<uid>` と macOS の `$TMPDIR` は 0700) |
 
 - procB は実体の置き場がどこでも同じ形
+- `/proc` を使えるかは、`/proc/<pid>/fd/<B の fd>` を stat した `(st_dev, st_ino)` が、B の fd の `fstat` と同じ時だけ使えるとする (PID 名前空間と `/proc` の mount の食い違いに備える)
 - 診断の `base` は、B が一時の置き場 (`/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR`) の時は綴りの形 (procB は `proc`、実パスは置き場の名前) を、一時の置き場でない B (ソケットのディレクトリ・`Options.base`) の時は綴りの形によらずその B (`sockdir`・`given`) を表す。一時の置き場の procB は置き場によらず同じ綴りなので `proc` にまとめ、一時の置き場でない B は利用者のディレクトリやアプリの指定の場所に物ができたことを知らせる。綴りが procB か実パスかは `Spelling` の `until` で分かる
 - B をソケットのディレクトリに作った時は、実パスの綴りは元のパスより長くなるので、使えるのは procB の綴りだけ。`/proc` の無い OS では resolve の綴りを使えず、thread-cwd / at へ
 - どの綴りも収まらなければ thread-cwd / at へ
@@ -168,7 +171,7 @@ sockat が自分で判断する。上から順に、収まる物。
 - 利用者が `Options.usable_cross_uid` で「別の uid にも辿らせる」と指定した時は、実体の置き場の順のうち、B までの途中のディレクトリと B 自身が全部 other に x (辿る権限) を持つ所だけを B に使い (既にある B が 0700 なら満たさない) (その中で最初に作れた所)、procB の綴りは使わない (子が 0711 でも親が 0700 なら別の uid は辿れない。実測)
   - `/tmp` (1777) はいつも当たる
   - `$XDG_RUNTIME_DIR` (`/run/user/<uid>`) と macOS の `$TMPDIR` は 0700 なので外れる。`$TMPDIR` を辿れる場所に向けた環境なら当たる
-- 当たる所が無いか、その B の綴りが収まらなければ、満たさない綴りに落とさず thread-cwd / at (`Dangling`) に進む。満たせたかは結果の `Spelling` で分かる
+- 当たる所が無いか、その B の綴りが収まらなければ、満たさない綴りに落とさず thread-cwd / at (`Dangling`) に進む。満たせたかは結果の `Spelling` で分かる。その D は、`usable_cross_uid` を見ない普段の B (置き場 1〜4 の順) に作る
 - connect 系 (既定の connect、`connect_ex`、`resolve_for_connect`) は `usable_cross_uid` を見ない (connect の綴りは相手に残らない)
 - この B が普段の B と違う所になる時は、もう 1 つの B として使う (自動の置き場で 1 つのプロセスが複数の B を使うのはこの時だけ)
 - 相手の `/tmp` が隔離されている場合 (systemd の `PrivateTmp` 等) は選択肢にせず説明に書く (procB を先に試すので Linux ではまず起きない)。辿れるかは結果の `Spelling` の `usable_with_private_tmp` で分かる
@@ -273,7 +276,7 @@ pub enum Spelling {
         removable: bool,               // 綴りで unlink すると実体が消えるか (link-dir: true、link-file: false)
         until: Until,                  // Process (procB) / Cleanup (実パス)
         usable_cross_uid: bool,        // 別の uid の相手が辿れるか
-        usable_with_private_tmp: bool, // 自分と相手のどちらかが /tmp を隔離していても (systemd の PrivateTmp 等) 相手が辿れるか (B の置き場の realpath する前のパスと綴りの実パスのどちらかが /tmp・/var/tmp を通れば false。mount 名前空間が丸ごと違う相手 (コンテナ等) までは保証しない)
+        usable_with_private_tmp: bool, // 自分と相手のどちらかが /tmp を隔離していても (systemd の PrivateTmp 等) 相手が辿れるか (procB の綴りはいつも true。B の実パスの綴りは、B の置き場の realpath する前のパスと綴りの実パスのどちらかが /tmp・/var/tmp を通れば false。mount 名前空間が丸ごと違う相手 (コンテナ等) までは保証しない)
     },
     Dangling,     // 片付け済みの E を含む綴り。どこにも届かない (thread-cwd・at)
 }
@@ -281,6 +284,8 @@ pub enum Spelling {
 
 - `CwdRelative` は sockat が経路で失わせたものでなく標準が元から持つ危険だが、知らせる (kawaz 裁定 2026-11-19)
 - 「標準にそのまま渡したか」の bool は持たない (`spelling == Original` か `route == "standard"` で分かる)
+- `usable_with_private_tmp` の「/tmp・/var/tmp を通る」は、要素単位で `/tmp`・`/var/tmp` であるか、それらの realpath の下にあること。procB の綴りは `/tmp` を通らないのでいつも true
+- abstract の名前 (Linux / Android で先頭が NUL) の `Spelling` は `Original`
 
 ### 関数と引数 (RS-Q3、kawaz 裁定 2026-11-20: F1)
 
@@ -349,12 +354,14 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 - bind したソケットのファイルの realpath と `(st_dev, st_ino)` を覚え、そのパスの `(st_dev, st_ino)` が同じ時だけ消す
 - 置き換えの見分けは `(st_dev, st_ino)` だけで行い、約束するのは listener を開いている間の置き換えまで。閉じた後に消して作り直された物は、番号をすぐ使い回すファイルシステム (ext4、BSD の UFS / FFS) で見分けられない。`remove` は listener を閉じる前に呼ぶよう勧める (kawaz 裁定 2026-11-19。実測は [findings](../findings/2026-11-19-inode-reuse-after-close.md))
 - 相対パスの時は、パスを何も引く前と、bind と覚えるための realpath の両方の後でプロセスの cwd の `(st_dev, st_ino)` を比べ、違えば覚えられない時と同じに扱う (間の cwd の変更で、元の cwd の無関係なファイルを覚えて消さないため。sockat-go の指摘 2026-11-19)
+- `remove()` が失敗した時も `cleanup` まで行い、remove のエラーを返す
+- listener を閉じた時: 既定の bind (Go の `Listen`) は標準と同じにする。閉じる時に綴りで unlink する標準 (Go) では、link-dir の綴りは途中の E を辿って実体を消し (標準と同じ)、link-file の綴りは unlink が最後の symlink を辿らないので E 自体が消えてソケットのファイルは残る (標準と違う。README に書く)。`Dangling` の綴りは unlink させない (Go は `SetUnlinkOnClose(false)`)。`_ex` の bind は、どの綴りでも閉じた時に消さない。消すのは `SocketFile` の `remove()` だけ (綴りで消すと、置き換わったファイルを見分けずに消すため)
 
 | 言語 | 形 |
 |---|---|
 | Rust | `SocketFile` の `remove`。Drop では消さない |
 | Python | 戻り値に引数なしの関数を含める |
-| Go | 戻り値に `func() error` を含める。短いパスでも消すのはこれだけにする (`SetUnlinkOnClose(false)`) |
+| Go | `*SocketFile` の method `Remove()` / `Cleanup()`。`ListenEx` の listener は短いパスでも閉じた時に消さず、消すのはこれだけにする (`SetUnlinkOnClose(false)`) |
 
 ### `ForBind` の `SocketFile`
 
@@ -370,7 +377,7 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 |---|---|
 | `route` | 通った経路の名前 |
 | `base` | bind で使った B の綴り (`proc`・`sockdir`・`runtime`・`tmpdir`・`tmp`・`given`。`given` は `Options.base` の B で、procB でも実パスでも同じ。「綴りの形」)。綴りが B を通る時 (link-dir・link-file) だけ値を持ち、他 (standard・thread-cwd・at) は無し。`Connected`・`Report`・`ForConnect` には持たせない |
-| `skipped` | 試して使えなかった経路の並び (試した順)。各要素は `{ name: 経路の名前, reason: 使えなかった理由 }`。経路の名前ごとに 1 件 (link-dir を procB と実パスで試しても 1 件で、理由は最後の物)。`usable_cross_uid` で procB を使わないのは経路を飛ばすことではないので、何も足さない |
+| `skipped` | 試して使えなかった経路の並び (試した順)。各要素は `{ name: 経路の名前, reason: 使えなかった理由 }`。経路の名前ごとに 1 件 (link-dir を procB と実パスで試しても 1 件で、理由は最後の物)。`usable_cross_uid` で procB を使わないのは経路を飛ばすことではないので、何も足さない。入るのは、その呼び出しの順の表 (bind は OS で、connect は OS と `/proc` を使えるかで決まる行) に並ぶ経路だけ (`/proc` を使えない Linux の connect の行に proc-direct は無いので入れない) |
 
 - 成功した時、`route` より前に試した経路はすべて「使えなかった」もの (実際に bind / connect して失敗したら、そこでエラーを返して次を試さない。bind の link-file を実行時に見分ける時だけは次へ進む)。そのため「使えたか」の真偽値は持たない
 - `route`・`base`・`skipped` の名前と `reason` は診断用で、中身を約束しない。経路の名前は「手段 + 何についてか」(`link-dir`・`link-file`・`thread-cwd`・`thread-cwd-direct`・`at`・`at-direct`・`proc-direct`・`relative`・`widened`・`standard`。接尾辞 `-direct` は E を通さずファイル名で渡す形) で、日英で同じ ASCII
@@ -380,6 +387,7 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 ### DGRAM と SEQPACKET
 
 - この上に作る。DGRAM の API は std の `UnixDatagram` の形に合わせ、パスを取る関数と、それと組で使う `unbound` だけを写す (`datagram::bind(path)`、`unbound()`、`connect(&sock, path)`、`send_to(&sock, buf, path)`)。`pair` は写さない
+- Go の DGRAM の connect は `DialUnixgram(path)` (作成と connect を 1 回で。Go の標準の形)。bind したソケットを長いパスへ connect したい人は、resolve で綴りを作って標準に渡す
 - SEQPACKET は `seqpacket::` に stream と同じ操作を置く。返す型は未決
 - 細部は「未決」
 
@@ -501,5 +509,5 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 - [OS の一時ディレクトリの掃除の調査](../research/2026-11-20-tmp-cleaners-and-persistent-base.md)、[DGRAM / SEQPACKET の調査](../research/2026-11-19-datagram-and-seqpacket.md)
 - [ファイルを指す symlink を通した bind の実測](../findings/2026-11-19-bind-through-file-symlink.md)、[閉じたソケットのファイルの inode 番号の使い回し](../findings/2026-11-19-inode-reuse-after-close.md)
 - [届く範囲の表](../../pages/reach/README-ja.md)、[fork-cwd](../../pages/fork-cwd-ja.md)
-- 裁定: kawaz (2026-11-19: connect の順、thread-cwd・at、`remove` の約束の範囲、`CwdRelative`、link-file の責務外。2026-11-20: RS-Q1 = S1、RS-Q2 = fork をしない、RS-Q3 = F1、RS-Q4 = a、B と D。2026-11-21: B の作り方)。統括 (2026-11-21: B をプロセスごとに 1 つ、`usable_cross_uid` を満たせない時は thread-cwd / at、既定の connect は D を作らない、thread-cwd・at は D を基準にする、D と E の mode。同日の SPEC の書き直しで: `resolve_for_bind` の link-file は実測した OS だけ、`skipped` は名前ごとに 1 件、`base` を持つのは B を通る綴りだけ、`Options.base` は B そのもので複数の B を持ちうる、`Options.base` のエラーの種類、link-dir の E は realpath、D の作り方と `sweep()` の見分け方、`resolve_for_connect` の返す物、既定の connect の link-file は実パスの `B/E`、thread-cwd-direct の届く長さ、DGRAM の connect の順。診断の `base` の値 `given` (`Options.base` の B、綴りの形によらない)、link-dir・link-file で bind に失敗した時は E を消してからエラーを返す、`ForBind` は `remove` を持たず bind の後に `SocketFile` を受け取る口を持つ、置き場の realpath と `usable_with_private_tmp`、connect 系は `usable_cross_uid` を見ない、B・D・E の名前と乱数、既にある B の mode と `usable_cross_uid` の B 自身の x、空・相対パスの `$TMPDIR` / `$XDG_RUNTIME_DIR`、`ForConnect` は `base` を持たない、`sweep()` の対象と `sweep_base`、既定の connect が作った B をプロセスの B にする、D を作った後の `lstat` の確かめ、置き場 4 の B はディレクトリごと・収まらないと分かれば B を作らない)
+- 裁定: kawaz (2026-11-19: connect の順、thread-cwd・at、`remove` の約束の範囲、`CwdRelative`、link-file の責務外。2026-11-20: RS-Q1 = S1、RS-Q2 = fork をしない、RS-Q3 = F1、RS-Q4 = a、B と D。2026-11-21: B の作り方)。統括 (2026-11-21: B をプロセスごとに 1 つ、`usable_cross_uid` を満たせない時は thread-cwd / at、既定の connect は D を作らない、thread-cwd・at は D を基準にする、D と E の mode。同日の SPEC の書き直しで: `resolve_for_bind` の link-file は実測した OS だけ、`skipped` は名前ごとに 1 件、`base` を持つのは B を通る綴りだけ、`Options.base` は B そのもので複数の B を持ちうる、`Options.base` のエラーの種類、link-dir の E は realpath、D の作り方と `sweep()` の見分け方、`resolve_for_connect` の返す物、既定の connect の link-file は実パスの `B/E`、thread-cwd-direct の届く長さ、DGRAM の connect の順。診断の `base` の値 `given` (`Options.base` の B、綴りの形によらない)、link-dir・link-file で bind に失敗した時は E を消してからエラーを返す、`ForBind` は `remove` を持たず bind の後に `SocketFile` を受け取る口を持つ、置き場の realpath と `usable_with_private_tmp`、connect 系は `usable_cross_uid` を見ない、B・D・E の名前と乱数、既にある B の mode と `usable_cross_uid` の B 自身の x、空・相対パスの `$TMPDIR` / `$XDG_RUNTIME_DIR`、`ForConnect` は `base` を持たない、`sweep()` の対象と `sweep_base`、既定の connect が作った B をプロセスの B にする、D を作った後の `lstat` の確かめ、置き場 4 の B はディレクトリごと・収まらないと分かれば B を作らない。sockat-go の問いへの答えで: Go の DGRAM は `DialUnixgram`、Go の消す口は `*SocketFile` の `Remove()` / `Cleanup()`、listener を閉じた時の扱い (既定の bind は標準と同じ、`_ex` は消さない)、`skipped` は呼び出しの順の行に並ぶ経路だけ、`/proc` を使えるかの確かめ、D と B の作り方 (0700 → 確かめ → 0711、umask で開けなければ消して次へ)、procB の `usable_with_private_tmp` はいつも true、`usable_cross_uid` で thread-cwd・at に進む時の D の置き場、`sweep` の対象外の B が残ること、`Options.base` の相対パスと名前で終わらないパスは引数の誤り、`remove()` が失敗した時も `cleanup`、abstract の `Spelling`、「/tmp を通る」の定義、`sweep` が触らない物、「他人が書けない」は group も含む)
 - [DR-0003](DR-0003-single-connect-when-standard-never-blocks.md)、[DR-0004](DR-0004-standard-length-per-language.md)、[DR-0006](DR-0006-nul-is-invalid-at-any-length.md)
