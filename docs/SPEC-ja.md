@@ -389,7 +389,7 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 | ディレクトリが無い / connect 先が無い | `ENOENT` |
 | ディレクトリの位置にディレクトリでない物がある | `ENOTDIR` |
 | bind 先に既にファイルがある | `EADDRINUSE` |
-| 誰も listen していないソケットファイル | `ECONNREFUSED` |
+| 誰も listen していない / 誰も持たないソケットファイル | `ECONNREFUSED` (DGRAM の connect は illumos で `EDESTADDRREQ`。sockat-go の CI で実測 2026-11-22) |
 | backlog が満杯 | Linux はブロックしない connect で `EAGAIN` (ブロックする connect は待つ)、macOS は `ECONNREFUSED` |
 | どの経路も使えない (綴りが収まらない、手段が無い) | `ENAMETOOLONG` |
 | `resolve_for_bind` で、thread-cwd・at でしか届かない長さ | `ENAMETOOLONG` |
@@ -406,6 +406,7 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 - ディレクトリを先に引くので、`ENOENT` と `ENOTDIR` はどの OS でも長さの判定より前に決まる
 - `Options.base` のエラーでは自動の置き場に落とさない
 - OS のエラーは、その言語の作法で errno を取り出せる形で返す
+- OS が返すエラーは書き換えずに返すので、errno は OS で違いうる。試験は errno を決め打ちせず、同じ OS で標準が短いパスの同じ操作に返す errno と比べる
 - 「引数の誤り」「一般のエラー」をどの型で表すかは各実装が決める
 
 ## 各実装に求めること

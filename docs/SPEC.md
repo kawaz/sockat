@@ -389,7 +389,7 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 | the directory is missing / nothing to connect to | `ENOENT` |
 | something other than a directory where the directory should be | `ENOTDIR` |
 | a file already exists where bind would create one | `EADDRINUSE` |
-| a socket file nobody listens on | `ECONNREFUSED` |
+| a socket file nobody listens on / nobody holds | `ECONNREFUSED` (a DGRAM connect gets `EDESTADDRREQ` on illumos; measured in sockat-go's CI 2026-11-22) |
 | the backlog is full | Linux gives `EAGAIN` for a non-blocking connect (a blocking connect waits); macOS gives `ECONNREFUSED` |
 | no route can be used (the spelling does not fit, the means is missing) | `ENAMETOOLONG` |
 | `resolve_for_bind` at a length only thread-cwd / at reaches | `ENAMETOOLONG` |
@@ -406,6 +406,7 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 - The directory is looked up first, so `ENOENT` and `ENOTDIR` are decided before the length on every OS
 - An `Options.base` error does not fall back to the automatic bases
 - OS errors are returned in a form from which the errno can be read in that language's way
+- An error the OS returns is returned unchanged, so the errno can differ by OS. Tests do not hard-code the errno; they compare with the errno the standard returns for the same operation on a short path on the same OS
 - Which type represents "invalid argument" and "general error" is up to each implementation
 
 ## What each implementation must do
