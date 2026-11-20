@@ -100,12 +100,13 @@ D の作り方:
 3. その fd に flock (共有ロック) を掛けて持ち続ける。fd は close-on-exec
 4. 名前で `lstat` した `(st_dev, st_ino)` が fd と同じかを確かめる。違えば (1 と 3 の間に他のプロセスの `sweep()` が消した) fd を閉じて 1 から作り直す
 
-- `sweep()` と `sweep_base(path)` は、B の中の D に `flock(LOCK_EX | LOCK_NB)` が取れたら持ち主が死んだとみなして消す (対象の B は [SPEC の `sweep`](SPEC-ja.md#sweep))。B の直下の E (既定の connect の物) には触らず、symlink でない物がある D は残す
+- `sweep()` と `sweep_base(path)` は、B の中の D に `flock(LOCK_EX | LOCK_NB)` が取れたら持ち主が死んだとみなして消す (対象の B は [SPEC の `sweep`](SPEC-ja.md#sweep))。B の直下の E (既定の connect の物) には触らず、symlink でない物がある D は残す。対象は B の直下の、名前が D の形 (英数字 62 種の 10 文字) のディレクトリだけ (B は sockat 専用で、利用者は他の物を置かない)
 - 乱数は英数 62 種の文字で、OS の安全な乱数から作る。名前の作り方は 3 言語でそろえる
 - D の名前をカウンタにしないのは、プロセスが終わった後に同じ PID・同じ fd 番号の別のプロセスが現れても綴りが同じにならないため
 - D が生きている間は flock で守られ、B と D が 0711 なので、綴りが後で無関係なファイルに当たらない (procB はプロセスが終われば辿れない、実パスの綴りは D が消えるまで同じ所を指す)
 - systemd-tmpfiles (v242 以上) はロックの掛かったディレクトリを配下ごと掃除しない
 - 既定の connect は D を作らない (D と flock の fd がプロセスに残らないように)
+- E の片付け (既定の connect の E、bind が失敗した時の E、thread-cwd・at の E) が失敗した時は、呼び出しの成否も元のエラーも変えずに黙る (消す失敗を理由に成功した connect を失敗にしない)
 
 ## 経路
 
@@ -245,6 +246,7 @@ resolve の綴りが収まらない時の bind が使う。
 
 - 経路が実際に bind / connect して失敗したら (`ENOENT`、`EADDRINUSE`、`ECONNREFUSED` 等)、そのエラーを返し、次の経路を試さない
 - その時、その呼び出しで作った E は返す前に消す (link-dir・link-file・thread-cwd・at。既定の connect の link-file も)。D と B は残す
+- E を消すのに失敗しても、呼び出しの成否も元のエラーも変えずに黙る (成功した connect を失敗にしない。元のエラーを消す側のエラーに置き換えない)
 - 次へ進むのは、経路自体が使えない時だけ (各経路の節の「使えない時」)
   - 綴りが収まらない
   - B・D・E を作れない

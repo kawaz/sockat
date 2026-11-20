@@ -92,7 +92,7 @@ Shown with the Rust names.
 | Field | What it is |
 |---|---|
 | `usable_cross_uid: bool` | asks for a spelling that a peer of another uid can also follow. Only the bind side (`bind_ex`, `resolve_for_bind`) looks at it; the connect side (`connect_ex` etc., `resolve_for_connect`) does not (a connect's spelling does not stay with the peer). It affects how B is chosen and keeps procB from being used. When it cannot be met, thread-cwd / at is used ([Another uid and PrivateTmp](SPEC-routes.md#another-uid-and-privatetmp)). Whether it was met is told by the resulting `Spelling` |
-| `base: Option<Path>` | the user gives the path of B itself (an app passes a place it manages, e.g. `/tmp/app-<uid>/sockat`). B is created there; when the checks fail it is an error, and it does not fall back to the automatic bases ([Errors](#errors)). On the bind side together with `usable_cross_uid`, it is also checked that every directory on the way to that base and the base itself give x to other. The connect side also uses it as the base for B. Passing a different `base` per call makes one process hold several B. The spelling form is chosen in the same order as in the automatic case |
+| `base: Option<Path>` | the user gives the path of B itself (an app passes a place it manages, e.g. `/tmp/app-<uid>/sockat`). B is created there; when the checks fail it is an error, and it does not fall back to the automatic bases ([Errors](#errors)). On the bind side together with `usable_cross_uid`, it is also checked that every directory on the way to that base and the base itself give x to other. The connect side also uses it as the base for B. Passing a different `base` per call makes one process hold several B. The spelling form is chosen in the same order as in the automatic case. This B is sockat's own, and the user puts nothing else there (`sweep_base` covers only the directories named in the form of a D) |
 
 ### What is returned
 
@@ -210,6 +210,7 @@ Attributes of `Linked`:
 - It remembers the realpath and `(st_dev, st_ino)` of the bound socket file and removes it only when that path still has the same `(st_dev, st_ino)`
   - It remembers them right after the bind succeeds (before returning the listener). If they cannot be remembered, it closes the listener, cleans up the E it made, leaves the socket file, and returns an error (it does not hand back a `remove()` that cannot remove anything as a success; nothing could be checked, so removing could remove a replaced file)
   - For a relative path, compare the process's cwd `(st_dev, st_ino)` before anything about the path is looked up and after both the bind and the realpath taken for remembering; if they differ, treat it like the case where they cannot be remembered (so that a cwd change in between does not make it remember and remove an unrelated file under the old cwd. A change and change back is not seen)
+  - After the bind, when the last element of the original path is a symlink (on macOS and NetBSD the standard bind follows a last symlink and creates the socket at its target), it remembers the realpath and `(st_dev, st_ino)` of what it led to. When that is not a socket, it is treated like the case where they cannot be remembered (`bind_ex` closes the listener, cleans up the E and returns an error). So that `remove` does not remove the user's symlink
   - The path argument is turned into a string once at the entry, and that value is used for remembering, binding and returning alike
 - It succeeds when the file is already gone and when it has been replaced by another file and is left alone. It fails when the check cannot be made (`lstat` fails with something other than `ENOENT` / `ENOTDIR`) and when the removal itself fails
 - Even when it fails, it goes on to `cleanup`, and returns the error of removing the file
@@ -227,6 +228,7 @@ Attributes of `Linked`:
 At resolve time nothing is bound, so `ForBind` cannot remember the socket file's `(st_dev, st_ino)` and has no `remove()`. When the user calls `socket_file()` after binding on their own (the name follows each language's convention; in Rust `socket_file(&self) -> io::Result<SocketFile>`), it returns a `SocketFile`. Without that call there is nothing that removes the file.
 
 - At the call it follows the spelling and remembers the socket file's realpath and `(st_dev, st_ino)`. When it cannot follow it (before the bind, no file), it is an error. When what it reaches is not a socket (an unrelated file that was at the original path before the bind, etc.), it is an error
+- When the last element of the original path is a symlink (the standard bind follows it on macOS and NetBSD), it remembers the realpath and `(st_dev, st_ino)` of what it led to. When that is not a socket, it is an error. So that `remove` does not remove the user's symlink
 - The returned `SocketFile` works like the one of `Bound` ([`remove`](#remove)). Its `cleanup()` cleans up once the same E as `cleanup()` of `ForBind`
 - Call it after the bind and before closing the listener. A replacement between the bind and the call cannot be told apart
 - When the spelling is `CwdRelative`, the process cwd's `(st_dev, st_ino)` at resolve time and at the call are compared, and a difference is an error
@@ -262,6 +264,7 @@ The OS's temporary-directory cleaning ([research](research/2026-11-20-tmp-cleane
 - `sweep()` covers the B with the default names in bases 1 to 3 (`sockat-<uid>`, `sockat`). Only those that exist; it creates no B
 - `sweep_base(path)` (the name follows each language's convention) removes the dead D in the B passed as `Options.base`. The app that manages that B calls it. When B or its parent is missing, it does nothing and succeeds. The path is checked as for `Options.base` (a wrong form is an invalid argument; a symlink, someone else's, or a B or directory on the way writable by others is `EPERM`; not a directory is `ENOTDIR`)
 - `sweep()` silently skips the bases and B that fail the checks
+- It covers only the directories right under B whose name has the form of a D (10 characters of the 62 alphanumerics). B (including the B of `Options.base`) is sockat's own, and the user puts nothing else there
 - A B with a random name (fallen back to after the checks failed) and a B in the socket's directory are not covered
 - It does not touch the E right under B (the default connect's). A D containing something other than a symlink is left
 - It is never called automatically (resolve does not list B on each call)

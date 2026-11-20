@@ -100,12 +100,13 @@ Creating D:
 3. Put a flock (shared lock) on that fd and keep holding it. The fd is close-on-exec
 4. Check that the `(st_dev, st_ino)` from `lstat` by name is the same as the fd's. If not (another process's `sweep()` removed it between 1 and 3), close the fd and start again from 1
 
-- `sweep()` and `sweep_base(path)` take the owner of a D in B to be dead when `flock(LOCK_EX | LOCK_NB)` on that D succeeds, and remove it (which B are covered is in [the SPEC's `sweep`](SPEC.md#sweep)). They do not touch the E right under B (the default connect's), and leave a D containing something other than a symlink
+- `sweep()` and `sweep_base(path)` take the owner of a D in B to be dead when `flock(LOCK_EX | LOCK_NB)` on that D succeeds, and remove it (which B are covered is in [the SPEC's `sweep`](SPEC.md#sweep)). They do not touch the E right under B (the default connect's), and leave a D containing something other than a symlink. They cover only the directories right under B named in the form of a D (10 characters of the 62 alphanumerics); B is sockat's own, and the user puts nothing else there
 - Random names use 62 alphanumeric characters from the OS's secure random source. The names are made the same way in the 3 languages
 - D's name is not a counter, so that the spelling does not become the same when another process with the same PID and the same fd number appears after the process exits
 - While D lives it is protected by flock, and B and D are 0711, so the spelling does not later hit an unrelated file (procB cannot be followed after the process exits; a real-path spelling points to the same place until D is removed)
 - systemd-tmpfiles (v242 or later) does not clean a directory holding a lock, nor anything under it
 - The default connect creates no D (so that D and the flock's fd do not stay in the process)
+- When cleaning up an E fails (the default connect's E, the E of a failed bind, the E of thread-cwd and at), it stays silent and changes neither the result of the call nor the original error (a failure to remove does not turn a successful connect into a failure)
 
 ## Routes
 
@@ -245,6 +246,7 @@ Used by [relative](#relative).
 
 - When a route actually binds / connects and fails (`ENOENT`, `EADDRINUSE`, `ECONNREFUSED`, etc.), that error is returned and the next route is not tried
 - Then the E made in that call is removed before returning (link-dir, link-file, thread-cwd, at; and the default connect's link-file). D and B are kept
+- When removing the E fails, it stays silent and changes neither the result of the call nor the original error (a successful connect is not turned into a failure; the original error is not replaced by the removal's)
 - It goes on to the next only when the route itself is unusable (each route's "unusable when")
   - the spelling does not fit
   - B / D / E cannot be created

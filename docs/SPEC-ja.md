@@ -92,7 +92,7 @@ Rust の名前で示す。
 | 項目 | 中身 |
 |---|---|
 | `usable_cross_uid: bool` | 別の uid の相手も辿れる綴りを求める。bind 系 (`bind_ex`・`resolve_for_bind`) だけが見て、connect 系 (`connect_ex` 等・`resolve_for_connect`) は見ない (connect の綴りは相手に残らない)。B の選び方と、procB を使わないことに効く。満たせなければ thread-cwd / at に進む ([別の uid と PrivateTmp](SPEC-routes-ja.md#別の-uid-と-privatetmp))。満たせたかは結果の `Spelling` で分かる |
-| `base: Option<Path>` | B そのもののパスを利用者が指定する (アプリが自分の管理する場所を渡す。例 `/tmp/app-<uid>/sockat`)。そこに B を作り、確かめて外れたらエラーで、自動の置き場に落とさない ([エラー](#エラー))。`usable_cross_uid` と一緒の bind 系では、その base までの途中と base 自身が全部 other に x を持つかも確かめる。connect 系でも B の置き場として使う。呼び出しごとに違う `base` を渡せば、1 つのプロセスが複数の B を持つ。綴りの形は自動の時と同じ順で選ぶ |
+| `base: Option<Path>` | B そのもののパスを利用者が指定する (アプリが自分の管理する場所を渡す。例 `/tmp/app-<uid>/sockat`)。そこに B を作り、確かめて外れたらエラーで、自動の置き場に落とさない ([エラー](#エラー))。`usable_cross_uid` と一緒の bind 系では、その base までの途中と base 自身が全部 other に x を持つかも確かめる。connect 系でも B の置き場として使う。呼び出しごとに違う `base` を渡せば、1 つのプロセスが複数の B を持つ。綴りの形は自動の時と同じ順で選ぶ。この B は sockat 専用で、利用者は他の物を置かない (`sweep_base` は D の形の名前のディレクトリだけを対象にする) |
 
 ### 返す物
 
@@ -210,6 +210,7 @@ pub enum Spelling {
 - bind したソケットのファイルの realpath と `(st_dev, st_ino)` を覚え、そのパスの `(st_dev, st_ino)` が同じ時だけ消す
   - 覚えるのは bind が通った直後 (listener を返す前)。覚えられなければ listener を閉じ、作った E を片付け、ソケットのファイルは消さずにエラーを返す (消せない `remove()` を成功に見せない。確かめられなかったので消すと置き換わった物を消しうる)
   - 相対パスの時は、パスを何も引く前と、bind と覚えるための realpath の両方の後でプロセスの cwd の `(st_dev, st_ino)` を比べ、違えば覚えられない時と同じに扱う (間の cwd の変更で、元の cwd の無関係なファイルを覚えて消さないため。変えて戻した場合は見えない)
+  - bind の後、元のパスの最後の要素が symlink なら (macOS・NetBSD では標準の bind が最後の symlink を辿り、その先にソケットを作る)、辿った先の実パスと `(st_dev, st_ino)` を覚える。辿った先がソケットでなければ覚えられない時と同じに扱う (`bind_ex` は listener を閉じ E を片付けてエラー)。`remove` が利用者の symlink を消さないため
   - 引数のパスは入口で一度だけ文字列にし、覚える・bind する・返すのすべてにその値を使う
 - ファイルが既に無い時と、別のファイルに置き換わっていて消さない時も成功を返す。失敗を返すのは、確かめられない時 (`lstat` が `ENOENT` / `ENOTDIR` 以外で失敗) と、消そうとして失敗した時
 - 失敗した時も `cleanup` まで行い、ファイルを消す側のエラーを返す
@@ -227,6 +228,7 @@ pub enum Spelling {
 resolve の時点では bind していないので、`ForBind` はソケットのファイルの `(st_dev, st_ino)` を覚えられず、`remove()` を持たない。利用者が自分で bind した後に `socket_file()` (名前は各言語の慣習。Rust は `socket_file(&self) -> io::Result<SocketFile>`) を呼ぶと、`SocketFile` を返す。呼ばなければ消す口は無い。
 
 - 呼んだ時点で綴りを辿り、ソケットのファイルの realpath と `(st_dev, st_ino)` を覚える。辿れなければ (bind する前、ファイルが無い) エラー。辿った先がソケットでなければ (bind する前に元のパスにあった無関係なファイル等) エラー
+- 元のパスの最後の要素が symlink なら (macOS・NetBSD では標準の bind が辿る)、辿った先の実パスと `(st_dev, st_ino)` を覚える。辿った先がソケットでなければエラー。`remove` が利用者の symlink を消さないため
 - 返す `SocketFile` は `Bound` の物と同じ働き ([`remove`](#remove))。`cleanup()` は `ForBind` の `cleanup()` と同じ E を 1 回だけ片付ける
 - 呼ぶのは bind の後・listener を閉じる前。bind から呼ぶまでの間の置き換えは見分けられない
 - 綴りが `CwdRelative` の時は、resolve の時と呼んだ時でプロセスの cwd の `(st_dev, st_ino)` を比べ、違えばエラー
@@ -262,6 +264,7 @@ OS の一時ディレクトリの掃除 ([research](research/2026-11-20-tmp-clea
 - `sweep()` の対象は、置き場 1〜3 の既定の名前の B (`sockat-<uid>`・`sockat`)。あるものだけで、B を作らない
 - `sweep_base(path)` (名前は各言語の慣習) は、`Options.base` に渡した B の中の死んだ D を消す。その B を管理するアプリが呼ぶ。B か親が無ければ何もせず成功。path の確かめは `Options.base` と同じ (形の誤りは引数の誤り、symlink・他人の物・他人が書ける B や途中は `EPERM`、ディレクトリでなければ `ENOTDIR`)
 - `sweep()` は、確かめに外れた置き場・B を黙って飛ばす
+- 対象にするのは、B の直下の、名前が D の形 (英数字 62 種の 10 文字) のディレクトリだけ。B (`Options.base` の B も) は sockat 専用で、利用者は他の物を置かない
 - 乱数の名前の B (確かめに外れて落とした B) とソケットのディレクトリの B は対象にしない
 - B の直下の E (既定の connect の物) には触らない。symlink でない物がある D は残す
 - 自動では呼ばない (resolve のたびに B の中を一覧しない)
