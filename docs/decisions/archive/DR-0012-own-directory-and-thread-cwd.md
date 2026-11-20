@@ -1,6 +1,6 @@
 # DR-0012: 長いパスは自分専用のディレクトリ D を fd で掴み、その中の乱数の symlink R を通して bind / connect する
 
-- Status: Active
+- Status: Superseded by DR-0017
 - Date: 2026-11-19
 
 ## Context
@@ -117,6 +117,6 @@ connect は、書き込みもスレッドも要らない経路を先に、D を�
 
 ## 関連
 
-- [docs/SPEC-ja.md](../SPEC-ja.md) の「長いパスの経路と試す順番」「どこから届かなくなるか」「長いパスで標準と違う点」「実装が確かめる試験の観点」
+- [docs/SPEC-ja.md](../../SPEC-ja.md) の「長いパスの経路と試す順番」「どこから届かなくなるか」「長いパスで標準と違う点」「実装が確かめる試験の観点」
 - 裁定: kawaz (2026-11-19)
 - [DR-0015](DR-0015-ex-with-last-resort-and-diagnostics.md)、[DR-0010](DR-0010-fork-bind-listen-by-parent.md)

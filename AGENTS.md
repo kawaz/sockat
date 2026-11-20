@@ -6,8 +6,7 @@ sockat は、`sun_path` の上限を超えるパスでも Unix domain socket を
 
 - [docs/SPEC-ja.md](docs/SPEC-ja.md) — 言語によらない仕様の正本
 - [docs/decisions/DR-0001](docs/decisions/DR-0001-hub-and-per-language-repos.md) — リポの分け方と、仕様をここに置く理由
-- [docs/decisions/DR-0012](docs/decisions/DR-0012-own-directory-and-thread-cwd.md) — 長いパスの経路の判断と却下した案
-- [docs/decisions/DR-0015](docs/decisions/DR-0015-ex-with-last-resort-and-diagnostics.md) — 公開 API の形 (`_ex`、最終手段、`losses`・`route`・`skipped`、`discard()`)
+- [docs/decisions/DR-0017](docs/decisions/DR-0017-resolve-through-persistent-base.md) — 長いパスの経路と公開 API の形 (resolve、置き場 B・D・E、`_ex` と `Options`、`Spelling`、`route`・`skipped`) の判断と却下した案
 
 ## 構成
 

@@ -1,6 +1,6 @@
 # DR-0015: any 系を作らず、既定の操作ごとに後始末・診断つきの `_ex` を置き、最終手段を使うかを引数 1 つで選ぶ
 
-- Status: Active
+- Status: Superseded by DR-0017
 - Date: 2026-11-19
 
 ## Context
@@ -39,7 +39,7 @@
 | `bind_ex` | 既定の bind の順が全部使えない時に symlink-dir (置き場のソケットのディレクトリを指す symlink) |
 
 - bind の fork-cwd は今まで通り既定の経路で、最終手段ではない
-- Apple の OS の広げた sockaddr の bind は最終手段に入れない ([iOS 等で長いパスを bind する経路の issue](../issue/2026-11-19-ios-long-path-bind.md) に残してある)
+- Apple の OS の広げた sockaddr の bind は最終手段に入れない ([iOS 等で長いパスを bind する経路の issue](../../issue/2026-11-19-ios-long-path-bind.md) に残してある)
 
 ### `bind_ex` の symlink-dir
 
@@ -85,7 +85,7 @@
 
 - `discard` の確かめ方・成功と失敗の条件は SPEC の「公開する操作」
 - 相対パスの時は、パスを何も引く前と、bind と覚えるための realpath の両方の後でプロセスの cwd の `(st_dev, st_ino)` を比べ、違えば覚えられない時と同じに扱う (間の cwd の変更で、元の cwd の無関係なファイルを覚えて消さないため。sockat-go の指摘 2026-11-19。入口で絶対パスにする案は、短い相対パスが標準と違う経路に回り振る舞いが変わるので採らない)
-- 置き換えの見分けは `(st_dev, st_ino)` だけで行い、約束するのは listener を開いている間の置き換えまで。閉じた後に消して作り直された物は、番号をすぐ使い回すファイルシステム (ext4、BSD の UFS / FFS) で見分けられない。`discard()` は listener を閉じる前に呼ぶよう勧める (kawaz 裁定 2026-11-19。実測は [findings](../findings/2026-11-19-inode-reuse-after-close.md))
+- 置き換えの見分けは `(st_dev, st_ino)` だけで行い、約束するのは listener を開いている間の置き換えまで。閉じた後に消して作り直された物は、番号をすぐ使い回すファイルシステム (ext4、BSD の UFS / FFS) で見分けられない。`discard()` は listener を閉じる前に呼ぶよう勧める (kawaz 裁定 2026-11-19。実測は [findings](../../findings/2026-11-19-inode-reuse-after-close.md))
 
 ### 失敗した時
 

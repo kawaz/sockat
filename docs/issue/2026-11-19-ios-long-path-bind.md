@@ -28,5 +28,4 @@ kawaz が iOS で何かする機会ができた時に、実機で確かめて決
 
 ## 関連
 
-- [DR-0012](../decisions/DR-0012-own-directory-and-thread-cwd.md) の案 D (広げた sockaddr の bind を不採用にした理由)
-- [DR-0015](../decisions/DR-0015-ex-with-last-resort-and-diagnostics.md) (失うものの名前、最終手段)
+- [DR-0017](../decisions/DR-0017-resolve-through-persistent-base.md) (広げた sockaddr の bind を不採用にした理由、綴りの性質 `Spelling`、最終手段を置かない判断)

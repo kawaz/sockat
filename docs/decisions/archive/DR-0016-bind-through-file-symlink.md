@@ -1,13 +1,13 @@
 # DR-0016: bind が symlink を辿る OS では、ソケットのファイルを指す symlink を通して bind する (symlink-file)。経路の名前を「手段 + 何についてか」にそろえる
 
-- Status: Active
+- Status: Superseded by DR-0017
 - Date: 2026-11-19
 
 ## Context
 
 - 今の bind は綴りに `R/<ファイル名>` を含むので、ファイル名の上限がある (Apple の OS / BSD 92、Linux / illumos 96) ([DR-0012](DR-0012-own-directory-and-thread-cwd.md))
 - 短い置き場に、まだ無い元のパスを指す symlink を作り、その symlink に bind すると、bind が最後の要素の symlink を辿る OS では元のパスにソケットができる (kawaz の案)。綴りにファイル名が出ないので、ファイル名の上限が無くなる
-- 実測 (2026-11-19、macOS 26 と Linux の docker。[findings](../findings/2026-11-19-bind-through-file-symlink.md))
+- 実測 (2026-11-19、macOS 26 と Linux の docker。[findings](../../findings/2026-11-19-bind-through-file-symlink.md))
 
 | 場面 | macOS | Linux (docker) |
 |---|---|---|
@@ -16,7 +16,7 @@
 | 元のパスに既に物がある (通常ファイル、生きたソケット、古いソケットのファイル) | `EADDRINUSE`。元の物はそのまま | `EADDRINUSE` (先が無い時と同じエラー)。元の物はそのまま |
 | ソケットの fd の `fstat` と元のパスの `lstat` の `(st_dev, st_ino)` | 一致しない (`st_dev` が -1) | 該当なし |
 
-- FreeBSD 15.1・NetBSD 11.1・OpenBSD 8.0・illumos (OmniOS r151060) は sockat-py の CI の VM で実測 (2026-11-19)。辿るのは NetBSD だけで、他は辿らない ([findings](../findings/2026-11-19-bind-through-file-symlink.md))
+- FreeBSD 15.1・NetBSD 11.1・OpenBSD 8.0・illumos (OmniOS r151060) は sockat-py の CI の VM で実測 (2026-11-19)。辿るのは NetBSD だけで、他は辿らない ([findings](../../findings/2026-11-19-bind-through-file-symlink.md))
 - 経路の名前の `symlink` は、connect (ソケットのファイルを指す symlink) と `bind_ex` の最終手段 (ソケットのディレクトリを指す symlink) の別の経路を同じ名前で呼んでいた。bind にファイルを指す symlink の経路を足すと、bind にも 2 つが並ぶ。1.0.0 の前なので名前を変えられる
 
 ## Decision
@@ -57,7 +57,7 @@
 - 案 A: bind の後に元のパスを `lstat` して、ソケットが元のパスにできたかを確かめる
   - 不採用理由: 元のパスの最後の要素に bind の前から置かれていた symlink を辿るのは標準の bind の性質で、sockat の責務外 (kawaz 2026-11-19)
 - 案 B: bind したソケットの fd の `fstat` と元のパスの `lstat` の `(st_dev, st_ino)` を照らし合わせて確かめる
-  - 不採用理由: ソケットの fd の `fstat` はソケットのファイルの inode を返さない (macOS で `st_dev` が -1、inode も一致しない。[findings](../findings/2026-11-19-bind-through-file-symlink.md) で実測)
+  - 不採用理由: ソケットの fd の `fstat` はソケットのファイルの inode を返さない (macOS で `st_dev` が -1、inode も一致しない。[findings](../../findings/2026-11-19-bind-through-file-symlink.md) で実測)
 
 ## Consequences
 
@@ -68,7 +68,7 @@
 
 ## 関連
 
-- [docs/SPEC-ja.md](../SPEC-ja.md) の「経路の名前」「試す順番」「symlink-file」「symlink-dir」「symlink の置き場と名前」「どこから届かなくなるか」「実装が確かめる試験の観点」
-- [ファイルを指す symlink を通した bind の issue](../issue/archive/2026-11-19-bind-through-file-symlink.md)、[実測](../findings/2026-11-19-bind-through-file-symlink.md)
+- [docs/SPEC-ja.md](../../SPEC-ja.md) の「経路の名前」「試す順番」「symlink-file」「symlink-dir」「symlink の置き場と名前」「どこから届かなくなるか」「実装が確かめる試験の観点」
+- [ファイルを指す symlink を通した bind の issue](../../issue/archive/2026-11-19-bind-through-file-symlink.md)、[実測](../../findings/2026-11-19-bind-through-file-symlink.md)
 - 裁定: kawaz (2026-11-19。経路の名前の変更、bind に symlink-file を足す)
 - [DR-0012](DR-0012-own-directory-and-thread-cwd.md)、[DR-0015](DR-0015-ex-with-last-resort-and-diagnostics.md)

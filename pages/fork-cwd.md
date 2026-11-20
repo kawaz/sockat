@@ -5,7 +5,7 @@
 sockat does not use this technique (kawaz's ruling, 2026-11-20). The side effects of fork (fd copies, `SIGCHLD`, `waitpid(-1)`, `pthread_atfork`, the pid the peer sees on connect) reach the whole process rather than the library that was called, and most users do not want them. This document is for users who fork in their own application where sockat does not reach: the technique, its side effects, and where it reaches.
 
 - Where sockat reaches: [reach](reach/README.md) (the "With fork-cwd" column links to the sections of this document)
-- Decisions: [DR-0010](../docs/decisions/DR-0010-fork-bind-listen-by-parent.md) (the parent listens), [DR-0012](../docs/decisions/DR-0012-own-directory-and-thread-cwd.md) (D and R), "the last resort and fork" in the [issue](../docs/issue/2026-11-20-resolve-and-persistent-base.md) (all Japanese)
+- Decisions: [DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md) (not forking, why a bind spelling contains a random name), "the last resort and fork" in the [issue](../docs/issue/2026-11-20-resolve-and-persistent-base.md) (all Japanese)
 
 ## Technique
 
@@ -19,8 +19,8 @@ What does not fit `sun_path` is the path string, not the directory's depth. Movi
 | 4. The parent | `waitpid`s for that pid only, cleans up R and D, then `listen`s | `waitpid`s for that pid only |
 
 - The child and the parent share the same socket (fork copies the fd, but it refers to one socket). What the child binds / connects stays on the parent's socket
-- For a bind, the parent always listens. If the child listens, the server peer a client sees is the dead child (measured 2026-11-18 on macOS and Linux; [DR-0010](../docs/decisions/DR-0010-fork-bind-listen-by-parent.md), Japanese)
-- The bind spelling goes through R because the spelling the kernel keeps and returns from `getsockname` is relative to the cwd, and resolved later from another cwd it would hit an unrelated file of the same name ([DR-0012](../docs/decisions/DR-0012-own-directory-and-thread-cwd.md), Japanese). Once R is cleaned up, the spelling hits nothing. A connect's spelling is left nowhere on the peer, so it needs no R
+- For a bind, the parent always listens. If the child listens, the server peer a client sees is the dead child (measured 2026-11-18 on macOS and Linux; [DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md), Japanese)
+- The bind spelling goes through R because the spelling the kernel keeps and returns from `getsockname` is relative to the cwd, and resolved later from another cwd it would hit an unrelated file of the same name ([DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md), Japanese). Once R is cleaned up, the spelling hits nothing. A connect's spelling is left nowhere on the peer, so it needs no R
 - If `waitpid` fails with `ECHILD` (someone else reaped the status), read the result from the socket: for a bind whether `getsockname` holds a path, for a connect whether `getpeername` succeeds
 
 File name reached (bytes):
@@ -38,7 +38,7 @@ File name reached (bytes):
 | not visible to the peer (bind and connect) | until it exits, the child holds copies of every fd. A socket or pipe another thread closes meanwhile stays open, delaying the EOF the peer sees<br>the parent gets `SIGCHLD`<br>`pthread_atfork` handlers run<br>monitoring tools (process lists, audit) see a short-lived child<br>another thread's `waitpid(-1)` or `SIGCHLD` handler may reap the child and mix up the result |
 | large processes | fork copies the page tables, so it takes longer for a process with a large virtual memory (not measured)<br>with Linux's `vm.overcommit_memory=2` (strict), fork can fail with `ENOMEM` when the child's commit cannot be reserved. Even with the default `0`, it can be refused when a lot of memory is in use (not verified) |
 
-- A bind has no side effect visible to the peer. The child only binds and the parent listens, so the server's peer information a client sees (macOS's `LOCAL_PEERPID` / `LOCAL_PEEREPID` / audit token, Linux's `SO_PEERCRED` / `SO_PEERPIDFD`) is the parent's from before any send (measured 2026-11-18; [DR-0010](../docs/decisions/DR-0010-fork-bind-listen-by-parent.md), Japanese)
+- A bind has no side effect visible to the peer. The child only binds and the parent listens, so the server's peer information a client sees (macOS's `LOCAL_PEERPID` / `LOCAL_PEEREPID` / audit token, Linux's `SO_PEERCRED` / `SO_PEERPIDFD`) is the parent's from before any send (measured 2026-11-18; [DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md), Japanese)
 - On connect the peer pid is the child's, so a forked connect cannot be used when the server authorizes or logs by the peer's pid
 
 ## Doing it in your own application

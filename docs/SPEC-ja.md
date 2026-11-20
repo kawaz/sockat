@@ -33,38 +33,38 @@
 | 同 (ブロックしない) | `connect_nonblocking_ex` | `sockat.ex.connect_nonblocking` | なし (`DialEx` が待たない) | 最終手段を使う時だけ試す | しない | 同上 (stream は非ブロッキング) |
 
 - 他の言語はその言語の命名の慣習に合わせる。振る舞いは上の表に従う
-- Python の `_ex` は子モジュール `sockat.ex` の `bind` / `connect` / `connect_nonblocking` で、最終手段を使うかは引数 `last_resort` で選ぶ (標準の `socket.connect_ex` と紛れるため。[DR-0015](decisions/DR-0015-ex-with-last-resort-and-diagnostics.md))
+- Python の `_ex` は子モジュール `sockat.ex` の `bind` / `connect` / `connect_nonblocking` で、最終手段を使うかは引数 `last_resort` で選ぶ (標準の `socket.connect_ex` と紛れるため。[DR-0017](decisions/DR-0017-resolve-through-persistent-base.md))
 - Go の `Dial` / `DialEx` は標準の `net.DialUnix` と同じく元から待たない (backlog が満杯なら Linux は即 `EAGAIN`、macOS は `ECONNREFUSED`)。[DR-0003](decisions/DR-0003-single-connect-when-standard-never-blocks.md) に当たり、ブロックしない connect を分けない
 - 戻り値の listener / stream は標準が返すのと同じ型。標準の代わりに置き換えるだけで使える
-- `_ex` (`bind_ex`、`connect_ex`、`connect_nonblocking_ex`) は既定の操作ごとに 1 つずつ置く。`connect_ex` と `connect_nonblocking_ex` をまとめて `connect_ex` 系と呼ぶ ([DR-0015](decisions/DR-0015-ex-with-last-resort-and-diagnostics.md))
+- `_ex` (`bind_ex`、`connect_ex`、`connect_nonblocking_ex`) は既定の操作ごとに 1 つずつ置く。`connect_ex` と `connect_nonblocking_ex` をまとめて `connect_ex` 系と呼ぶ ([DR-0017](decisions/DR-0017-resolve-through-persistent-base.md))
 - 既定の操作 (`bind`、`connect`、`connect_nonblocking`) は最終手段を使わず、診断も返さない
-- `bind_ex` は、bind したソケットのファイルの realpath と `(st_dev, st_ino)` を覚え、`discard()` でそのパスの `(st_dev, st_ino)` が同じ時だけファイルを消す。`discard()` は listener を閉じない (閉じるのは利用者) ([DR-0015](decisions/DR-0015-ex-with-last-resort-and-diagnostics.md))
+- `bind_ex` は、bind したソケットのファイルの realpath と `(st_dev, st_ino)` を覚え、`discard()` でそのパスの `(st_dev, st_ino)` が同じ時だけファイルを消す。`discard()` は listener を閉じない (閉じるのは利用者) ([DR-0017](decisions/DR-0017-resolve-through-persistent-base.md))
   - 覚えるのは bind が通った直後 (経路の中で、listener を返す前)。覚えられなければ listener を閉じ、ファイルは消さずにエラーを返す (消せない `discard()` を成功に見せない)
   - 相対パスの時は、パスを何も引く前と、bind と覚えるための realpath の両方の後でプロセスの cwd の `(st_dev, st_ino)` を比べ、違えば覚えられない時と同じに扱う (他のスレッドが間に cwd を変えると、bind は新しい cwd の下に、覚えるのは元の cwd の下になり、元の cwd の同じ名前の無関係なファイルを覚えて `discard()` が消しうるため。変えて戻した場合は見えない)
   - 引数のパスは入口で一度だけ文字列にし、覚える・bind する・返すのすべてにその値を使う (呼ぶたびに違う値を返しうるパスの型で、覚えた物と bind した物を食い違わせない)
   - `discard()` は、ファイルが既に無い時と別のファイルに置き換わっていて消さない時も成功を返す。失敗を返すのは、確かめられない時 (`lstat` が `ENOENT` / `ENOTDIR` 以外で失敗) と消そうとして失敗した時 (消せたか分からないのを成功に見せない)
   - 置き換えを見分けられるのは、listener が開いている間に置き換えられた時 (開いている間はカーネルがソケットのファイルを掴み続け、番号が使い回されない)。listener を閉じた後に消して作り直された物は、番号をすぐ使い回すファイルシステム (ext4、BSD の UFS / FFS) では同じ `(st_dev, st_ino)` になり、`discard()` が消しうる (元のパスで消すのと同じ)。各言語の説明で、`discard()` は listener を閉じる前に呼ぶよう勧める ([findings](findings/2026-11-19-inode-reuse-after-close.md))
   - 確かめてから消すまでと、bind してから覚えるまでの間に、ソケットのディレクトリに書ける者がファイルをすり替えるのは防げない (inode を指定して消す手段が POSIX に無い)
-- `_ex` の引数で選べるのは「最終手段を使うか」の 1 つだけ。既定は使わない。経路を自由に組み合わせる口は作らない ([DR-0015](decisions/DR-0015-ex-with-last-resort-and-diagnostics.md))。最終手段を使わない `_ex` は、既定の操作と同じ経路を同じ順に試す
+- `_ex` の引数で選べるのは「最終手段を使うか」の 1 つだけ。既定は使わない。経路を自由に組み合わせる口は作らない ([DR-0017](decisions/DR-0017-resolve-through-persistent-base.md))。最終手段を使わない `_ex` は、既定の操作と同じ経路を同じ順に試す
 - 最終手段は、既定の経路が全部使えない時に、何かを失ってでも届かせる。pid は返さない
   - `bind_ex`: 既定の bind の順 (「[試す順番](#試す順番)」) が全部使えない時に、[symlink-dir](#symlink-dir) (持ち主だけが書ける置き場を先に、無ければ共有の置き場)
   - `connect_ex` 系: 既定の connect の順 (「[connect の順](#connect-の順)」) が全部使えない時に、[fork-cwd-direct](#fork-cwd-direct)。fork の経路を作れる言語だけ。作れない言語は fork-cwd-direct を `skipped` に理由付きで入れて次へ進む
   - bind の [fork-cwd](#fork-cwd) と [symlink-file](#symlink-file) は既定の経路で、最終手段ではない
-- `_ex` は成功した時に次の 3 つを返す ([DR-0015](decisions/DR-0015-ex-with-last-resort-and-diagnostics.md))
+- `_ex` は成功した時に次の 3 つを返す ([DR-0017](decisions/DR-0017-resolve-through-persistent-base.md))
   - `losses`: 通った経路で失ったものの名前の並び (「[失うもの](#失うもの)」の名前。何も失っていなければ空)。分岐に使う。名前は約束で、変えずに足すだけ (知らない名前は「何かを失った」とだけ読むと説明に書く)。名前の間に大小や包含の関係は無い
   - `route`: 通った経路の名前
   - `skipped`: 試して使えなかった経路の並び (試した順)。各要素は `{ name, reason }` (経路の名前と使えなかった理由)。`route` より前に試した経路はすべて使えなかったものなので、「使えたか」は持たない
   - `skipped` に入るのは、その呼び出しで試す順に並ぶ経路 (「[試す順番](#試す順番)」と、connect では OS と実行時の状態 (`/proc` を使えるか等) で決まる「[connect の順](#connect-の順)」の 1 つの列。最終手段を使う時はその最後に最終手段の経路) のうち使えなかったもの全部。長いパスの [standard](#standard) も入る (理由はパスが長い)。D をどこにも作れず `-sockdir` の経路に進んだ時は、D を通す経路も `-sockdir` の経路も入る。その OS や状態の列に無い経路は入れない。bind の列は OS だけで決まり、実行時の状態では変わらない (`/proc` を使えない Linux の bind でも [proc](#proc) は列にあり、使えないので入る)。1 つの経路で置き場の候補を複数試した時も 1 件にする
   - `route`・`skipped` の名前と `reason` は診断用で、中身を約束しない (経路は増えたり変わったりする)
   - 項目と型の名前は各言語の慣習で決める。失うものの名前は各言語の慣習 (enum 等) で表してよいが、文字列にした時は SPEC の名前と同じにする
-- `_ex` が失敗した時も、エラーに `skipped` を付ける。実際に bind / connect して失敗した経路があれば、その名前 (`route`) も付ける (短いパスで標準が失敗した時は `standard`。経路を試す前の失敗 (ディレクトリが無い等) と、全部が使えなかった `ENAMETOOLONG` では無い)。経路を試す前の失敗では `skipped` も空 (長さの判定はソケットのディレクトリを引いた後なので、`standard` もまだ試していない) ([DR-0015](decisions/DR-0015-ex-with-last-resort-and-diagnostics.md))
+- `_ex` が失敗した時も、エラーに `skipped` を付ける。実際に bind / connect して失敗した経路があれば、その名前 (`route`) も付ける (短いパスで標準が失敗した時は `standard`。経路を試す前の失敗 (ディレクトリが無い等) と、全部が使えなかった `ENAMETOOLONG` では無い)。経路を試す前の失敗では `skipped` も空 (長さの判定はソケットのディレクトリを引いた後なので、`standard` もまだ試していない) ([DR-0017](decisions/DR-0017-resolve-through-persistent-base.md))
   - 付け方は各言語の慣習に従う。OS のエラーの errno は取り出せる形を保つ ([エラー](#エラー))
 - 標準の connect が元から待たない言語 (Node.js、Go 等) は、標準と同じ形の connect を 1 つだけ出す ([DR-0003](decisions/DR-0003-single-connect-when-standard-never-blocks.md))
 - `connect` / `connect_nonblocking` と最終手段を使わない `connect_ex` 系は [fork-cwd-direct](#fork-cwd-direct) を試さず、「[connect の順](#connect-の順)」が全部使えない所で `ENAMETOOLONG` を返す
 - ブロックしない connect は、connect の前にソケットを非ブロッキングにしてそのまま返す。相手の backlog が満杯なら待たずに失敗する。`EINPROGRESS` はエラーとして返し、ソケットを閉じる
 - 自前で作るソケットは、その言語の標準が作るソケットと同じ設定にする (close-on-exec、`SO_NOSIGPIPE`、listen の backlog 等)。backlog を指定する口は作らない
 - listener を閉じた時のソケットファイルは、短いパスでは標準と同じ (Go の標準は消す)。長いパスでは、標準が消す言語でも消さない (カーネルが覚えている綴りは元のパスでない)。消す言語では README の「標準と違う点」に書く。消すのは `bind_ex` の `discard()`
-  - `bind_ex` の listener は短いパスでも閉じた時に消さない (消すのは `discard()` だけ。[DR-0015](decisions/DR-0015-ex-with-last-resort-and-diagnostics.md) の Go の形)
+  - `bind_ex` の listener は短いパスでも閉じた時に消さない (消すのは `discard()` だけ。[DR-0017](decisions/DR-0017-resolve-through-persistent-base.md) の Go の形)
 
 ## 短いパス
 
@@ -83,7 +83,7 @@
 
 ## 長いパスの経路と試す順番
 
-標準に渡す長さを超えるパスは、次の順に試し、最初に使えた経路で bind / connect する ([DR-0012](decisions/DR-0012-own-directory-and-thread-cwd.md))。
+標準に渡す長さを超えるパスは、次の順に試し、最初に使えた経路で bind / connect する ([DR-0017](decisions/DR-0017-resolve-through-persistent-base.md))。
 
 - 最後がファイル名でないパス (`dir/`、`dir/.`、`dir/..`、`..`) は、何も作らずに引数の誤り
 - ディレクトリの開き方 (置き場、ソケットのディレクトリ): Apple の OS は `O_SEARCH` (カーネルが `EISDIR` / `EINVAL` を返したら `O_RDONLY`)、Linux は `O_PATH | O_DIRECTORY`、他は `O_RDONLY | O_DIRECTORY`
@@ -188,9 +188,9 @@ bind:
 | 5 | [fork-cwd](#fork-cwd) |
 | 6 | `ENAMETOOLONG` |
 
-- bind の symlink-file は、辿らないと実測した OS (Linux / Android、FreeBSD、OpenBSD、illumos) では試さない (実測 2026-11-19: 辿るのは macOS と NetBSD)。他の OS では、bind が失敗した時に元のパスを `lstat` し、物があればそのエラー (`EADDRINUSE` 等) を返し、無いか確かめられなければ、辿らなかったとみなしてこの経路を使えないとして次へ進む (本当の失敗なら次の経路でも同じ失敗になり、そこで返る) ([DR-0016](decisions/DR-0016-bind-through-file-symlink.md))。macOS の bind の順は standard → symlink-file → thread-cwd → fork-cwd
+- bind の symlink-file は、辿らないと実測した OS (Linux / Android、FreeBSD、OpenBSD、illumos) では試さない (実測 2026-11-19: 辿るのは macOS と NetBSD)。他の OS では、bind が失敗した時に元のパスを `lstat` し、物があればそのエラー (`EADDRINUSE` 等) を返し、無いか確かめられなければ、辿らなかったとみなしてこの経路を使えないとして次へ進む (本当の失敗なら次の経路でも同じ失敗になり、そこで返る) ([DR-0017](decisions/DR-0017-resolve-through-persistent-base.md))。macOS の bind の順は standard → symlink-file → thread-cwd → fork-cwd
 - bind の fork-cwd は、thread-cwd・proc がスレッド cwd / `/proc` を使えない、または proc の綴りに収まらない時に試す。D をどこにも作れない時は、3〜5 を D 無しの形で試す ([thread-cwd-sockdir](#thread-cwd-sockdir) (FreeBSD は [at-sockdir](#at-sockdir)) → [proc-sockdir](#proc-sockdir) → [fork-cwd-sockdir](#fork-cwd-sockdir))。綴りが sockaddr に入らない時は試さず、既定の経路としてはそこで終わり `ENAMETOOLONG` (最終手段を使う `bind_ex` は [symlink-dir](#symlink-dir) へ)
-- bind は [proc-direct](#proc-direct)・[relative](#relative)・[widened](#widened)・[at-direct](#at-direct)・[symlink-dir](#symlink-dir) を使わない (綴りが後で無関係なファイルに当たるか、アドレスが途中で切れて読む側を壊すか、D を通す経路で足りる)。最終手段を使う `bind_ex` だけは、何かを失ってでも届かせるため、最後に [symlink-dir](#symlink-dir) を試す ([DR-0015](decisions/DR-0015-ex-with-last-resort-and-diagnostics.md))
+- bind は [proc-direct](#proc-direct)・[relative](#relative)・[widened](#widened)・[at-direct](#at-direct)・[symlink-dir](#symlink-dir) を使わない (綴りが後で無関係なファイルに当たるか、アドレスが途中で切れて読む側を壊すか、D を通す経路で足りる)。最終手段を使う `bind_ex` だけは、何かを失ってでも届かせるため、最後に [symlink-dir](#symlink-dir) を試す ([DR-0017](decisions/DR-0017-resolve-through-persistent-base.md))
 
 connect:
 
@@ -380,7 +380,7 @@ D を通す経路 ([thread-cwd](#thread-cwd)・[at](#at)・[proc](#proc)・[fork
 - 片付けた後は R がどこにも無いので、カーネルが返す綴りを後でプロセスの cwd 等の別の文脈で解決しても、無関係なファイルに当たらない
 - 確認に落ちた D は他人の物とみなし、中身も含めて触らない
 - D は 1 回の呼び出しで 1 度だけ作り、D を使う経路 ([thread-cwd](#thread-cwd)・[at](#at)・[proc](#proc)・[fork-cwd](#fork-cwd)・[proc-held](#proc-held)) で共有する。どこにも作れなかったら、D を使う経路はどれも使えないとして飛ばし (`skipped` に入る)、作り直さない
-- 作った直後の D を開けない時 (umask が持ち主の権限を削った時。`O_SEARCH` / `O_RDONLY` で開く OS) は、`fstatat(置き場の fd, D の名前, AT_SYMLINK_NOFOLLOW)` が手順 2 と同じ条件 (ディレクトリ・持ち主が実効 uid・group と other に権限が無い) なら `unlinkat(置き場の fd, D の名前, AT_REMOVEDIR)` で消し、「作れない」として次の置き場へ。名前で確かめてから消すまでにすり替えられても、`AT_REMOVEDIR` は空のディレクトリしか消さない ([DR-0012](decisions/DR-0012-own-directory-and-thread-cwd.md))
+- 作った直後の D を開けない時 (umask が持ち主の権限を削った時。`O_SEARCH` / `O_RDONLY` で開く OS) は、`fstatat(置き場の fd, D の名前, AT_SYMLINK_NOFOLLOW)` が手順 2 と同じ条件 (ディレクトリ・持ち主が実効 uid・group と other に権限が無い) なら `unlinkat(置き場の fd, D の名前, AT_REMOVEDIR)` で消し、「作れない」として次の置き場へ。名前で確かめてから消すまでにすり替えられても、`AT_REMOVEDIR` は空のディレクトリしか消さない ([DR-0017](decisions/DR-0017-resolve-through-persistent-base.md))
 - 長さと、手段を使えるか (確かめられる所まで) は D を作る前に確かめる。使えなければ何も作らずに次へ
 - 呼び出し元がソケットを作り、D の fd を持つ。ブロックしない connect ではその前にソケットを非ブロッキングにする。bind の後の listen は呼び出し元がする
 
@@ -424,14 +424,14 @@ D をどこにも作れない時の bind が使う。[thread-cwd-sockdir](#threa
 
 1. 親がソケットを作り、fd を持ち、sockaddr を組み立ててから fork する。ブロックしない connect では fork の前にソケットを非ブロッキングにする
 2. 子は `fchdir(fd)` → 綴りで `bind` / `connect` → `_exit(結果)` (0 が成功、1〜255 が errno)
-3. 親はその pid だけを `waitpid` し、それから R と D を片付ける。bind の後の listen は必ず親がする ([DR-0010](decisions/DR-0010-fork-bind-listen-by-parent.md))
+3. 親はその pid だけを `waitpid` し、それから R と D を片付ける。bind の後の listen は必ず親がする ([DR-0017](decisions/DR-0017-resolve-through-persistent-base.md))
 
 - 子の区間は async-signal-safe な呼び出しだけ (allocation・lock・言語の後始末を通さない)
 - `waitpid` が `ECHILD` (status を他者に刈り取られた) なら、ソケットの状態から結果を読む: bind は `getsockname` にパスが入っているか、connect は `getpeername` が通るか。失敗は一般のエラー
 
 ### connect の順
 
-標準に渡す長さを超えるパスの connect は、OS ごとに次の順に試す。書き込み (D・R・symlink を作る) もスレッドも要らない経路を先に、D を作る経路とスレッドを立てる経路をその後にする ([DR-0012](decisions/DR-0012-own-directory-and-thread-cwd.md))。全部が使えない時、最終手段を使う `connect_ex` 系は [fork-cwd-direct](#fork-cwd-direct) を試し、`connect` / `connect_nonblocking` と最終手段を使わない `connect_ex` 系は `ENAMETOOLONG` を返す (「[試す順番](#試す順番)」)。
+標準に渡す長さを超えるパスの connect は、OS ごとに次の順に試す。書き込み (D・R・symlink を作る) もスレッドも要らない経路を先に、D を作る経路とスレッドを立てる経路をその後にする ([DR-0017](decisions/DR-0017-resolve-through-persistent-base.md))。全部が使えない時、最終手段を使う `connect_ex` 系は [fork-cwd-direct](#fork-cwd-direct) を試し、`connect` / `connect_nonblocking` と最終手段を使わない `connect_ex` 系は `ENAMETOOLONG` を返す (「[試す順番](#試す順番)」)。
 
 | OS | 試す順番 |
 |---|---|
@@ -515,7 +515,7 @@ D をどこにも作れない時の bind が使う。[thread-cwd-sockdir](#threa
 | 相手から見える (最終手段を使う `connect_ex` 系だけ) | サーバに見える peer の pid は終了した子の pid。uid / gid は呼び出し元と同じ<br>Linux の `SO_PEERCRED` は子の pid のまま<br>macOS の `LOCAL_PEERPID` は呼び出し元が send すると呼び出し元の pid になる |
 | 相手から見えない (`bind`・`bind_ex` と最終手段を使う `connect_ex` 系) | 子は終了まで全 fd の複製を持つ。その間に他のスレッドが閉じたソケットやパイプは開いたままになる<br>親に `SIGCHLD` が届く<br>`pthread_atfork` の handler が走る<br>監視ツールに短命の子が見える<br>他のスレッドの `waitpid(-1)` が子を刈り取りうる |
 
-- bind は相手から見える副作用が無い。子は bind だけして listen は親がするので、クライアントに見えるサーバの peer 情報 (macOS の `LOCAL_PEERPID` / `LOCAL_PEEREPID` / audit token の pid と pidversion、Linux の `SO_PEERCRED` / `SO_PEERPIDFD`) は send の前から親 (実測 2026-11-18、macOS 26.5.2 と Linux) ([DR-0010](decisions/DR-0010-fork-bind-listen-by-parent.md))
+- bind は相手から見える副作用が無い。子は bind だけして listen は親がするので、クライアントに見えるサーバの peer 情報 (macOS の `LOCAL_PEERPID` / `LOCAL_PEEREPID` / audit token の pid と pidversion、Linux の `SO_PEERCRED` / `SO_PEERPIDFD`) は send の前から親 (実測 2026-11-18、macOS 26.5.2 と Linux) ([DR-0017](decisions/DR-0017-resolve-through-persistent-base.md))
 
 ## 使ってはいけない書き方
 
@@ -526,7 +526,7 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 | カーネルが返す綴り (`getsockname`、listener のアドレス等) でソケットのファイルを unlink / stat する | 長いパスでは元のパスでない ([respelled](#respelled))。cwd や共有の置き場しだいで、作り直された別のファイルに当たりうる ([cwd-relative](#cwd-relative)、[recreatable-spelling](#recreatable-spelling)) | 元のパスを持っておいて使う。`bind_ex` の `discard()` |
 | 相対パスで bind し、cwd を変えた後にその相対パスで消す | 別の場所のファイルに当たる ([cwd-relative](#cwd-relative)) | bind の前に絶対パスにする。`discard()` |
 | listener を閉じればソケットのファイルが消えると当てにする | 長いパスでは、標準が消す言語 (Go 等) でも消えない ([respelled](#respelled)) | `discard()` か、元のパスで消す |
-| `discard()` で listener も閉じると当てにする | `discard()` はファイルを消すだけ ([DR-0015](decisions/DR-0015-ex-with-last-resort-and-diagnostics.md)) | listener は自分で閉じる |
+| `discard()` で listener も閉じると当てにする | `discard()` はファイルを消すだけ ([DR-0017](decisions/DR-0017-resolve-through-persistent-base.md)) | listener は自分で閉じる |
 | `_ex` の `route`・`skipped`・`reason` の文字列で分岐する | 診断用で、中身を約束しない (経路は増えたり変わったりする) | `losses` で分岐する |
 | `_ex` で fork を通るプログラムで、他のスレッドが `waitpid(-1)` で子を刈る | sockat の子を刈り取り、結果を取り違えうる ([forked](#forked)) | pid を指定して待つ。connect では最終手段を使わない (bind の fork-cwd は既定の経路) |
 

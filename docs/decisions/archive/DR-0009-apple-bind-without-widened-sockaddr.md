@@ -47,5 +47,5 @@
 
 - [docs/SPEC-ja.md](../../SPEC-ja.md) の「長いパスの経路と試す順番」「各経路」「どこから届かなくなるか」
 - 裁定: kawaz (2026-11-18)
-- [DR-0010](../DR-0010-fork-bind-listen-by-parent.md)
+- [DR-0010](DR-0010-fork-bind-listen-by-parent.md)
 - [DR-0011](DR-0011-bind-spelling-with-random-part.md) (bind の順番から相対パスを外す)

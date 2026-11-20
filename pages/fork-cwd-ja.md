@@ -5,7 +5,7 @@
 sockat はこの手法を使わない (kawaz 裁定 2026-11-20)。fork の副作用 (fd の複製、`SIGCHLD`、`waitpid(-1)`、`pthread_atfork`、connect では相手に見える pid) は呼び出したライブラリでなくプロセス全体に及び、それを望まない利用者の方が多いため。この文書は、sockat が届かない場面で利用者が自分のアプリで fork を使う時のために、手法と副作用と、それで届く場面を書く。
 
 - 届く範囲の全体: [reach](reach/README-ja.md) (表の「fork-cwd なら」の列が、この文書の節へのリンク)
-- 判断の記録: [DR-0010](../docs/decisions/DR-0010-fork-bind-listen-by-parent.md) (listen は親)、[DR-0012](../docs/decisions/DR-0012-own-directory-and-thread-cwd.md) (D と R)、[issue](../docs/issue/2026-11-20-resolve-and-persistent-base.md) の「最終手段と fork」
+- 判断の記録: [DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md) (fork をしない判断、bind の綴りに乱数の名前を挟む理由)、[issue](../docs/issue/2026-11-20-resolve-and-persistent-base.md) の「最終手段と fork」
 
 ## 手法
 
@@ -19,8 +19,8 @@ sockat はこの手法を使わない (kawaz 裁定 2026-11-20)。fork の副作
 | 4. 親 | その pid だけを `waitpid` し、R と D を片付けてから `listen` する | その pid だけを `waitpid` する |
 
 - 子と親は同じソケットを共有している (fork は fd を複製するが、指すソケットは 1 つ)。子が bind / connect した結果は親のソケットに残る
-- bind の listen は必ず親がする。子に listen させると、クライアントから見えるサーバの peer が死んだ子になる (実測 2026-11-18、macOS と Linux。[DR-0010](../docs/decisions/DR-0010-fork-bind-listen-by-parent.md))
-- bind の綴りに R を挟むのは、カーネルが覚えて `getsockname` で返す綴りが cwd からの相対パスになり、後で別の cwd で解決されると同じ名前の無関係なファイルに当たるため ([DR-0012](../docs/decisions/DR-0012-own-directory-and-thread-cwd.md))。R を片付けた後の綴りはどこにも当たらない。connect の綴りは相手に残らないので R は要らない
+- bind の listen は必ず親がする。子に listen させると、クライアントから見えるサーバの peer が死んだ子になる (実測 2026-11-18、macOS と Linux。[DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md))
+- bind の綴りに R を挟むのは、カーネルが覚えて `getsockname` で返す綴りが cwd からの相対パスになり、後で別の cwd で解決されると同じ名前の無関係なファイルに当たるため ([DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md))。R を片付けた後の綴りはどこにも当たらない。connect の綴りは相手に残らないので R は要らない
 - `waitpid` が `ECHILD` (他者に status を刈り取られた) なら、ソケットの状態から結果を読む: bind は `getsockname` にパスが入っているか、connect は `getpeername` が通るか
 
 届くファイル名 (バイト):
@@ -38,7 +38,7 @@ sockat はこの手法を使わない (kawaz 裁定 2026-11-20)。fork の副作
 | 相手から見えない (bind と connect) | 子は終わるまで全 fd の複製を持つ。その間に他のスレッドが閉じたソケットやパイプは開いたままで、相手に EOF が届くのが遅れる<br>親に `SIGCHLD` が届く<br>`pthread_atfork` の handler が走る<br>監視ツール (プロセスの一覧、audit) に短命の子が見える<br>他のスレッドの `waitpid(-1)` や `SIGCHLD` の handler が子を刈り取り、結果を取り違えうる |
 | 大きいプロセス | fork はページテーブルを複製するので、仮想メモリの大きいプロセスほど時間が掛かる (未計測)<br>Linux の `vm.overcommit_memory=2` (厳格) では、子の分の commit を確保できずに fork が `ENOMEM` で失敗しうる。既定の `0` でも、使っているメモリが大きいと断られうる (未検証) |
 
-- bind は相手から見える副作用が無い。子は bind だけして listen は親がするので、クライアントに見えるサーバの peer 情報 (macOS の `LOCAL_PEERPID` / `LOCAL_PEEREPID` / audit token、Linux の `SO_PEERCRED` / `SO_PEERPIDFD`) は send の前から親 (実測 2026-11-18、[DR-0010](../docs/decisions/DR-0010-fork-bind-listen-by-parent.md))
+- bind は相手から見える副作用が無い。子は bind だけして listen は親がするので、クライアントに見えるサーバの peer 情報 (macOS の `LOCAL_PEERPID` / `LOCAL_PEEREPID` / audit token、Linux の `SO_PEERCRED` / `SO_PEERPIDFD`) は send の前から親 (実測 2026-11-18、[DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md))
 - connect の peer の pid が子になるので、相手のサーバが peer の pid で認可や記録をしているなら、fork した connect は使えない
 
 ## 自分のアプリで行う時の注意

@@ -1,6 +1,6 @@
 # DR-0010: fork の経路の bind は listen を必ず親がする
 
-- Status: Active
+- Status: Superseded by DR-0017
 - Date: 2026-11-18
 
 ## Context
@@ -38,6 +38,6 @@
 
 ## 関連
 
-- [docs/SPEC-ja.md](../SPEC-ja.md) の「fork の子」「fork の副作用」「実装が確かめる試験の観点」
+- [docs/SPEC-ja.md](../../SPEC-ja.md) の「fork の子」「fork の副作用」「実装が確かめる試験の観点」
 - 裁定: kawaz (2026-11-18)
 - [DR-0012](DR-0012-own-directory-and-thread-cwd.md)

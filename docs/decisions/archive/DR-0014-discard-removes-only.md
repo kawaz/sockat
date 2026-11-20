@@ -39,4 +39,4 @@
 ## 関連
 
 - 裁定: kawaz (2026-11-19)
-- [DR-0012](../DR-0012-own-directory-and-thread-cwd.md)
+- [DR-0012](DR-0012-own-directory-and-thread-cwd.md)

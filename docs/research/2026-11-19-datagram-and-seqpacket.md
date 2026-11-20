@@ -20,7 +20,7 @@
 | podman | SEQPACKET | attach socket のパスが 109 バイトになりコンテナを起動できなかった (3.0.0rc2)。今は Linux で `O_PATH` + `/proc/self/fd/<fd>` に `DialUnix("unixpacket")`、FreeBSD で短い symlink を作って dial する | [podman#9264](https://github.com/containers/podman/issues/9264)、[oci_conmon_attach_linux.go](https://github.com/containers/podman/blob/main/libpod/oci_conmon_attach_linux.go)、[oci_conmon_attach_freebsd.go](https://github.com/containers/podman/blob/main/libpod/oci_conmon_attach_freebsd.go) |
 | go-trusted-platform | DGRAM | 試験で notify socket の `ListenUnixgram` が `sun_path` を超えて落ち、短いディレクトリへ逃がした | [#1983](https://github.com/jeremyhahn/go-trusted-platform/issues/1983) |
 
-- crun と conmon の bind の綴りは `/proc/self/fd/<dirfd>/<名前>` で、dirfd を閉じた後に `getsockname` の綴りが別の所を指す。sockat が [DR-0012](../decisions/DR-0012-own-directory-and-thread-cwd.md) で R を挟む理由と同じ形 ([Fedora devel の議論](https://www.mail-archive.com/devel@lists.fedoraproject.org/msg202065.html) でも、fd を閉じた後も綴りが返り続けると指摘されている)
+- crun と conmon の bind の綴りは `/proc/self/fd/<dirfd>/<名前>` で、dirfd を閉じた後に `getsockname` の綴りが別の所を指す。sockat が [DR-0012](../decisions/archive/DR-0012-own-directory-and-thread-cwd.md) で R を挟む理由と同じ形 ([Fedora devel の議論](https://www.mail-archive.com/devel@lists.fedoraproject.org/msg202065.html) でも、fd を閉じた後も綴りが返り続けると指摘されている)
 
 ### systemd の NOTIFY_SOCKET
 
@@ -138,7 +138,7 @@
 | bind しない | Linux: 長さ 0。macOS: 長さ 16 で中身 0 | Linux `ENOTCONN`、macOS `ENOENT` | 該当なし |
 | thread-cwd | `R<n>/<名前>` | `ENOENT` (両 OS) | 受け手の cwd に `R<n>/<名前>` のソケットを作ると、返信はそこに届いた (両 OS) |
 | fork-cwd | `R<n>/<名前>` | `ENOENT` (両 OS) | thread-cwd と同じ |
-| proc | `/proc/self/fd/5/R<n>/<名前>` | `ENOENT` (Linux) | 受け手のプロセスの fd 5 で解決される (作り直しは未実測。仕組みは [DR-0012](../decisions/DR-0012-own-directory-and-thread-cwd.md) の `/proc` の綴りと同じ) |
+| proc | `/proc/self/fd/5/R<n>/<名前>` | `ENOENT` (Linux) | 受け手のプロセスの fd 5 で解決される (作り直しは未実測。仕組みは [DR-0012](../decisions/archive/DR-0012-own-directory-and-thread-cwd.md) の `/proc` の綴りと同じ) |
 | symlink-file | `/tmp/sockat.<乱数>` | `ENOENT` (macOS) | 同じ名前で別のソケットを指す symlink を作ると、返信はそこに届いた (macOS) |
 
 - 長いパスに bind した送り元には、受け手から返信が届かない。返信の綴りを他人が作れる場所 (受け手の cwd、共有の `/tmp`) なら、返信はその人のソケットに届く
@@ -192,10 +192,10 @@
 |---|---|---|
 | a: `respelled` のまま、説明に DGRAM の結果を足す | 「起きること」に「受け手が返信できない (`ENOENT`)、綴りを作り直されると返信が他人に届く」を足す | 分岐に使う名前が stream と同じなので、返信を当てにする利用者が `losses` で見分けられない (DGRAM の bind では `respelled` が常に返信不可を意味する、と読ませる) |
 | b: DGRAM の bind だけに付く新しい名前を足す (例: `unrepliable`。名前は仮) | 標準以外の経路を通った DGRAM の bind に `respelled` と並べて付ける | 名前が増える。`respelled` が付く時は必ず付くので、情報が増えない (型で分かる) |
-| c: 共有の置き場の symlink-file を DGRAM の bind では `recreatable-spelling` にする | 送ると作り直された symlink を辿るので (実測)、symlink-dir と同じ危険になる | stream の symlink-file の判断 ([DR-0016](../decisions/DR-0016-bind-through-file-symlink.md)) と型で割れる。macOS の `$TMPDIR` は持ち主だけが書けるので、そこが先に使われれば当たらない |
+| c: 共有の置き場の symlink-file を DGRAM の bind では `recreatable-spelling` にする | 送ると作り直された symlink を辿るので (実測)、symlink-dir と同じ危険になる | stream の symlink-file の判断 ([DR-0016](../decisions/archive/DR-0016-bind-through-file-symlink.md)) と型で割れる。macOS の `$TMPDIR` は持ち主だけが書けるので、そこが先に使われれば当たらない |
 
 - a・b と c は別の論点 (返信が届かないこと全般と、共有の置き場の綴りの作り直し) で、両方決める必要がある
-- 返信を届かせる経路 (bind の綴りを片付けずに残す) は作れるが (symlink-file の symlink を `discard()` まで残す等)、[DR-0012](../decisions/DR-0012-own-directory-and-thread-cwd.md) の「片付けた後は R がどこにも無い」に反し、綴りを他の利用者が使える時間が延びる。候補に挙げるだけにする
+- 返信を届かせる経路 (bind の綴りを片付けずに残す) は作れるが (symlink-file の symlink を `discard()` まで残す等)、[DR-0012](../decisions/archive/DR-0012-own-directory-and-thread-cwd.md) の「片付けた後は R がどこにも無い」に反し、綴りを他の利用者が使える時間が延びる。候補に挙げるだけにする
 
 ### 型ごとの API の形の候補
 
@@ -209,7 +209,7 @@
 | どれも | `_ex` | 型ごとに `bind_datagram_ex` 等を足すか、`_ex` に型を渡すか | 同 | 同 |
 
 - DGRAM の connect は相手の backlog を待たない (Linux も macOS も datagram の connect は相手と結ぶだけ。推測、未実測) ので、[DR-0003](../decisions/DR-0003-single-connect-when-standard-never-blocks.md) と同じ考えで connect を 1 つにできる。SEQPACKET の connect は stream と同じく backlog で待ちうる (推測、未実測) ので、`connect_nonblocking` も出す
-- DGRAM の bind の後に listen は無い。fork-cwd の bind で親が listen する決まり ([DR-0010](../decisions/DR-0010-fork-bind-listen-by-parent.md)) は DGRAM では当たらない。DGRAM の peer 情報 (`SO_PEERCRED` 等) は connect した相手でしか意味を持たない (未実測)
+- DGRAM の bind の後に listen は無い。fork-cwd の bind で親が listen する決まり ([DR-0010](../decisions/archive/DR-0010-fork-bind-listen-by-parent.md)) は DGRAM では当たらない。DGRAM の peer 情報 (`SO_PEERCRED` 等) は connect した相手でしか意味を持たない (未実測)
 - SEQPACKET は Apple の OS で標準も作れないので、経路を試さず標準と同じエラー (`EPROTONOSUPPORT`) を返す形が「標準と同じ」に合う
 - Rust の SEQPACKET の返す型の候補
 

@@ -40,7 +40,7 @@
 
 - [docs/SPEC-ja.md](./docs/SPEC-ja.md) — 言語によらない仕様 (経路、試す順番、失うもの、使ってはいけない書き方、エラー、各実装に求めること)
 - [docs/decisions/](./docs/decisions/INDEX.md) — 仕様と構成の判断 (DR)
-- [docs/decisions/DR-0012](./docs/decisions/DR-0012-own-directory-and-thread-cwd.md) — 長いパスの経路の判断と却下した案
+- [docs/decisions/DR-0017](./docs/decisions/DR-0017-resolve-through-persistent-base.md) — 長いパスの経路と API の判断と却下した案
 - [docs/design/conformance.md](./docs/design/conformance.md) — 言語によらない適合試験 (各言語の試験用 CLI の入出力、場面の表)
 
 ## ライセンス
