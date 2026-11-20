@@ -16,6 +16,7 @@ import ctypes
 import errno
 import json
 import os
+import re
 import secrets
 import shutil
 import stat
@@ -57,8 +58,24 @@ LONG_SEGMENT = "d" * 16
 # これに当たるのは CLI が固まった時だけ (その言語は「壊れた」として表に出す)。
 CLI_TIMEOUT_SEC = 120
 
-FIELDS = ["ok", "error", "route", "losses", "skipped", "file", "created", "residue", "received"]
-CLI_FIELDS = {"ok": bool, "error": (str, type(None)), "route": (str, type(None)), "losses": list, "skipped": list}
+FIELDS = ["ok", "error", "route", "base", "spelling", "skipped", "file", "created", "left", "residue", "received"]
+CLI_FIELDS = {"ok": bool, "error": (str, type(None)), "route": (str, type(None)), "base": (str, type(None)),
+              "spelling": (dict, type(None)), "skipped": list}
+# 綴りの性質 (SPEC の Spelling) を JSON にした形。kind ごとに持つ属性と、その型。
+SPELLING_ATTRS = {
+    "Original": {},
+    "CwdRelative": {},
+    "Linked": {"removable": bool, "until": str, "usable_cross_uid": bool, "usable_with_private_tmp": bool},
+    "Dangling": {},
+}
+SPELLING_UNTIL = ("Process", "Cleanup")
+
+# 置き場の中の B の名前 (SPEC-routes の「B の作り方」)。<uid> と乱数の部分は表示で記号に置き換える。
+B_NAME_TMP = re.compile(r"^sockat-(\d+)$")
+B_NAME_RUNTIME = "sockat"
+B_NAME_SOCKDIR = re.compile(r"^\.sockat\.[0-9A-Za-z]{10}$")
+# /tmp の中で、スクリプトが作る物 ({short} の symlink)。
+SHORT_PREFIX = "sockat-conformance-"
 
 # 待ち受けの手伝い。ソケットのディレクトリに chdir してファイル名だけで bind する (sockat に頼らない)。
 # listen: listen して "ready" を出し、標準入力が閉じられたら (= CLI が終わったら)、届いていた接続を 1 つ
@@ -110,8 +127,11 @@ def load_cases():
                 fail_usage(f"cases.json: 場面 {c.get('name')!r} に {key} が無い")
         if c["op"] not in ("bind", "connect"):
             fail_usage(f"cases.json: 場面 {c['name']!r} の op は bind か connect")
-        if not isinstance(c.get("last_resort", False), bool):
-            fail_usage(f"cases.json: 場面 {c['name']!r} の last_resort は true か false")
+        if not isinstance(c.get("usable_cross_uid", False), bool):
+            fail_usage(f"cases.json: 場面 {c['name']!r} の usable_cross_uid は true か false")
+        b = c.get("base")
+        if b is not None and not (isinstance(b, str) and (b.startswith("/") or b.startswith("{"))):
+            fail_usage(f"cases.json: 場面 {c['name']!r} の base は絶対パスか placeholder で始めたパス")
         unknown = set(c["expect"]) - set(FIELDS)
         if unknown:
             fail_usage(f"cases.json: 場面 {c['name']!r} の expect に知らない項目 {sorted(unknown)}")
@@ -184,7 +204,7 @@ class Env:
         # {short}: {root} を指す /tmp の短い symlink。{root} は $TMPDIR の下で長くなりうるので、
         # 短い絶対パスの場面はこれを通す (名前は /tmp の sockat.* の残骸の確かめに掛からない形)。
         while True:
-            short = Path("/tmp") / f"sockat-conformance-{secrets.token_hex(4)}"
+            short = Path("/tmp") / f"{SHORT_PREFIX}{secrets.token_hex(4)}"
             try:
                 os.symlink(self.root, short)
                 break
@@ -201,10 +221,15 @@ class Env:
                  .replace("{xdg}", str(self.xdg)))
 
     def render(self, p):
-        """スクリプトが作った場所を placeholder に戻す (言語ごとに場所が違っても比べられるように)。"""
+        """スクリプトが作った場所を placeholder に戻す (言語ごとに場所が違っても比べられるように)。
+        symlink の先は実パスで書かれうるので、実パスの形も戻す。"""
         p = str(p)
-        for prefix, name in ((str(self.long), "{long}"), (str(self.root), "{root}"),
-                             (str(self.tmp), "{tmpdir}"), (str(self.xdg), "{xdg}")):
+        pairs = []
+        for d, name in ((self.long, "{long}"), (self.root, "{root}"), (self.tmp, "{tmpdir}"), (self.xdg, "{xdg}")):
+            pairs.append((str(d), name))
+            if os.path.realpath(d) != str(d):
+                pairs.append((os.path.realpath(d), name))
+        for prefix, name in sorted(pairs, key=lambda x: -len(x[0])):
             if p == prefix or p.startswith(prefix + "/"):
                 return name + p[len(prefix):]
         return p
@@ -329,11 +354,102 @@ def seccomp_mode():
     return ctypes.CDLL(None, use_errno=True).prctl(PR_GET_SECCOMP, 0, 0, 0, 0)
 
 
-def tmp_sockat_entries():
-    try:
-        return {str(Path("/tmp") / n) for n in os.listdir("/tmp") if n.startswith("sockat.")}
-    except OSError:
-        return set()
+def walk_all(top):
+    """top の中の全部のパス (top 自身は含まない)。symlink は辿らない。"""
+    out = set()
+    for dirpath, dirnames, filenames in os.walk(top):
+        for n in dirnames + filenames:
+            out.add(os.path.join(dirpath, n))
+    return out
+
+
+class Places:
+    """CLI の前後で、置き場とソケットのディレクトリに増えた物を見る。
+
+    B の中に増えた物 (D と E) は left、B の外に増えた物は residue に分ける。{root} の木の中で B の外に
+    増えた物は created (ソケットのファイル等) で、run_one が別に見る。
+    """
+
+    def __init__(self, env, sockdir, base):
+        self.env = env
+        self.sockdir = sockdir
+        self.base = base
+
+    def b_dirs(self):
+        """今ある B の (実パス, 表示)。"""
+        out = []
+        env = self.env
+        try:
+            for n in os.listdir("/tmp"):
+                if B_NAME_TMP.match(n):
+                    out.append((os.path.join("/tmp", n), "/tmp/sockat-<uid>"))
+        except OSError:
+            pass
+        for n in os.listdir(env.tmp):
+            if B_NAME_TMP.match(n):
+                out.append((str(env.tmp / n), "{tmpdir}/sockat-<uid>"))
+        if os.path.isdir(env.xdg / B_NAME_RUNTIME):
+            out.append((str(env.xdg / B_NAME_RUNTIME), "{xdg}/" + B_NAME_RUNTIME))
+        if self.sockdir and os.path.isdir(self.sockdir):
+            for n in os.listdir(self.sockdir):
+                if B_NAME_SOCKDIR.match(n):
+                    out.append((os.path.join(self.sockdir, n), env.render(self.sockdir) + "/.sockat.<rand>"))
+        if self.base and os.path.isdir(self.base):
+            out.append((self.base, env.render(self.base)))
+        return out
+
+    def snapshot(self):
+        """(B の中の全部, B の外の、置き場の直下の全部)。/tmp は sockat の名前の物だけを見る。"""
+        inside = set()
+        bs = self.b_dirs()
+        for b, _ in bs:
+            inside |= walk_all(b)
+        outside = set()
+        try:
+            outside |= {os.path.join("/tmp", n) for n in os.listdir("/tmp")
+                        if n.startswith("sockat") and not n.startswith(SHORT_PREFIX)}
+        except OSError:
+            pass
+        outside |= {str(self.env.tmp / n) for n in os.listdir(self.env.tmp)}
+        outside |= {str(self.env.xdg / n) for n in os.listdir(self.env.xdg)}
+        outside -= {b for b, _ in bs}
+        return inside, outside
+
+    def diff(self, before):
+        """(left, residue, 増えた B の中の物の実パス)。"""
+        inside, outside = self.snapshot()
+        new_inside = sorted(inside - before[0])
+        left = []
+        for b, shown in self.b_dirs():
+            for p in new_inside:
+                if p.startswith(b + "/"):
+                    left.append(self.render_left(shown, os.path.relpath(p, b), p))
+        residue = sorted(self.env.render(p) for p in outside - before[1])
+        return sorted(left), residue, new_inside
+
+    def render_left(self, shown, rel, p):
+        parts = rel.split("/")
+        if os.path.islink(p):
+            target = self.env.render(os.readlink(p))
+            if len(parts) == 1:
+                return f"{shown}/<E> -> {target}"
+            if len(parts) == 2:
+                return f"{shown}/<D>/<E> -> {target}"
+        elif os.path.isdir(p) and len(parts) == 1:
+            return f"{shown}/<D>/"
+        return f"{shown}/{rel}"
+
+    @staticmethod
+    def remove(paths):
+        """B の中に増えた物を消す (B は残す。/tmp の B に場面ごとの D が溜まらないように)。"""
+        for p in sorted(paths, key=len, reverse=True):
+            try:
+                if os.path.islink(p) or not os.path.isdir(p):
+                    os.unlink(p)
+                else:
+                    shutil.rmtree(p, ignore_errors=True)
+            except OSError:
+                pass
 
 
 def is_socket(path):
@@ -370,9 +486,20 @@ def validate_cli_output(stdout):
             return None, f"出力に {key} が無い"
         if not isinstance(out[key], typ):
             return None, f"出力の {key} の型が違う: {out[key]!r}"
-    for key in ("losses", "skipped"):
-        if not all(isinstance(x, str) for x in out[key]):
-            return None, f"出力の {key} が文字列の並びでない: {out[key]!r}"
+    if not all(isinstance(x, str) for x in out["skipped"]):
+        return None, f"出力の skipped が文字列の並びでない: {out['skipped']!r}"
+    sp = out["spelling"]
+    if sp is not None:
+        attrs = SPELLING_ATTRS.get(sp.get("kind"))
+        if attrs is None:
+            return None, f"出力の spelling.kind が {' / '.join(SPELLING_ATTRS)} でない: {sp!r}"
+        if set(sp) != {"kind"} | set(attrs):
+            return None, f"出力の spelling の項目が kind {sp['kind']} の形と違う: {sp!r}"
+        for key, typ in attrs.items():
+            if not isinstance(sp[key], typ):
+                return None, f"出力の spelling.{key} の型が違う: {sp!r}"
+        if sp["kind"] == "Linked" and sp["until"] not in SPELLING_UNTIL:
+            return None, f"出力の spelling.until が {' / '.join(SPELLING_UNTIL)} でない: {sp!r}"
     return out, None
 
 
@@ -382,6 +509,8 @@ def run_one(case, argv, base, keep):
     try:
         cwd = env.subst(case["cwd"])
         path = env.subst(case["path"])
+        base = env.subst(case["base"]) if case.get("base") is not None else None
+        places = Places(env, os.path.dirname(env.resolve(cwd, path)), base)
         try:
             env.run_setup(cwd, case["setup"])
         except (SetupError, OSError) as e:
@@ -391,15 +520,17 @@ def run_one(case, argv, base, keep):
         child_env["XDG_RUNTIME_DIR"] = str(env.xdg)
         child_env["PWD"] = cwd
         before_tree = env.tree()
-        before_tmp = tmp_sockat_entries()
+        before_places = places.snapshot()
         conditions = Conditions(env, case["linux"]) if "linux" in case else None
         try:
             try:
                 if conditions:
                     conditions.apply()
                 request = {"op": case["op"], "path": path}
-                if "last_resort" in case:
-                    request["last_resort"] = case["last_resort"]
+                if "usable_cross_uid" in case:
+                    request["usable_cross_uid"] = case["usable_cross_uid"]
+                if base is not None:
+                    request["base"] = base
                 proc = subprocess.run(argv, input=json.dumps(request),
                                       cwd=cwd, env=child_env, umask=0o022, capture_output=True,
                                       text=True, timeout=CLI_TIMEOUT_SEC)
@@ -423,20 +554,21 @@ def run_one(case, argv, base, keep):
         out, err = validate_cli_output(proc.stdout)
         if err:
             return {"status": "broken", "message": f"{err}: {proc.stderr.strip()[-500:]}"}
-        created_abs = sorted(env.tree() - before_tree)
-        residue = sorted(env.render(p) for p in created_abs if os.path.basename(p).startswith(".sockat."))
-        created = sorted(env.render(p) for p in created_abs if not os.path.basename(p).startswith(".sockat."))
-        residue += sorted(env.render(env.tmp / n) for n in os.listdir(env.tmp))
-        residue += sorted(env.render(env.xdg / n) for n in os.listdir(env.xdg))
-        residue += sorted(tmp_sockat_entries() - before_tmp)
+        left, residue, new_in_b = places.diff(before_places)
+        b_paths = {b for b, _ in places.b_dirs()}
+        created = sorted(env.render(p) for p in env.tree() - before_tree
+                         if p not in b_paths and not any(p.startswith(b + "/") for b in b_paths))
+        Places.remove(new_in_b)
         result = {
             "ok": out["ok"],
             "error": out["error"],
             "route": out["route"],
-            "losses": out["losses"],
+            "base": out["base"],
+            "spelling": out["spelling"],
             "skipped": out["skipped"],
             "file": is_socket(env.resolve(cwd, path)),
             "created": created,
+            "left": left,
             "residue": residue,
             "received": received,
         }
@@ -452,10 +584,28 @@ def implicit_expect(case, result):
         exp["file"] = True
     if result["ok"] and case["op"] == "connect" and result["received"] is not None:
         exp["received"] = "x"
-    if not result["ok"]:
-        exp["losses"] = []
+    if not result["ok"] or case["op"] == "connect":
+        exp["spelling"] = None
+    if case["op"] == "connect":
+        exp["left"] = []
+        exp["base"] = None
     exp.update(case["expect"])
     return exp
+
+
+def rule_violations(case, result):
+    """値が場面によらず 1 つに決まらないが、満たすべき決まり。戻り値は {項目: 期待の説明} (破った物だけ)。"""
+    out = {}
+    sp = result["spelling"]
+    if case["op"] == "bind" and result["ok"]:
+        es = [x for x in result["left"] if "<E> -> " in x]
+        if sp is not None and sp["kind"] == "Linked" and len(es) != 1:
+            out["left"] = "Linked の bind は E を 1 つ残す"
+        if sp is not None and sp["kind"] in ("Original", "CwdRelative", "Dangling") and es:
+            out["left"] = f"{sp['kind']} の bind は E を残さない"
+    if case.get("usable_cross_uid") and sp is not None and sp["kind"] == "Linked" and not sp["usable_cross_uid"]:
+        out["spelling"] = "usable_cross_uid を指定した bind は Linked なら usable_cross_uid が true"
+    return out
 
 
 def lack_groups(outcomes, lacks):
@@ -534,6 +684,10 @@ def judge(case, outcomes, lacks):
                     mismatch.add(l)
             if field == "route" and r["route"] in lacks[l]:
                 exp_values.add(f"{l} の lacks に無い経路")
+                mismatch.add(l)
+            rule = rule_violations(case, r).get(field)
+            if rule:
+                exp_values.add(f"{l}: {rule}")
                 mismatch.add(l)
             missing = lacks[l] & used
             if field == "skipped" and missing:
@@ -688,6 +842,22 @@ def inside():
     return 0
 
 
+def describe_options(case):
+    parts = []
+    if case.get("usable_cross_uid"):
+        parts.append(" usable_cross_uid")
+    if case.get("base") is not None:
+        parts.append(f" base={case['base']}")
+    return "".join(parts)
+
+
+def describe_spelling(sp):
+    if sp is None:
+        return "-"
+    attrs = [f"{k}={json.dumps(v)}" for k, v in sp.items() if k != "kind"]
+    return sp["kind"] + (f"({','.join(attrs)})" if attrs else "")
+
+
 def describe_linux(lx):
     parts = [f"seccomp={lx['seccomp']}"]
     if not lx.get("proc", True):
@@ -705,7 +875,7 @@ def main():
                     help="流す場面: host は手元で流す場面、linux は Linux のコンテナで流す場面 (linux の条件を持つもの)。既定は両方")
     ap.add_argument("--keep", action="store_true", help="手元で流す場面の一時ディレクトリを消さずに残す")
     ap.add_argument("--no-build", action="store_true", help="流す前に各言語の CLI を作り直さない (langs.json の build と linux.build を走らせない)")
-    ap.add_argument("--verbose", action="store_true", help="差が無くても、場面ごとに各言語の route・error・losses・skipped を出す")
+    ap.add_argument("--verbose", action="store_true", help="差が無くても、場面ごとに各言語の route・base・error・spelling・skipped を出す")
     ap.add_argument("--inside", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
     if args.inside:
@@ -800,7 +970,7 @@ def main():
         for name, groups in splits:
             print(f"  {name}: " + " / ".join(",".join(l for l in langs if l in g) for g in groups))
     for case, detail in details:
-        lr = " last_resort" if case.get("last_resort") else ""
+        lr = describe_options(case)
         env = f"  [linux: {describe_linux(case['linux'])}]" if "linux" in case else ""
         print(f"\n== {case['name']}  ({case['op']}{lr} {json.dumps(case['path'], ensure_ascii=False)}){env}")
         header = ["項目"] + list(langs) + ["期待"]
@@ -824,8 +994,8 @@ def main():
                     print(f"    {l}: {o['status']}")
                     continue
                 r = o["result"]
-                print(f"    {l}: ok={json.dumps(r['ok'])} error={r['error']} route={r['route']} "
-                      f"losses={','.join(r['losses']) or '-'} skipped={','.join(r['skipped']) or '-'}")
+                print(f"    {l}: ok={json.dumps(r['ok'])} error={r['error']} route={r['route']} base={r['base']} "
+                      f"spelling={describe_spelling(r['spelling'])} skipped={','.join(r['skipped']) or '-'}")
     for m in messages:
         print(f"\n{m}")
     if args.keep:

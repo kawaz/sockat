@@ -5,7 +5,7 @@
     "path": "{short}/s.sock",
     "cwd": "{root}",
     "setup": [],
-    "expect": { "ok": true, "error": null, "route": "standard", "losses": [], "skipped": [], "file": true }
+    "expect": { "ok": true, "error": null, "route": "standard", "skipped": [], "file": true, "spelling": {"kind": "Original"}, "base": null, "left": [] }
   },
   {
     "name": "short-relative-bind",
@@ -13,7 +13,7 @@
     "path": "s.sock",
     "cwd": "{root}",
     "setup": [],
-    "expect": { "ok": true, "error": null, "route": "standard", "losses": ["cwd-relative"], "skipped": [], "file": true }
+    "expect": { "ok": true, "error": null, "route": "standard", "skipped": [], "file": true, "spelling": {"kind": "CwdRelative"}, "base": null, "left": [] }
   },
   {
     "name": "long-absolute-bind",
@@ -29,7 +29,7 @@
     "path": "{long}/s.sock",
     "cwd": "{root}",
     "setup": [],
-    "expect": { "ok": false, "error": "ENOENT", "route": null, "losses": [], "skipped": [], "created": [] }
+    "expect": { "ok": false, "error": "ENOENT", "route": null, "skipped": [], "created": [], "spelling": null, "base": null }
   },
   {
     "name": "long-bind-file-in-the-middle",
@@ -37,7 +37,7 @@
     "path": "{long}/f/s.sock",
     "cwd": "{root}",
     "setup": ["mkdir {long}", "touch {long}/f"],
-    "expect": { "ok": false, "error": "ENOTDIR", "route": null, "losses": [], "skipped": [], "created": [] }
+    "expect": { "ok": false, "error": "ENOTDIR", "route": null, "skipped": [], "created": [], "spelling": null, "base": null }
   },
   {
     "name": "long-bind-file-exists",
@@ -45,7 +45,7 @@
     "path": "{long}/s.sock",
     "cwd": "{root}",
     "setup": ["mkdir {long}", "touch {long}/s.sock"],
-    "expect": { "ok": false, "error": "EADDRINUSE", "losses": [], "created": [] }
+    "expect": { "ok": false, "error": "EADDRINUSE", "created": [], "spelling": null }
   },
   {
     "name": "long-connect",
@@ -53,7 +53,7 @@
     "path": "{long}/s.sock",
     "cwd": "{root}",
     "setup": ["mkdir {long}", "listen {long}/s.sock"],
-    "expect": { "ok": true, "error": null, "losses": [], "received": "x", "residue": [] }
+    "expect": { "ok": true, "error": null, "received": "x", "residue": [], "spelling": null }
   },
   {
     "name": "long-connect-not-listening",
@@ -61,7 +61,7 @@
     "path": "{long}/s.sock",
     "cwd": "{root}",
     "setup": ["mkdir {long}", "stale-socket {long}/s.sock"],
-    "expect": { "ok": false, "error": "ECONNREFUSED", "losses": [], "created": [] }
+    "expect": { "ok": false, "error": "ECONNREFUSED", "created": [], "spelling": null }
   },
   {
     "name": "long-bind-trailing-slash",
@@ -69,7 +69,7 @@
     "path": "{long}/",
     "cwd": "{root}",
     "setup": ["mkdir {long}"],
-    "expect": { "ok": false, "error": "invalid-argument", "route": null, "losses": [], "skipped": [], "created": [] }
+    "expect": { "ok": false, "error": "invalid-argument", "route": null, "skipped": [], "created": [], "spelling": null, "base": null }
   },
   {
     "name": "long-bind-dot",
@@ -77,7 +77,7 @@
     "path": "{long}/.",
     "cwd": "{root}",
     "setup": ["mkdir {long}"],
-    "expect": { "ok": false, "error": "invalid-argument", "route": null, "losses": [], "skipped": [], "created": [] }
+    "expect": { "ok": false, "error": "invalid-argument", "route": null, "skipped": [], "created": [], "spelling": null, "base": null }
   },
   {
     "name": "long-bind-dotdot",
@@ -85,7 +85,7 @@
     "path": "{long}/..",
     "cwd": "{root}",
     "setup": ["mkdir {long}"],
-    "expect": { "ok": false, "error": "invalid-argument", "route": null, "losses": [], "skipped": [], "created": [] }
+    "expect": { "ok": false, "error": "invalid-argument", "route": null, "skipped": [], "created": [], "spelling": null, "base": null }
   },
   {
     "name": "short-bind-nul",
@@ -93,7 +93,7 @@
     "path": "s\u0000.sock",
     "cwd": "{root}",
     "setup": [],
-    "expect": { "ok": false, "error": "invalid-argument", "route": null, "losses": [], "skipped": [], "created": [] }
+    "expect": { "ok": false, "error": "invalid-argument", "route": null, "skipped": [], "created": [], "spelling": null, "base": null }
   },
   {
     "name": "long-bind-nul",
@@ -101,7 +101,7 @@
     "path": "{long}/s\u0000.sock",
     "cwd": "{root}",
     "setup": ["mkdir {long}"],
-    "expect": { "ok": false, "error": "invalid-argument", "route": null, "losses": [], "skipped": [], "created": [] }
+    "expect": { "ok": false, "error": "invalid-argument", "route": null, "skipped": [], "created": [], "spelling": null, "base": null }
   },
   {
     "name": "long-connect-nul",
@@ -109,12 +109,12 @@
     "path": "{long}/s\u0000.sock",
     "cwd": "{root}",
     "setup": ["mkdir {long}"],
-    "expect": { "ok": false, "error": "invalid-argument", "route": null, "losses": [], "skipped": [], "created": [] }
+    "expect": { "ok": false, "error": "invalid-argument", "route": null, "skipped": [], "created": [], "spelling": null, "base": null }
   },
   {
-    "name": "long-absolute-bind-last-resort",
+    "name": "long-absolute-bind-cross-uid",
     "op": "bind",
-    "last_resort": true,
+    "usable_cross_uid": true,
     "path": "{long}/s.sock",
     "cwd": "{root}",
     "setup": ["mkdir {long}"],
@@ -129,22 +129,32 @@
     "expect": { "residue": [] }
   },
   {
-    "name": "long-filename-bind-last-resort",
+    "name": "long-absolute-bind-base",
     "op": "bind",
-    "last_resort": true,
-    "path": "{long}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.sock",
+    "base": "{root}/b",
+    "path": "{long}/s.sock",
     "cwd": "{root}",
     "setup": ["mkdir {long}"],
     "expect": { "residue": [] }
   },
   {
-    "name": "long-connect-last-resort",
-    "op": "connect",
-    "last_resort": true,
+    "name": "long-bind-base-no-parent",
+    "op": "bind",
+    "base": "{root}/none/b",
     "path": "{long}/s.sock",
     "cwd": "{root}",
-    "setup": ["mkdir {long}", "listen {long}/s.sock"],
-    "expect": { "ok": true, "error": null, "losses": [], "received": "x", "residue": [] }
+    "setup": ["mkdir {long}"],
+    "expect": { "ok": false, "error": "ENOENT", "spelling": null, "created": [], "left": [], "residue": [] }
+  },
+  {
+    "name": "long-bind-base-cross-uid",
+    "op": "bind",
+    "usable_cross_uid": true,
+    "base": "{root}/b",
+    "path": "{long}/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}"],
+    "expect": { "ok": false, "error": "EPERM", "spelling": null, "left": [], "residue": [] }
   },
   {
     "name": "long-filename-connect",
@@ -152,16 +162,7 @@
     "path": "{long}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.sock",
     "cwd": "{root}",
     "setup": ["mkdir {long}", "listen {long}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.sock"],
-    "expect": { "ok": true, "error": null, "losses": [], "received": "x", "residue": [] }
-  },
-  {
-    "name": "long-filename-connect-last-resort",
-    "op": "connect",
-    "last_resort": true,
-    "path": "{long}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.sock",
-    "cwd": "{root}",
-    "setup": ["mkdir {long}", "listen {long}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.sock"],
-    "expect": { "ok": true, "error": null, "losses": [], "received": "x", "residue": [] }
+    "expect": { "ok": true, "error": null, "received": "x", "residue": [], "spelling": null }
   },
   {
     "name": "linux-long-bind",
@@ -209,9 +210,9 @@
     "expect": { "ok": true, "error": null, "file": true, "residue": [] }
   },
   {
-    "name": "no-thread-cwd-no-proc-bind-last-resort",
+    "name": "no-thread-cwd-no-proc-bind-cross-uid",
     "op": "bind",
-    "last_resort": true,
+    "usable_cross_uid": true,
     "path": "{long}/s.sock",
     "cwd": "{root}",
     "setup": ["mkdir {long}"],
@@ -246,14 +247,14 @@
     "expect": { "ok": true, "error": null, "file": true, "residue": [] }
   },
   {
-    "name": "no-tmp-no-xdg-no-thread-cwd-no-proc-bind-last-resort",
+    "name": "no-tmp-no-thread-cwd-no-proc-bind-cross-uid",
     "op": "bind",
-    "last_resort": true,
+    "usable_cross_uid": true,
     "path": "{long}/s.sock",
     "cwd": "{root}",
     "setup": ["mkdir {long}"],
-    "linux": { "seccomp": "kill-unshare", "proc": false, "readonly": ["{tmpdir}", "/tmp", "{xdg}"] },
-    "expect": { "ok": true, "error": null, "file": true, "residue": [] }
+    "linux": { "seccomp": "kill-unshare", "proc": false, "readonly": ["{tmpdir}", "/tmp"] },
+    "expect": { "ok": false, "error": "ENAMETOOLONG", "spelling": null, "created": [], "residue": [] }
   },
   {
     "name": "no-proc-long-filename-bind",
@@ -262,7 +263,7 @@
     "cwd": "{root}",
     "setup": ["mkdir {long}"],
     "linux": { "seccomp": "unconfined", "proc": false },
-    "expect": { "ok": false, "error": "ENAMETOOLONG", "losses": [], "created": [], "residue": [] }
+    "expect": { "ok": false, "error": "ENAMETOOLONG", "created": [], "residue": [], "spelling": null }
   },
   {
     "name": "linux-long-connect",
@@ -306,18 +307,18 @@
     "path": "{long}/s.sock",
     "cwd": "{root}",
     "setup": ["mkdir {long}", "listen {long}/s.sock"],
-    "linux": { "seccomp": "kill-unshare", "proc": false, "readonly": ["{tmpdir}", "/tmp"] },
-    "expect": { "ok": false, "error": "ENAMETOOLONG", "losses": [], "created": [], "residue": [] }
+    "linux": { "seccomp": "kill-unshare", "proc": false, "readonly": ["{tmpdir}", "/tmp", "{xdg}"] },
+    "expect": { "ok": false, "error": "ENAMETOOLONG", "created": [], "residue": [], "spelling": null }
   },
   {
-    "name": "no-tmp-no-thread-cwd-no-proc-connect-last-resort",
+    "name": "no-tmp-no-thread-cwd-no-proc-connect-base",
     "op": "connect",
-    "last_resort": true,
+    "base": "{root}/b",
     "path": "{long}/s.sock",
     "cwd": "{root}",
     "setup": ["mkdir {long}", "listen {long}/s.sock"],
-    "linux": { "seccomp": "kill-unshare", "proc": false, "readonly": ["{tmpdir}", "/tmp"] },
-    "expect": { "ok": true, "error": null, "received": "x", "residue": [] }
+    "linux": { "seccomp": "kill-unshare", "proc": false, "readonly": ["{tmpdir}", "/tmp", "{xdg}"] },
+    "expect": { "ok": true, "error": null, "received": "x", "left": [], "residue": [] }
   },
   {
     "name": "no-tmp-no-proc-connect",
@@ -334,8 +335,8 @@
     "path": "{long}/s.sock",
     "cwd": "{root}",
     "setup": ["mkdir {long}", "listen {long}/s.sock"],
-    "linux": { "seccomp": "unconfined", "proc": false, "readonly": ["{tmpdir}", "/tmp", "{long}"] },
-    "expect": { "ok": false, "error": "ENAMETOOLONG", "losses": [], "created": [], "residue": [] }
+    "linux": { "seccomp": "unconfined", "proc": false, "readonly": ["{tmpdir}", "/tmp", "{xdg}", "{long}"] },
+    "expect": { "ok": true, "error": null, "received": "x", "created": [], "left": [], "residue": [] }
   },
   {
     "name": "linux-filename-93-connect",

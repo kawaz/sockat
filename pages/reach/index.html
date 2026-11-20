@@ -74,13 +74,14 @@ td .lines { white-space: pre-line; font-size: 0.9em; }
   <label class="stack"><span>$TMPDIR</span><select name="tmpdir"></select></label>
   <label class="stack"><span>/tmp</span><select name="tmp"></select></label>
   <label class="stack"><span data-i18n="f_sockdir"></span><select name="sockdir"></select></label>
+  <label class="stack"><span>Options.base</span><select name="base"></select></label>
   <label class="stack"><span data-i18n="f_result"></span><select name="result"><option value="" data-i18n="any"></option><option value="ok" data-i18n="reached"></option><option value="ng" data-i18n="not_reached"></option></select></label>
   <fieldset>
     <label><input type="checkbox" name="proc" checked> <span data-i18n="f_proc"></span></label>
     <label><input type="checkbox" name="thread_cwd" checked> <span data-i18n="f_thread_cwd"></span></label>
     <label><input type="checkbox" name="follows" checked> <span data-i18n="f_follows"></span></label>
     <label><input type="checkbox" name="private_tmp"> <span data-i18n="f_private_tmp"></span></label>
-    <label><input type="checkbox" name="cross_uid"> <span data-i18n="f_cross_uid"></span></label>
+    <label><input type="checkbox" name="cross_uid"> <span>Options.usable_cross_uid</span></label>
   </fieldset>
   <div class="ops" id="ops"></div>
 </form>
@@ -92,8 +93,8 @@ td .lines { white-space: pre-line; font-size: 0.9em; }
   "ja": {
     "lang_name": "日本語",
     "title": "sockat の届く範囲",
-    "h1": "sockat の届く範囲 (作り直しの案)",
-    "lead": "長いパスに届くか、どの経路で届くか、届かなければなぜかを、選んだ条件で絞り込む。合わない行と、全部の行で同じになった列が消える。数字はバイトで、未実装の設計に対する綴りの長さからの見積もり (根拠の列が「実測」の行は適合試験の結果と一致)。",
+    "h1": "sockat の届く範囲",
+    "lead": "長いパスに届くか、どの経路で届くか、届かなければなぜかを、選んだ条件で絞り込む。合わない行と、全部の行で同じになった列が消える。数字はバイトで、DR-0017 の設計に対する綴りの長さからの見積もり (根拠の列が「実測」の行は適合試験の結果と一致)。",
     "links": "表の全体と畳み方は {readme} (JS の無い環境ではこちら)、fork-cwd の手法は {fork}。",
     "readme_href": "README-ja.md",
     "fork_href": "../fork-cwd-ja.md",
@@ -101,7 +102,7 @@ td .lines { white-space: pre-line; font-size: 0.9em; }
     "f_impl": "言語",
     "f_filename": "ファイル名の長さ (バイト、空なら全部)",
     "f_relpath": "元のパスと相対パスの短い方 (connect、空なら全部)",
-    "f_sockdir": "ソケットのディレクトリ (connect)",
+    "f_sockdir": "ソケットのディレクトリ (connect 系)",
     "f_result": "結果",
     "any": "全部",
     "reached": "届く",
@@ -110,7 +111,6 @@ td .lines { white-space: pre-line; font-size: 0.9em; }
     "f_thread_cwd": "スレッドの cwd を使える",
     "f_follows": "bind が symlink を辿る (未確認の OS)",
     "f_private_tmp": "PrivateTmp (自分か相手が /tmp を隔離)",
-    "f_cross_uid": "別の uid と通信する",
     "loading": "読み込み中…",
     "no_rows": "この条件に合う行は無い。",
     "no_ops": "操作を 1 つ以上選ぶ。",
@@ -130,8 +130,8 @@ td .lines { white-space: pre-line; font-size: 0.9em; }
   "en": {
     "lang_name": "English",
     "title": "sockat reach",
-    "h1": "sockat reach (proposed rework)",
-    "lead": "Whether a long path is reached, by which route, and if not, why, filtered by the conditions you choose. Rows that do not match disappear, and so do columns that are the same in every row. Numbers are bytes, estimated from the spelling lengths of a design not yet implemented (rows whose basis is \"measured\" match the conformance results).",
+    "h1": "sockat reach",
+    "lead": "Whether a long path is reached, by which route, and if not, why, filtered by the conditions you choose. Rows that do not match disappear, and so do columns that are the same in every row. Numbers are bytes, estimated from the spelling lengths of the DR-0017 design (rows whose basis is \"measured\" match the conformance results).",
     "links": "Full tables and how rows are folded: {readme} (read this without JS). The fork-cwd technique: {fork}.",
     "readme_href": "README.md",
     "fork_href": "../fork-cwd.md",
@@ -139,7 +139,7 @@ td .lines { white-space: pre-line; font-size: 0.9em; }
     "f_impl": "Language",
     "f_filename": "File name length (bytes, empty for any)",
     "f_relpath": "Shorter of the original and the relative path (connect, empty for any)",
-    "f_sockdir": "Socket's directory (connect)",
+    "f_sockdir": "Socket's directory (connect family)",
     "f_result": "Result",
     "any": "Any",
     "reached": "Reached",
@@ -148,7 +148,6 @@ td .lines { white-space: pre-line; font-size: 0.9em; }
     "f_thread_cwd": "Thread cwd usable",
     "f_follows": "bind follows a symlink (OSes not checked)",
     "f_private_tmp": "PrivateTmp (either side has /tmp isolated)",
-    "f_cross_uid": "Peer has another uid",
     "loading": "Loading…",
     "no_rows": "No rows match these conditions.",
     "no_ops": "Choose at least one operation.",
@@ -173,7 +172,7 @@ const form = document.getElementById("f");
 const out = document.getElementById("out");
 const opsBox = document.getElementById("ops");
 const BOOL_DIMS = ["proc", "thread_cwd", "follows", "private_tmp", "cross_uid"];
-const PLACE_DIMS = ["xdg", "tmpdir", "tmp", "sockdir"];
+const PLACE_DIMS = ["xdg", "tmpdir", "tmp", "sockdir", "base"];
 const BAND_DIMS = ["filename", "relpath"];
 const BIND_OPS = new Set(["bind", "bind_ex", "resolve_for_bind"]);
 
@@ -389,7 +388,7 @@ function renderOp(op, s) {
   }
   const condDims = [];
   if (!s.os) condDims.push("os");
-  const order = ["lang", "filename", "relpath", "thread_cwd", "proc", "follows", "xdg", "tmpdir", "tmp", "sockdir", "private_tmp", "cross_uid"];
+  const order = ["lang", "filename", "relpath", "thread_cwd", "proc", "follows", "tmp", "xdg", "tmpdir", "sockdir", "base", "private_tmp", "cross_uid"];
   const constant = [];
   for (const dim of order) {
     const keys = new Set(rows.map(([, c]) => JSON.stringify(c[dim] ?? null)));

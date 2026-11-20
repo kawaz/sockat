@@ -28,8 +28,9 @@ FORK_DOC = {"ja": "../fork-cwd-ja.md", "en": "../fork-cwd.md"}
 TOKEN = re.compile(r"<(\w+)>")
 BIND_OPS = ("bind", "bind_ex", "resolve_for_bind")
 # 畳む時に次元を見る順 (先に畳んだ次元ほど「全部」になりやすい)。
-DIM_ORDER = ["lang", "cross_uid", "private_tmp", "follows", "sockdir", "xdg", "tmpdir", "tmp",
+DIM_ORDER = ["lang", "cross_uid", "private_tmp", "follows", "base", "sockdir", "xdg", "tmpdir", "tmp",
              "proc", "thread_cwd", "relpath", "filename"]
+PLACE_DIMS = ("xdg", "tmpdir", "tmp", "sockdir", "base")
 NO_PLACE = {"id": "none", "label": {"ja": "無い", "en": "none"}, "usable": False}
 
 
@@ -41,15 +42,18 @@ TEXT = {
     "why.thread_cwd": {"ja": "スレッドの cwd を使えない", "en": "thread cwd not usable"},
     "why.proc": {"ja": "/proc を使えない", "en": "/proc not usable"},
     "why.follows": {"ja": "bind が symlink を辿らない", "en": "bind does not follow the symlink"},
-    "why.cross_skip": {"ja": "別の uid の指定で使わない", "en": "not used when another uid is specified"},
-    "why.no_place_cross": {"ja": "別の uid が辿れる書ける置き場が無い", "en": "no writable base another uid can traverse"},
-    "why.no_place": {"ja": "書ける置き場が無い", "en": "no writable base"},
-    "why.place_long": {"ja": "置き場が長い (ファイル名の他で {fixed} > {limit})", "en": "base too long ({fixed} > {limit} without the file name)"},
+    "why.cross_skip": {"ja": "usable_cross_uid の指定で使わない", "en": "not used with usable_cross_uid"},
+    "why.no_place_cross": {"ja": "別の uid が辿れる B を作れる置き場が無い", "en": "no base where a B another uid can traverse can be made"},
+    "why.no_place": {"ja": "B を作れる置き場が無い", "en": "no base where B can be made"},
+    "why.sockdir_b": {"ja": "B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い", "en": "B is in the socket's directory, so the realpath spelling is longer than the original path"},
+    "why.place_long": {"ja": "B の綴りが長い (ファイル名の他で {fixed} > {limit})", "en": "B's spelling too long ({fixed} > {limit} without the file name)"},
     "why.filename": {"ja": "ファイル名 > {n}", "en": "file name > {n}"},
     "why.rel_both": {"ja": "元のパスも相対パスも > {limit}", "en": "both the original and the relative path > {limit}"},
     "why.rel": {"ja": "相対パス > {limit}", "en": "relative path > {limit}"},
-    "why.spelling": {"ja": "置き場が長い (綴り {n} > {limit})", "en": "base too long (spelling {n} > {limit})"},
+    "why.spelling": {"ja": "B の綴りが長い (綴り {n} > {limit})", "en": "B's spelling too long (spelling {n} > {limit})"},
     "why.no_route": {"ja": "この OS で試す経路が無い", "en": "no route to try on this OS"},
+    "why.follows_unmeasured": {"ja": "bind が symlink を辿るか未確認の OS (resolve では見分けられない)", "en": "an OS where it is not checked whether bind follows a symlink (resolve cannot tell)"},
+    "why.base_eperm": {"ja": "EPERM (usable_cross_uid と Options.base で、base までの途中が other に x を持たない)", "en": "EPERM (with usable_cross_uid and Options.base, the path to base does not give other x)"},
     # 綴りを相手が辿れるか
     "peer.dangling": {"ja": "辿れない (片付け済み)", "en": "no (cleaned up)"},
     "peer.blocked": {"ja": "辿れない ({problems})", "en": "no ({problems})"},
@@ -57,6 +61,7 @@ TEXT = {
     "peer.private_tmp": {"ja": "PrivateTmp", "en": "PrivateTmp"},
     "peer.process": {"ja": "辿れる (プロセスが終わるまで)", "en": "yes (until the process exits)"},
     "peer.cleanup": {"ja": "辿れる (cleanup まで)", "en": "yes (until cleanup)"},
+    "peer.os_cleanup": {"ja": "辿れる (D と一緒に OS の掃除で消えるまで)", "en": "yes (until the OS's cleanup removes it with D)"},
     # 区切りと値
     "sep.list": {"ja": "、", "en": ", "},
     "sep.short": {"ja": "・", "en": ", "},
@@ -71,29 +76,25 @@ TEXT = {
     "req.thread_cwd": {"ja": "スレッドの cwd", "en": "thread cwd"},
     "req.proc": {"ja": "/proc", "en": "/proc"},
     "req.!proc": {"ja": "/proc を使えない時だけ", "en": "only when /proc is not usable"},
-    "req.follows": {"ja": "bind が symlink を辿る (connect はいつも辿る)", "en": "bind follows the symlink (connect always follows)"},
-    "place.xdg": {"ja": "$XDG_RUNTIME_DIR", "en": "$XDG_RUNTIME_DIR"},
-    "place.tmpdir": {"ja": "$TMPDIR", "en": "$TMPDIR"},
-    "place.tmp": {"ja": "/tmp", "en": "/tmp"},
-    "place.sockdir": {"ja": "ソケットのディレクトリ", "en": "the socket's directory"},
-    "pick.first": {"ja": "書ける最初の物", "en": "the first writable one"},
-    "pick.shortest": {"ja": "書ける物のうち実パスの短い方", "en": "the writable one with the shorter realpath"},
-    "pick.first_fit": {"ja": "綴りが収まる最初の物", "en": "the first one the spelling fits in"},
-    "need.place": {"ja": "置き場: {places} の{pick}", "en": "base: {pick} among {places}"},
-    "cross.skip": {"ja": "別の uid の指定で飛ばす", "en": "skipped when another uid is specified"},
-    "cross.if_traversable": {"ja": "別の uid の指定では、途中が other に x の置き場だけ", "en": "when another uid is specified, only bases whose path gives other x"},
-    "spdesc.place.traversable": {"ja": "置き場までの途中が other に x なら true", "en": "true if the path to the base gives other x"},
-    "spdesc.not place.under_tmp": {"ja": "置き場が /tmp・/var/tmp の下でなければ true", "en": "true unless the base is under /tmp or /var/tmp"},
-    "formula.minus_place": {"ja": " − 置き場", "en": " − base"},
+    "req.follows": {"ja": "bind が symlink を辿る (実測した OS は OS で、他は実行時に見分ける)", "en": "bind follows the symlink (by the OS where measured, told at run time elsewhere)"},
+    "req.follows_measured": {"ja": "bind が symlink を辿ると実測した OS (macOS・NetBSD)", "en": "an OS where bind is measured to follow the symlink (macOS, NetBSD)"},
+    "req.!cross": {"ja": "usable_cross_uid の指定で飛ばす", "en": "skipped with usable_cross_uid"},
+    "req.B": {"ja": "B を作れる (D をその中に)", "en": "B can be made (D inside it)"},
+    "req.Breal": {"ja": "B の実パスの綴り (usable_cross_uid の指定では途中が other に x の B。B がソケットのディレクトリにあれば使えない)", "en": "B's realpath spelling (with usable_cross_uid, a B whose path gives other x; not usable when B is in the socket's directory)"},
+    "b.proc": {"ja": "procB", "en": "procB"},
+    "b.real": {"ja": "B の実パス", "en": "B's realpath"},
+    "spdesc.B.traversable": {"ja": "B までの途中が other に x なら true", "en": "true if the path to B gives other x"},
+    "spdesc.not B.under_tmp": {"ja": "B が /tmp・/var/tmp の下でなければ true", "en": "true unless B is under /tmp or /var/tmp"},
+    "formula.minus_b": {"ja": " − B の実パス", "en": " − B's realpath"},
     "formula.rel": {"ja": "よらない (相対パス ≤ {limit})", "en": "any (relative path ≤ {limit})"},
     "formula.any": {"ja": "よらない", "en": "any"},
-    "formula.place": {"ja": " (置き場 ≤ sockaddr − {fixed})", "en": " (base ≤ sockaddr − {fixed})"},
+    "formula.b": {"ja": " (B の実パス ≤ sockaddr − {fixed})", "en": " (B's realpath ≤ sockaddr − {fixed})"},
     # README
-    "md.title": {"ja": "# 届く範囲 (作り直しの案)", "en": "# Reach (proposed rework)"},
+    "md.title": {"ja": "# 届く範囲", "en": "# Reach"},
     "md.switch": {"ja": "> [English](./README.md) | 日本語", "en": "> English | [日本語](./README-ja.md)"},
     "md.intro": {
-        "ja": "sockat で長いパスに届くか、どの経路で届くか、届かなければなぜかを、条件の組み合わせごとに並べた表。[resolve と置き場 B で経路を組み直す案](../../docs/issue/2026-11-20-resolve-and-persistent-base.md) (fork なし、最終手段なし) に対して作る。未実装の設計なので、数字は綴りの長さからの見積もり。",
-        "en": "Whether sockat reaches a long path, by which route, and if not, why, for each combination of conditions. Built for [the proposal to rebuild the routes around resolve and base B](../../docs/issue/2026-11-20-resolve-and-persistent-base.md) (Japanese; no fork, no last resort). The design is not implemented yet, so the numbers are estimates from the lengths of the spellings.",
+        "ja": "sockat で長いパスに届くか、どの経路で届くか、届かなければなぜかを、条件の組み合わせごとに並べた表。[DR-0017](../../docs/decisions/DR-0017-resolve-through-persistent-base.md) の設計 (置き場 B を使い回し resolve の綴りを先に、fork なし) と [SPEC](../../docs/SPEC-ja.md) に対して作る。数字は綴りの長さからの見積もり。",
+        "en": "Whether sockat reaches a long path, by which route, and if not, why, for each combination of conditions. Built for the design of [DR-0017](../../docs/decisions/DR-0017-resolve-through-persistent-base.md) (Japanese; base B reused, resolve's spellings first, no fork) and the [SPEC](../../docs/SPEC.md). The numbers are estimates from the lengths of the spellings.",
     },
     "md.page": {
         "ja": "- 選んで絞り込むページ: [index.html](index.html?lang=ja) (JS の無い環境ではこの README を読む)",
@@ -132,24 +133,41 @@ TEXT = {
         "en": "- A cell whose basis is \"estimate\" is only computed from the spelling formulas and typical values in model.json",
     },
     "md.est.2": {
-        "ja": "- 「実測」のセルは、今の実装を適合試験 ([conformance/cases.json](../../conformance/cases.json)) に流した結果が、計算と同じ経路・同じ結果だった場面の名前。当てるのは作り直しで変わらない経路 ({routes}) と、fork を持たない言語 (py・go) の既定の bind の届かない行だけ。条件が全部分かる場面だけを当てる",
-        "en": "- A \"measured\" cell names the conformance scenes ([conformance/cases.json](../../conformance/cases.json)) where the current implementations took the same route with the same result as computed. Applied only to routes the rework does not change ({routes}) and to the unreached rows of the default bind for languages without fork (py, go), and only for scenes whose conditions are all known",
+        "ja": "- 「実測」のセルは、DR-0017 の前の実装を適合試験 ([conformance/cases.json](../../conformance/cases.json)) に流した結果が、計算と同じ経路だった場面の名前。当てるのは DR-0017 で変わらない connect の経路 ({routes}) の行だけで、条件が全部分かる場面だけを当てる",
+        "en": "- A \"measured\" cell names the conformance scenes ([conformance/cases.json](../../conformance/cases.json)) where the implementations before DR-0017 took the same route as computed. Applied only to rows of connect routes DR-0017 does not change ({routes}), and only for scenes whose conditions are all known",
     },
     "md.est.3": {
-        "ja": "- 入力のうち実測したもの: bind が symlink を辿る OS ([findings](../../docs/findings/2026-11-19-bind-through-file-symlink.md))、0700 の親の下の 0711 は別の uid が辿れないこと (issue の「実測」)、docker の seccomp で `unshare` が断られること ([conformance.md](../../docs/design/conformance.md))",
-        "en": "- Inputs that were measured: which OSes' bind follows a symlink ([findings](../../docs/findings/2026-11-19-bind-through-file-symlink.md), Japanese), that another uid cannot traverse a 0711 directory under a 0700 parent (the measurements in the issue), and that docker's seccomp refuses `unshare` ([conformance.md](../../docs/design/conformance.md), Japanese)",
+        "ja": "- 入力のうち実測したもの: bind が symlink を辿る OS ([findings](../../docs/findings/2026-11-19-bind-through-file-symlink.md))、0700 の親の下の 0711 は別の uid が辿れないこと (DR-0017 の Context の実測)、docker の seccomp で `unshare` が断られること ([conformance.md](../../docs/design/conformance.md))",
+        "en": "- Inputs that were measured: which OSes' bind follows a symlink ([findings](../../docs/findings/2026-11-19-bind-through-file-symlink.md), Japanese), that another uid cannot traverse a 0711 directory under a 0700 parent (the measurements in the Context of DR-0017), and that docker's seccomp refuses `unshare` ([conformance.md](../../docs/design/conformance.md), Japanese)",
     },
     "md.params.lead": {"ja": "見積もりの前提:", "en": "Assumptions of the estimates:"},
     "md.params.head": {"ja": "| 値 | バイト | 中身 |", "en": "| Value | Bytes | Meaning |"},
     "md.cond.h": {"ja": "## 条件", "en": "## Conditions"},
     "md.cond.head": {"ja": "| 条件 | 効く操作 | 中身 |", "en": "| Condition | Operations it affects | Meaning |"},
+    "md.b.lead": {"ja": "B の選び方 ([SPEC-routes の「B の作り方」](../../docs/SPEC-routes-ja.md#b-の作り方)):", "en": "How B is chosen (\"How B is made\" in [SPEC-routes](../../docs/SPEC-routes.md)):"},
+    "md.b.1": {
+        "ja": "- B はプロセスごとに 1 つ。`Options.base` を指定しなければ、`/tmp` → `$XDG_RUNTIME_DIR` → `$TMPDIR` → ソケットのディレクトリの順で最初に作れた所。B の綴りが収まらなくても次の置き場には移らない",
+        "en": "- One B per process. Without `Options.base`, the first of `/tmp` → `$XDG_RUNTIME_DIR` → `$TMPDIR` → the socket's directory where it can be made. When B's spelling does not fit, the next base is not tried",
+    },
+    "md.b.2": {
+        "ja": "- 綴りは procB (`/proc` を使えて収まる時) → B の実パス。B がソケットのディレクトリにある時は実パスの綴りが元のパスより長いので procB だけ",
+        "en": "- The spelling is procB (when `/proc` is usable and it fits), then B's realpath. When B is in the socket's directory, the realpath spelling is longer than the original path, so only procB",
+    },
+    "md.b.3": {
+        "ja": "- `usable_cross_uid` の時は、同じ順のうち途中が other に x の所だけを B に使い (もう 1 つの B)、procB を使わない。無いか収まらなければ thread-cwd / at",
+        "en": "- With `usable_cross_uid`, only bases in the same order whose path gives other x are used for B (another B), and procB is not used. If none, or it does not fit, thread-cwd / at",
+    },
+    "md.b.4": {
+        "ja": "- thread-cwd・at の E はプロセスの B の D の中に作る。bind ではソケットのディレクトリに書けるので、いつも B を作れる",
+        "en": "- The E of thread-cwd and at is made in D of the process's B. For bind the socket's directory is writable, so B can always be made",
+    },
     "md.places.lead": {
-        "ja": "置き場 (代表値。長さは実パスのバイト数、symlink-file は `$TMPDIR`・`/tmp` をそのままの綴りで使う):",
-        "en": "Bases (typical values. The length is the realpath's bytes; symlink-file uses `$TMPDIR` / `/tmp` as spelled):",
+        "ja": "置き場 (代表値。長さは実パスのバイト数、B の実パスは置き場 + `/` + B の名前。`Options.base` は指定した所が B):",
+        "en": "Bases (typical values. The length is the realpath's bytes; B's realpath is the base + `/` + B's name. With `Options.base`, the given place is B):",
     },
     "md.places.head": {
-        "ja": "| 置き場 | OS | 値 | 長さ | 別の uid が辿れる | /tmp・/var/tmp の下 |",
-        "en": "| Base | OS | Value | Length | Another uid can traverse | Under /tmp or /var/tmp |",
+        "ja": "| 置き場 | OS | 値 | 長さ | B の実パスの長さ | 別の uid が辿れる | /tmp・/var/tmp の下 |",
+        "en": "| Base | OS | Value | Length | Length of B's realpath | Another uid can traverse | Under /tmp or /var/tmp |",
     },
     "md.routes.h": {"ja": "## 経路", "en": "## Routes"},
     "md.routes.head": {
@@ -157,13 +175,13 @@ TEXT = {
         "en": "| Operation | Order | Route | Spelling | File name reached | OS | Needs | Spelling's properties (bind) |",
     },
     "md.routes.symbols": {
-        "ja": "綴りの記号: `<F>` はファイル名、`<rel>` は元のパスと相対パスの短い方、`<place>` は置き場の実パス (symlink-file はそのままの綴り)、それ以外は「見積もりの前提」の値。sockaddr は sockaddr に入る長さ (Linux / illumos 107、他 103)",
-        "en": "Spelling symbols: `<F>` is the file name, `<rel>` the shorter of the original and the relative path, `<place>` the base's realpath (as spelled for symlink-file), anything else a value from \"Assumptions of the estimates\". sockaddr is the length that fits a sockaddr (107 on Linux / illumos, 103 elsewhere)",
+        "ja": "綴りの記号: `<F>` はファイル名、`<rel>` は元のパスと相対パスの短い方、`<B>` は B の実パス、それ以外は「見積もりの前提」の値。sockaddr は sockaddr に入る長さ (Linux / illumos 107、他 103)。表の経路の列の `(B: …)` はどの B を通ったかで、名前は診断の `base` の値 (`Options.base` は指定した B。診断の `base` の値は SPEC に無い)",
+        "en": "Spelling symbols: `<F>` is the file name, `<rel>` the shorter of the original and the relative path, `<B>` B's realpath, anything else a value from \"Assumptions of the estimates\". sockaddr is the length that fits a sockaddr (107 on Linux / illumos, 103 elsewhere). `(B: …)` in the route column of the tables is the B that was used, named by the values of the diagnostic `base` (`Options.base` is the given B; the SPEC has no `base` value for it)",
     },
     "md.sum.h": {"ja": "## まとめ: ファイル名の長さごとに届くか", "en": "## Summary: reach by file name length"},
     "md.sum.lead": {
-        "ja": "表の全部の条件の組み合わせを、ファイル名の帯ごとにまとめた物。「条件しだい」はスレッドの cwd・`/proc`・置き場・別の uid・相対パスの長さ等で届いたり届かなかったりする帯。「普段の環境で届く」の条件: {typical}",
-        "en": "Every combination of conditions in the tables, summarized per file name band. \"Depends\" is a band reached or not depending on the thread cwd, `/proc`, the bases, another uid, the relative path's length and so on. \"Reached in a typical environment\" assumes: {typical}",
+        "ja": "表の全部の条件の組み合わせを、ファイル名の帯ごとにまとめた物。「条件しだい」はスレッドの cwd・`/proc`・置き場・Options・相対パスの長さ等で届いたり届かなかったりする帯。「普段の環境で届く」の条件: {typical}",
+        "en": "Every combination of conditions in the tables, summarized per file name band. \"Depends\" is a band reached or not depending on the thread cwd, `/proc`, the bases, Options, the relative path's length and so on. \"Reached in a typical environment\" assumes: {typical}",
     },
     "md.sum.head": {
         "ja": "| 操作 | OS | 言語 | 普段の環境で届く | どの条件でも届く | 条件しだい | どの条件でも届かない |",
@@ -208,6 +226,7 @@ class Model:
         self.os_by_id = {o["id"]: o for o in self.oses}
         self.langs = raw["langs"]
         self.places = raw["places"]
+        self.b_order = raw["b_order"]
         self.conditions = raw["conditions"]
         self.cond_by_id = {c["id"]: c for c in self.conditions}
         self.ops = raw["ops"]
@@ -224,11 +243,20 @@ class Model:
             return by.get(os["family"], by["*"])
         return p["profiles"]
 
-    def place_len(self, prof, os, which="len"):
-        v = prof.get(which, prof.get("len"))
+    def place_len(self, prof, os):
+        v = prof.get("len")
         if v == "os.tmp_realpath":
             return len(os["tmp_realpath"])
         return v
+
+    def b_len(self, place, prof, os):
+        """B の実パスの長さ。実パスの綴りを使えない B (ソケットのディレクトリ) は None。"""
+        n = self.place_len(prof, os)
+        if n is None:
+            return None
+        if prof.get("is_b"):
+            return n
+        return n + 1 + self.params[self.places[place]["b_name"]]
 
     def limit(self, name, os):
         if name == "sockaddr":
@@ -242,50 +270,77 @@ class Model:
             return False
         return True
 
+    def cond_applies(self, cid, op, os):
+        c = self.cond_by_id[cid]
+        if "ops" in c and op not in c["ops"]:
+            return False
+        if "os" in c and os["id"] not in c["os"]:
+            return False
+        if "os_attr" in c and not os.get(c["os_attr"]):
+            return False
+        return True
+
     def dims(self, op, os):
         """この操作と OS で値が変わりうる条件の次元と、その値 (id の並び)。"""
         out = {}
         out["lang"] = [l["id"] for l in self.langs]
         out["filename"] = None  # 帯は後で計算する
         order = [self.routes[rid] for rid in self.orders[op] if self.route_in_os(self.routes[rid], os)]
-        if op == "connect" and any(r["spelling"] == "<rel>" for r in order):
+        if self.cond_applies("relpath", op, os) and any(r["spelling"] == "<rel>" for r in order):
             out["relpath"] = None
-        if os.get("thread_cwd"):
-            out["thread_cwd"] = [True, False]
-        if os.get("proc"):
-            out["proc"] = [True, False]
-        if os["bind_follows_symlink"] == "probe" and op in BIND_OPS:
+        for cid in ("thread_cwd", "proc"):
+            if self.cond_applies(cid, op, os):
+                out[cid] = [True, False]
+        if os["bind_follows_symlink"] == "probe" and self.cond_applies("follows", op, os):
             out["follows"] = [True, False]
-        for place in ("xdg", "tmpdir", "tmp", "sockdir"):
-            c = self.cond_by_id[place]
-            if op not in c["ops"]:
+        for place in PLACE_DIMS:
+            if not self.cond_applies(place, op, os):
                 continue
             profs = self.place_profiles(place, os)
             if len(profs) > 1:
                 out[place] = [p["id"] for p in profs]
         for cid in ("private_tmp", "cross_uid"):
-            c = self.cond_by_id[cid]
-            if op in c["ops"] and ("os" not in c or os["id"] in c["os"]):
+            if self.cond_applies(cid, op, os):
                 out[cid] = [True, False]
         return out
 
+    def choose_b(self, op, os, cond):
+        """(プロセスの B, usable_cross_uid の B)。どちらも (置き場, profile) か None。"""
+        base_id = cond.get("base", "unset")
+        if base_id != "unset":
+            prof = next(p for p in self.places["base"]["profiles"] if p["id"] == base_id)
+            return ("base", prof), (("base", prof) if prof.get("traversable") else None)
+        cands = []
+        for place in self.b_order:
+            profs = self.place_profiles(place, os)
+            if place == "sockdir" and op in BIND_OPS:
+                pid = self.places["sockdir"]["bind_fixed"]
+            else:
+                pid = cond.get(place, profs[0]["id"])
+            prof = next(p for p in profs if p["id"] == pid)
+            if prof.get("usable", True) is not False:
+                cands.append((place, prof))
+        normal = cands[0] if cands else None
+        cross = next((c for c in cands if c[1].get("traversable")), None)
+        return normal, cross
+
 
 def spelling_parts(spelling):
-    """綴りの雛形を、決まった長さと、変数 (F・rel・place) に分ける。"""
+    """綴りの雛形を、決まった長さと、変数 (F・rel・B と params の名前) に分ける。"""
     variables = []
     const_text = TOKEN.sub(lambda m: (variables.append(m.group(1)), "")[1], spelling)
     return len(const_text), variables
 
 
-def spelling_len(model, spelling, env):
+def spelling_fixed(model, spelling):
+    """綴りのうち、条件によらない長さ (文字と params)。"""
     const, variables = spelling_parts(spelling)
-    n = const
-    for v in variables:
-        if v in model.params:
-            n += model.params[v]
-        else:
-            n += env[v]
-    return n
+    return const + sum(model.params[v] for v in variables if v in model.params), variables
+
+
+def spelling_len(model, spelling, env):
+    fixed, variables = spelling_fixed(model, spelling)
+    return fixed + sum(env[v] for v in variables if v not in model.params)
 
 
 # ---------- 境目の帯 ----------
@@ -305,31 +360,28 @@ def all_routes_for_bands(model, os):
     return rs
 
 
-def place_lens(model, os, r):
-    if "place" not in r or r["place"].get("in_spelling") is False:
-        return [0]
-    which = r["place"].get("spell_len", "len")
+def b_lens(model, os):
+    """この OS で B の実パスがとりうる長さ。"""
     lens = set()
-    for place in r["place"]["from"]:
+    for place in model.places:
         for prof in model.place_profiles(place, os):
             if prof.get("usable", True) is False:
                 continue
-            v = model.place_len(prof, os, which)
-            if v is not None:
-                lens.add(v)
-    return sorted(lens) or [0]
+            n = model.b_len(place, prof, os)
+            if n is not None:
+                lens.add(n)
+    return sorted(lens)
 
 
 def bands_for(model, os):
     name_max = model.params["name_max"]
     f_cuts, rel_cuts = set(), set()
     for r in all_routes_for_bands(model, os):
-        const, variables = spelling_parts(r["spelling"])
+        fixed, variables = spelling_fixed(model, r["spelling"])
         limit = model.limit(r["limit"], os)
-        fixed = const + sum(model.params[v] for v in variables if v in model.params)
         if "F" in variables:
-            for pl in place_lens(model, os, r):
-                fmax = limit - fixed - (pl if "place" in variables else 0)
+            for bl in (b_lens(model, os) if "B" in variables else [0]):
+                fmax = limit - fixed - bl
                 if 1 <= fmax < name_max:
                     f_cuts.add(fmax)
         if "rel" in variables:
@@ -370,8 +422,10 @@ def requires_ok(model, op, os, cond, token):
         return bool(os.get("proc")) and cond.get("proc", False), ["proc"]
     if token == "!proc":
         return not (os.get("proc") and cond.get("proc", False)), None
+    if token == "follows_measured":
+        return os["bind_follows_symlink"] is True, (["follows_unmeasured"] if os["bind_follows_symlink"] == "probe" else None)
     if token == "follows":
-        if op == "connect":
+        if op not in BIND_OPS:
             return True, None
         f = os["bind_follows_symlink"]
         if f == "probe":
@@ -380,64 +434,44 @@ def requires_ok(model, op, os, cond, token):
     raise ValueError(token)
 
 
-def usable_places(model, op, os, cond, r, cross_uid_filter):
-    out = []
-    for place in r["place"]["from"]:
-        if place == "sockdir" and op in BIND_OPS:
-            pid = model.places["sockdir"]["bind_fixed"]
-        else:
-            profs = model.place_profiles(place, os)
-            pid = cond.get(place, profs[0]["id"])
-        prof = next(p for p in model.place_profiles(place, os) if p["id"] == pid)
-        if prof.get("usable", True) is False:
-            continue
-        if cross_uid_filter and not prof.get("traversable", False):
-            continue
-        out.append((place, prof))
-    return out
-
-
 def try_route(model, op, os, lang, cond, F, rel, r):
-    """経路を 1 つ試す。(使えたか, 使えない理由, 選んだ置き場の profile)。理由が None なら列に無い (試さない)。"""
+    """経路を 1 つ試す。(使えたか, 使えない理由, 通った B)。理由が None なら列に無い (試さない)。"""
     if r["route"] in lang["lacks"]:
         return False, ["lacks"], None
-    for token in r.get("requires", []):
-        ok, why = requires_ok(model, op, os, cond, token)
-        if not ok:
-            return False, why, None
-    cross = op in ("bind_ex", "resolve_for_bind") and cond.get("cross_uid", False)
-    if cross and r.get("cross_uid") == "skip":
-        return False, ["cross_skip"], None
-    limit = model.limit(r["limit"], os)
+    cross = model.cond_applies("cross_uid", op, os) and cond.get("cross_uid", False)
+    normal, cross_b = model.choose_b(op, os, cond)
     env = {"F": F, "rel": rel}
-    place_prof = None
-    if "place" in r:
-        filt = cross and r.get("cross_uid") == "if_traversable"
-        cands = usable_places(model, op, os, cond, r, filt)
-        if not cands:
-            return False, (["no_place_cross"] if filt else ["no_place"]), None
-        pick = r["place"]["pick"]
-        which = r["place"].get("spell_len", "len")
-        if pick == "shortest":
-            cands = [min(cands, key=lambda c: model.place_len(c[1], os, which))]
-        elif pick == "first":
-            cands = cands[:1]
-        last = None
-        for place, prof in cands:
-            env["place"] = model.place_len(prof, os, which) or 0
-            n = spelling_len(model, r["spelling"], env)
-            if n <= limit:
-                return True, None, prof
-            last = n
-        return False, too_long_reason(model, r, limit, env, last), None
+    used = None
+    for token in r.get("requires", []):
+        if token == "!cross":
+            if cross:
+                return False, ["cross_skip"], None
+        elif token == "B":
+            if normal is None:
+                return False, ["no_place"], None
+            used = normal
+        elif token == "Breal":
+            b = cross_b if cross else normal
+            if b is None:
+                return False, (["no_place_cross"] if cross else ["no_place"]), None
+            n = model.b_len(b[0], b[1], os)
+            if n is None:
+                return False, ["sockdir_b"], None
+            env["B"] = n
+            used = b
+        else:
+            ok, why = requires_ok(model, op, os, cond, token)
+            if not ok:
+                return False, why, None
+    limit = model.limit(r["limit"], os)
     n = spelling_len(model, r["spelling"], env)
     if n <= limit:
-        return True, None, None
+        return True, None, used
     return False, too_long_reason(model, r, limit, env, n), None
 
 
 def too_long_reason(model, r, limit, env, n):
-    const, variables = spelling_parts(r["spelling"])
+    _, variables = spelling_parts(r["spelling"])
     if "F" in variables:
         fixed = n - env["F"]
         if limit - fixed < 1:
@@ -448,30 +482,38 @@ def too_long_reason(model, r, limit, env, n):
     return ["spelling", n, limit]
 
 
-def route_label(r):
-    return f"{r['route']} ({r['base']})" if r.get("base") else r["route"]
+def route_label(model, r, b):
+    """結果の経路の名前。B を通る経路は診断の base を添える。"""
+    if not r.get("b"):
+        return r["route"]
+    if r["b"] == "proc":
+        diag = "sockdir" if b[0] == "sockdir" else "proc"
+    else:
+        diag = model.places[b[0]]["diag"]
+    return f"{r['route']} (B: {diag})"
 
 
-def spelling_of(r, prof):
+def spelling_of(r, b):
     if r.get("kind") is None:
         return None
     if r["kind"] == "Dangling":
         return {"kind": "Dangling"}
+    prof = b[1] if b else {}
 
     def val(v):
         if isinstance(v, bool):
             return v
-        if v == "place.traversable":
-            return bool(prof and prof.get("traversable"))
-        if v == "not place.under_tmp":
-            return not (prof and prof.get("under_tmp"))
+        if v == "B.traversable":
+            return bool(prof.get("traversable"))
+        if v == "not B.under_tmp":
+            return not prof.get("under_tmp")
         raise ValueError(v)
     return {"kind": "Linked", "removable": r["removable"], "until": r["until"],
             "usable_cross_uid": val(r["usable_cross_uid"]),
             "usable_with_private_tmp": val(r["usable_with_private_tmp"])}
 
 
-def peer_view(sp, cond):
+def peer_view(sp, cond, op):
     if sp["kind"] == "Dangling":
         return ["dangling"]
     problems = []
@@ -481,54 +523,66 @@ def peer_view(sp, cond):
         problems.append("private_tmp")
     if problems:
         return ["blocked", problems]
-    return ["process"] if sp["until"] == "Process" else ["cleanup"]
+    if sp["until"] == "Process":
+        return ["process"]
+    # 既定の bind は cleanup の口を返さないので、E は D と一緒に OS の掃除で消えるまで残る。
+    return ["os_cleanup"] if op == "bind" else ["cleanup"]
 
 
-def fork_reaches(model, op, os, cond, F):
-    if op == "connect":
-        fc = model.fork["connect"]
-        lb = fc["limit_by_family"]
-        limit = model.limit(lb.get(os["family"], lb["*"]), os)
-        return spelling_len(model, fc["spelling"], {"F": F}) <= limit
-    fb = model.fork["bind"]
-    return spelling_len(model, fb["spelling"], {"F": F}) <= model.limit(fb["limit"], os)
+def fork_reaches(model, op, os, F):
+    if op in BIND_OPS:
+        fb = model.fork["bind"]
+        return spelling_len(model, fb["spelling"], {"F": F}) <= model.limit(fb["limit"], os)
+    fc = model.fork["connect"]
+    lb = fc["limit_by_family"]
+    limit = model.limit(lb.get(os["family"], lb["*"]), os)
+    return spelling_len(model, fc["spelling"], {"F": F}) <= limit
 
 
 def fork_scenario(model, op, os):
+    """fork-cwd の文書の、この操作と OS の場面。fork と比べない操作 (resolve_for_connect) は None。"""
     for s in model.fork["scenarios"]:
         if op in s["ops"] and os["id"] in s["os"]:
             return s["id"]
-    raise ValueError((op, os["id"]))
+    return None
 
 
 def evaluate(model, op, os, lang, cond, F, rel):
+    if (model.cond_applies("cross_uid", op, os) and cond.get("cross_uid") and cond.get("base", "unset") != "unset"
+            and model.choose_b(op, os, cond)[1] is None):
+        return {"reach": False, "why": [[None, "base_eperm"]], "notes": []}
     tried = []
     for rid in model.orders[op]:
         r = model.routes[rid]
         if not model.route_in_os(r, os):
             continue
-        ok, why, prof = try_route(model, op, os, lang, cond, F, rel, r)
+        ok, why, b = try_route(model, op, os, lang, cond, F, rel, r)
         if ok:
-            res = {"reach": True, "route": r["route"], "base": r.get("base"), "label": route_label(r)}
+            res = {"reach": True, "route": r["route"], "label": route_label(model, r, b)}
             notes = []
             unc = r.get("unconfirmed")
             if unc and os["id"] in unc["os"]:
                 notes.append(unc["note"])
             if op in BIND_OPS:
-                sp = spelling_of(r, prof)
+                sp = spelling_of(r, b)
                 res["spelling"] = sp
-                res["peer"] = peer_view(sp, cond)
+                res["peer"] = peer_view(sp, cond, op)
             res["notes"] = notes
-            res["unchanged"] = bool(r.get("unchanged"))
             return res
         if why is not None:
-            tried.append([route_label(r)] + why)
+            tried.append([route_table_label(r)] + why)
     if not tried:
         tried = [[None, "no_route"]]
     res = {"reach": False, "why": tried, "notes": []}
-    if fork_reaches(model, op, os, cond, F):
-        res["fork"] = fork_scenario(model, op, os)
+    scenario = fork_scenario(model, op, os)
+    if scenario and fork_reaches(model, op, os, F):
+        res["fork"] = scenario
     return res
+
+
+def route_table_label(r):
+    """経路の表と届かない理由での経路の名前。B の綴りの形を添える (記号は TEXT の b.<形>)。"""
+    return f"{r['route']} ({{b.{r['b']}}})" if r.get("b") else r["route"]
 
 
 def result_key(res):
@@ -640,9 +694,9 @@ def evidence_for(model, op, os, cond, res, fb, rb):
         for l in langs:
             obs = ev["observed"].get(l, "")
             if obs is None:
-                if op == "bind" and not res["reach"]:
+                if not res["reach"]:
                     matched.append(l)
-                elif op == "bind" and res["reach"]:
+                else:
                     mismatches.append(f"{ev['case']} ({l}): 実測は届かない、計算は {res['label']}")
                 continue
             if obs not in {model.routes[rid]["route"] for rid in model.orders[op] if model.routes[rid].get("unchanged")}:
@@ -725,7 +779,6 @@ def build(model):
                 refs, mm = evidence_for(model, op["id"], os, cond, res, fb, rb)
                 mismatches += mm
                 res["basis"] = {"measured": refs, "notes": res.pop("notes")}
-                res.pop("unchanged", None)
                 c = {}
                 for d in dims:
                     if set(cond[d]) != set(dims[d]):
@@ -769,7 +822,7 @@ def value_label(model, os, dim, v, tr):
         return v
     if dim in ("filename", "relpath"):
         return band_label(parse_band(v), tr)
-    if dim in ("xdg", "tmpdir", "tmp", "sockdir"):
+    if dim in PLACE_DIMS:
         return tr.loc(next(p["label"] for p in model.place_profiles(dim, os) if p["id"] == v))
     return "○" if v else "×"
 
@@ -778,7 +831,12 @@ def why_text(entry, tr):
     label, code, *args = entry
     names = {"place_long": ("fixed", "limit"), "filename": ("n",), "rel_both": ("limit",), "rel": ("limit",), "spelling": ("n", "limit")}
     text = tr.t(f"why.{code}", **dict(zip(names.get(code, ()), args)))
-    return f"{label}: {text}" if label else text
+    return f"{loc_route(label, tr)}: {text}" if label else text
+
+
+def loc_route(label, tr):
+    """route_table_label の {b.<形>} を、その言語の文字列にする。"""
+    return re.sub(r"\{(b\.\w+)\}", lambda m: tr.t(m.group(1)), label)
 
 
 def peer_text(peer, tr):
@@ -848,14 +906,13 @@ def mark(prof, key, place):
 
 
 def reach_formula(model, r, tr):
-    const, variables = spelling_parts(r["spelling"])
-    fixed = const + sum(model.params[v] for v in variables if v in model.params)
+    fixed, variables = spelling_fixed(model, r["spelling"])
     limit = "253" if r["limit"] == "widened" else "sockaddr"
     if "F" in variables:
-        return limit + (f" − {fixed}" if fixed else "") + (tr.t("formula.minus_place") if "place" in variables else "")
+        return limit + (f" − {fixed}" if fixed else "") + (tr.t("formula.minus_b") if "B" in variables else "")
     if "rel" in variables:
         return tr.t("formula.rel", limit=limit)
-    return tr.t("formula.any") + (tr.t("formula.place", fixed=fixed) if "place" in variables else "")
+    return tr.t("formula.any") + (tr.t("formula.b", fixed=fixed) if "B" in variables else "")
 
 
 def route_spelling_desc(r, tr):
@@ -933,10 +990,15 @@ def render_md(model, tables, summary, os_meta, tr):
         note = c.get("note", c.get("uses"))
         w(f"| {tr.loc(c['label'])} | {ops} | {esc(tr.loc(note)) if note else ''} |")
     w("")
+    w(tr.t("md.b.lead"))
+    w("")
+    for i in range(1, 5):
+        w(tr.t(f"md.b.{i}"))
+    w("")
     w(tr.t("md.places.lead"))
     w("")
     w(tr.t("md.places.head"))
-    w("|---|---|---|---|---|---|")
+    w("|---|---|---|---|---|---|---|")
     for place, spec in model.places.items():
         groups = {}
         for os in model.oses:
@@ -948,7 +1010,9 @@ def render_md(model, tables, summary, os_meta, tr):
                     continue
                 lens = sorted({model.place_len(prof, o) for o in oses if model.place_len(prof, o) is not None})
                 ln = sep.join(str(x) for x in lens) if lens else "—"
-                w(f"| {tr.loc(spec['label'])} | {'<br>'.join(tr.loc(o['label']) for o in oses)} | {esc(tr.loc(prof['label']))} | {ln} | {mark(prof, 'traversable', place)} | {mark(prof, 'under_tmp', place)} |")
+                blens = sorted({model.b_len(place, prof, o) for o in oses if model.b_len(place, prof, o) is not None})
+                bl = sep.join(str(x) for x in blens) if blens else "—"
+                w(f"| {tr.loc(spec['label'])} | {'<br>'.join(tr.loc(o['label']) for o in oses)} | {esc(tr.loc(prof['label']))} | {ln} | {bl} | {mark(prof, 'traversable', place)} | {mark(prof, 'under_tmp', place)} |")
     w("")
     w(tr.t("md.routes.h"))
     w("")
@@ -959,14 +1023,9 @@ def render_md(model, tables, summary, os_meta, tr):
             r = model.routes[rid]
             oses = [tr.loc(o["label"]) for o in model.oses if model.route_in_os(r, o)]
             oses_cell = tr.t("all") if len(oses) == len(model.oses) else "<br>".join(oses)
-            need = [tr.t(f"req.{t}") for t in r.get("requires", [])]
-            if "place" in r:
-                places = " → ".join(tr.t(f"place.{x}") for x in r["place"]["from"])
-                need.append(tr.t("need.place", places=places, pick=tr.t(f"pick.{r['place']['pick']}")))
-            if r.get("cross_uid"):
-                need.append(tr.t(f"cross.{r['cross_uid']}"))
+            need = [tr.t(f"req.{t}") for t in r.get("requires", []) if t != "follows" or op["id"] in BIND_OPS]
             sp = route_spelling_desc(r, tr) if op["id"] in BIND_OPS else ""
-            w(f"| {op_label[op['id']]} | {i} | {route_label(r)} | `{r['spelling']}` | {reach_formula(model, r, tr)} | {oses_cell} | {esc('<br>'.join(need)) or '—'} | {sp} |")
+            w(f"| {op_label[op['id']]} | {i} | {loc_route(route_table_label(r), tr)} | `{r['spelling']}` | {reach_formula(model, r, tr)} | {oses_cell} | {esc('<br>'.join(need)) or '—'} | {sp} |")
     w("")
     w(tr.t("md.routes.symbols"))
     w("")
@@ -1045,12 +1104,11 @@ def outputs(model, missing):
 
 def check_lacks(model):
     langs = json.loads(LANGS_JSON.read_text())
-    outside = set(model.raw["routes_outside_table"]["routes"])
     problems = []
     for l in model.langs:
-        want = set(langs[l["id"]]["lacks"]) - outside
+        want = set(langs[l["id"]]["lacks"])
         if want != set(l["lacks"]):
-            problems.append(f"{l['id']}: model.json の lacks {sorted(l['lacks'])} が conformance/langs.json の {sorted(want)} (表に出ない経路を除く) と違う")
+            problems.append(f"{l['id']}: model.json の lacks {sorted(l['lacks'])} が conformance/langs.json の {sorted(want)} と違う")
     return problems
 
 
