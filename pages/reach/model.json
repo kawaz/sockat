@@ -1,9 +1,9 @@
 {
   "about": "sockat の届く範囲の表の正本。docs/decisions/DR-0017 の設計 (置き場 B を使い回し、resolve の綴り link-dir / link-file を先に、fork なし、最終手段なし) に対して作る。表のセルは gen.py がこのデータから計算する",
   "params": {
-    "D": {"value": 10, "note": {"ja": "D の名前 (乱数、英数 10 文字)。名前の長さは未決 (DR-0017 の「未決」) で、見積もり", "en": "D's name (random, 10 alphanumerics). The name length is still open (\"Open\" in DR-0017); an estimate"}},
-    "E": {"value": 2, "note": {"ja": "resolve の E の名前。プロセスの中で一意なら短くてよい (DR-0017)。base62 の数え上げで 3844 個まで 2 文字として見積もる", "en": "the name of resolve's E. It only has to be unique within the process (DR-0017); estimated at 2 characters, enough for 3844 with a base62 counter"}},
-    "Er": {"value": 10, "note": {"ja": "呼び出しごとの E (thread-cwd・at と既定の connect の link-file) の名前 (乱数、英数 10 文字)。見積もり", "en": "the name of a per-call E (thread-cwd, at and the default connect's link-file) (random, 10 alphanumerics). An estimate"}},
+    "D": {"value": 10, "note": {"ja": "D の名前 (乱数、英数 10 文字。DR-0017)", "en": "D's name (random, 10 alphanumerics; DR-0017)"}},
+    "E": {"value": 2, "note": {"ja": "resolve の E の名前。プロセスの中の 36 進のカウンタ (DR-0017)。36 個までは 1 文字、1296 個まで 2 文字で、2 文字として見積もる", "en": "the name of resolve's E, a base-36 counter within the process (DR-0017). 1 character for up to 36 and 2 for up to 1296; estimated at 2 characters"}},
+    "Er": {"value": 10, "note": {"ja": "呼び出しごとの E (thread-cwd・at と既定の connect の link-file) の名前 (乱数、英数 10 文字。DR-0017)", "en": "the name of a per-call E (thread-cwd, at and the default connect's link-file) (random, 10 alphanumerics; DR-0017)"}},
     "Bname": {"value": 11, "note": {"ja": "B の名前 sockat-<uid> の長さ。uid を 4 桁 (例 1000) で見積もる (macOS の 501 は 1 短く、大きな uid はその分長い)", "en": "the length of B's name sockat-<uid>. Estimated with a 4-digit uid (e.g. 1000); macOS's 501 is 1 shorter, a larger uid is longer by as much"}},
     "Bname_runtime": {"value": 6, "note": {"ja": "$XDG_RUNTIME_DIR の下の B の名前 sockat の長さ", "en": "the length of B's name sockat under $XDG_RUNTIME_DIR"}},
     "pid": {"value": 7, "note": {"ja": "procB の <pid> の桁。Linux の pid_max 4194304 で 7 桁 (小さい pid ではその分届くファイル名が延びる)", "en": "the digits of <pid> in procB. 7 for Linux's pid_max 4194304 (a smaller pid reaches a longer file name by as much)"}},
@@ -61,7 +61,7 @@
       {"id": "writable", "label": {"ja": "書ける", "en": "writable"}, "len": null, "traversable": false, "under_tmp": false},
       {"id": "none", "label": {"ja": "書けない", "en": "not writable"}, "usable": false}
     ]},
-    "base": {"label": {"ja": "Options.base", "en": "Options.base"}, "diag": "Options.base", "profiles": [
+    "base": {"label": {"ja": "Options.base", "en": "Options.base"}, "diag": "given", "profiles": [
       {"id": "unset", "label": {"ja": "指定しない", "en": "not given"}, "usable": false},
       {"id": "app", "label": {"ja": "/tmp/app-<uid>/sockat (20、0700 の下)", "en": "/tmp/app-<uid>/sockat (20, under 0700)"}, "len": 20, "is_b": true, "traversable": false, "under_tmp": true},
       {"id": "deep", "label": {"ja": "深い所 (113、0700 の下)", "en": "deep (113, under 0700)"}, "len": 113, "is_b": true, "traversable": false, "under_tmp": false}
@@ -79,9 +79,9 @@
     {"id": "xdg", "label": {"ja": "$XDG_RUNTIME_DIR", "en": "$XDG_RUNTIME_DIR"}, "kind": "place", "ops": ["bind", "bind_ex", "resolve_for_bind", "connect", "resolve_for_connect"], "note": {"ja": "B の置き場の 2 番目", "en": "the second base for B"}},
     {"id": "tmpdir", "label": {"ja": "$TMPDIR", "en": "$TMPDIR"}, "kind": "place", "ops": ["bind", "bind_ex", "resolve_for_bind", "connect", "resolve_for_connect"], "note": {"ja": "B の置き場の 3 番目", "en": "the third base for B"}},
     {"id": "sockdir", "label": {"ja": "ソケットのディレクトリに書ける", "en": "Socket's directory writable"}, "kind": "place", "ops": ["connect", "resolve_for_connect"], "note": {"ja": "B の置き場の 4 番目。bind はソケットのファイルを作るので書ける前提", "en": "the fourth base for B. bind creates the socket file, so it is assumed writable"}},
-    {"id": "base", "label": {"ja": "Options.base", "en": "Options.base"}, "kind": "place", "ops": ["bind_ex", "resolve_for_bind", "resolve_for_connect"], "note": {"ja": "B そのもののパス。指定すると自動の置き場を使わない。usable_cross_uid と一緒で途中が other に x を持たなければ EPERM。途中が無い等の確かめのエラーは表に入れない", "en": "the path of B itself. When given, the automatic bases are not used. With usable_cross_uid, EPERM unless the path gives other x. Errors of the other checks (a missing parent etc.) are not in the tables"}},
+    {"id": "base", "label": {"ja": "Options.base", "en": "Options.base"}, "kind": "place", "ops": ["bind_ex", "resolve_for_bind", "resolve_for_connect"], "note": {"ja": "B そのもののパス。指定すると自動の置き場を使わない。usable_cross_uid と一緒で途中と base 自身が other に x を持たなければ EPERM。途中が無い等の確かめのエラーは表に入れない", "en": "the path of B itself. When given, the automatic bases are not used. With usable_cross_uid, EPERM unless the path and the base itself give other x. Errors of the other checks (a missing parent etc.) are not in the tables"}},
     {"id": "private_tmp", "label": {"ja": "PrivateTmp (自分か相手が /tmp を隔離)", "en": "PrivateTmp (either side has /tmp isolated)"}, "kind": "bool", "os": ["linux"], "ops": ["bind", "bind_ex", "resolve_for_bind"], "note": {"ja": "systemd の PrivateTmp 等。綴りを相手が辿れるかにだけ効く", "en": "systemd's PrivateTmp etc. Affects only whether the peer can follow the spelling"}},
-    {"id": "cross_uid", "label": {"ja": "Options.usable_cross_uid (別の uid の相手)", "en": "Options.usable_cross_uid (peer with another uid)"}, "kind": "bool", "ops": ["bind_ex", "resolve_for_bind"], "note": {"ja": "指定して別の uid の相手と通信する。B の選び方 (途中が other に x の所だけ)、procB を使わないこと、綴りを相手が辿れるかに効く", "en": "given, talking to a peer with another uid. Affects which B is chosen (only bases whose path gives other x), not using procB, and whether the peer can follow the spelling"}}
+    {"id": "cross_uid", "label": {"ja": "Options.usable_cross_uid (別の uid の相手)", "en": "Options.usable_cross_uid (peer with another uid)"}, "kind": "bool", "ops": ["bind_ex", "resolve_for_bind"], "note": {"ja": "指定して別の uid の相手と通信する。B の選び方 (途中と B 自身が other に x の所だけ)、procB を使わないこと、綴りを相手が辿れるかに効く", "en": "given, talking to a peer with another uid. Affects which B is chosen (only bases whose path and B itself give other x), not using procB, and whether the peer can follow the spelling"}}
   ],
   "typical": {
     "note": {"ja": "まとめの表の「普段の環境」。スレッドの cwd と /proc を使え、置き場は OS の既定のまま書け、Options は指定せず、PrivateTmp とも関わらない。相対パスの長さと、bind が symlink を辿るかを実測していない OS の辿るかは、どの値でも届く時だけ届くとする", "en": "the thread cwd and /proc are usable, the bases are the OS defaults and writable, no Options are given, and PrivateTmp is not involved. For the relative path's length, and for whether bind follows a symlink on OSes where it is not measured, a band counts as reached only when every value reaches"},

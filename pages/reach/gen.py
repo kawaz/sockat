@@ -53,7 +53,7 @@ TEXT = {
     "why.spelling": {"ja": "B の綴りが長い (綴り {n} > {limit})", "en": "B's spelling too long (spelling {n} > {limit})"},
     "why.no_route": {"ja": "この OS で試す経路が無い", "en": "no route to try on this OS"},
     "why.follows_unmeasured": {"ja": "bind が symlink を辿るか未確認の OS (resolve では見分けられない)", "en": "an OS where it is not checked whether bind follows a symlink (resolve cannot tell)"},
-    "why.base_eperm": {"ja": "EPERM (usable_cross_uid と Options.base で、base までの途中が other に x を持たない)", "en": "EPERM (with usable_cross_uid and Options.base, the path to base does not give other x)"},
+    "why.base_eperm": {"ja": "EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない)", "en": "EPERM (with usable_cross_uid and Options.base, the path to base or the base itself does not give other x)"},
     # 綴りを相手が辿れるか
     "peer.dangling": {"ja": "辿れない (片付け済み)", "en": "no (cleaned up)"},
     "peer.blocked": {"ja": "辿れない ({problems})", "en": "no ({problems})"},
@@ -80,10 +80,10 @@ TEXT = {
     "req.follows_measured": {"ja": "bind が symlink を辿ると実測した OS (macOS・NetBSD)", "en": "an OS where bind is measured to follow the symlink (macOS, NetBSD)"},
     "req.!cross": {"ja": "usable_cross_uid の指定で飛ばす", "en": "skipped with usable_cross_uid"},
     "req.B": {"ja": "B を作れる (D をその中に)", "en": "B can be made (D inside it)"},
-    "req.Breal": {"ja": "B の実パスの綴り (usable_cross_uid の指定では途中が other に x の B。B がソケットのディレクトリにあれば使えない)", "en": "B's realpath spelling (with usable_cross_uid, a B whose path gives other x; not usable when B is in the socket's directory)"},
+    "req.Breal": {"ja": "B の実パスの綴り (usable_cross_uid の指定では途中と B 自身が other に x の B。B がソケットのディレクトリにあれば使えない)", "en": "B's realpath spelling (with usable_cross_uid, a B whose path and itself give other x; not usable when B is in the socket's directory)"},
     "b.proc": {"ja": "procB", "en": "procB"},
     "b.real": {"ja": "B の実パス", "en": "B's realpath"},
-    "spdesc.B.traversable": {"ja": "B までの途中が other に x なら true", "en": "true if the path to B gives other x"},
+    "spdesc.B.traversable": {"ja": "B までの途中と B 自身が other に x なら true", "en": "true if the path to B and B itself give other x"},
     "spdesc.not B.under_tmp": {"ja": "B が /tmp・/var/tmp の下でなければ true", "en": "true unless B is under /tmp or /var/tmp"},
     "formula.minus_b": {"ja": " − B の実パス", "en": " − B's realpath"},
     "formula.rel": {"ja": "よらない (相対パス ≤ {limit})", "en": "any (relative path ≤ {limit})"},
@@ -146,16 +146,16 @@ TEXT = {
     "md.cond.head": {"ja": "| 条件 | 効く操作 | 中身 |", "en": "| Condition | Operations it affects | Meaning |"},
     "md.b.lead": {"ja": "B の選び方 ([SPEC-routes の「B の作り方」](../../docs/SPEC-routes-ja.md#b-の作り方)):", "en": "How B is chosen (\"How B is made\" in [SPEC-routes](../../docs/SPEC-routes.md)):"},
     "md.b.1": {
-        "ja": "- B はプロセスごとに 1 つ。`Options.base` を指定しなければ、`/tmp` → `$XDG_RUNTIME_DIR` → `$TMPDIR` → ソケットのディレクトリの順で最初に作れた所。B の綴りが収まらなくても次の置き場には移らない",
-        "en": "- One B per process. Without `Options.base`, the first of `/tmp` → `$XDG_RUNTIME_DIR` → `$TMPDIR` → the socket's directory where it can be made. When B's spelling does not fit, the next base is not tried",
+        "ja": "- B は、`Options.base` を指定しなければ、`/tmp` → `$XDG_RUNTIME_DIR` → `$TMPDIR` → ソケットのディレクトリの順で最初に作れた所。`/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR` の B はプロセスごとに 1 つ、ソケットのディレクトリの B はディレクトリごと。B の綴りが収まらなくても次の置き場には移らない",
+        "en": "- Without `Options.base`, B is the first of `/tmp` → `$XDG_RUNTIME_DIR` → `$TMPDIR` → the socket's directory where it can be made. A B in `/tmp`, `$XDG_RUNTIME_DIR` or `$TMPDIR` is one per process; a B in the socket's directory is one per directory. When B's spelling does not fit, the next base is not tried",
     },
     "md.b.2": {
         "ja": "- 綴りは procB (`/proc` を使えて収まる時) → B の実パス。B がソケットのディレクトリにある時は実パスの綴りが元のパスより長いので procB だけ",
         "en": "- The spelling is procB (when `/proc` is usable and it fits), then B's realpath. When B is in the socket's directory, the realpath spelling is longer than the original path, so only procB",
     },
     "md.b.3": {
-        "ja": "- `usable_cross_uid` の時は、同じ順のうち途中が other に x の所だけを B に使い (もう 1 つの B)、procB を使わない。無いか収まらなければ thread-cwd / at",
-        "en": "- With `usable_cross_uid`, only bases in the same order whose path gives other x are used for B (another B), and procB is not used. If none, or it does not fit, thread-cwd / at",
+        "ja": "- `usable_cross_uid` の時は、同じ順のうち途中と B 自身が other に x の所だけを B に使い (もう 1 つの B)、procB を使わない。無いか収まらなければ thread-cwd / at",
+        "en": "- With `usable_cross_uid`, only bases in the same order whose path and B itself give other x are used for B (another B), and procB is not used. If none, or it does not fit, thread-cwd / at",
     },
     "md.b.4": {
         "ja": "- thread-cwd・at の E はプロセスの B の D の中に作る。bind ではソケットのディレクトリに書けるので、いつも B を作れる",
@@ -175,8 +175,8 @@ TEXT = {
         "en": "| Operation | Order | Route | Spelling | File name reached | OS | Needs | Spelling's properties (bind) |",
     },
     "md.routes.symbols": {
-        "ja": "綴りの記号: `<F>` はファイル名、`<rel>` は元のパスと相対パスの短い方、`<B>` は B の実パス、それ以外は「見積もりの前提」の値。sockaddr は sockaddr に入る長さ (Linux / illumos 107、他 103)。表の経路の列の `(B: …)` はどの B を通ったかで、名前は診断の `base` の値 (`Options.base` は指定した B。診断の `base` の値は SPEC に無い)",
-        "en": "Spelling symbols: `<F>` is the file name, `<rel>` the shorter of the original and the relative path, `<B>` B's realpath, anything else a value from \"Assumptions of the estimates\". sockaddr is the length that fits a sockaddr (107 on Linux / illumos, 103 elsewhere). `(B: …)` in the route column of the tables is the B that was used, named by the values of the diagnostic `base` (`Options.base` is the given B; the SPEC has no `base` value for it)",
+        "ja": "綴りの記号: `<F>` はファイル名、`<rel>` は元のパスと相対パスの短い方、`<B>` は B の実パス、それ以外は「見積もりの前提」の値。sockaddr は sockaddr に入る長さ (Linux / illumos 107、他 103)。表の経路の列の `(B: …)` はどの B を通ったかで、名前は診断の `base` の値 (`Options.base` の B は `given`)",
+        "en": "Spelling symbols: `<F>` is the file name, `<rel>` the shorter of the original and the relative path, `<B>` B's realpath, anything else a value from \"Assumptions of the estimates\". sockaddr is the length that fits a sockaddr (107 on Linux / illumos, 103 elsewhere). `(B: …)` in the route column of the tables is the B that was used, named by the values of the diagnostic `base` (`given` for the B of `Options.base`)",
     },
     "md.sum.h": {"ja": "## まとめ: ファイル名の長さごとに届くか", "en": "## Summary: reach by file name length"},
     "md.sum.lead": {
@@ -486,8 +486,9 @@ def route_label(model, r, b):
     """結果の経路の名前。B を通る経路は診断の base を添える。"""
     if not r.get("b"):
         return r["route"]
-    if r["b"] == "proc":
-        diag = "sockdir" if b[0] == "sockdir" else "proc"
+    # 一時の置き場でない B (ソケットのディレクトリ・Options.base) は綴りの形によらずその B の名前 (SPEC-routes の「綴りの形」)
+    if r["b"] == "proc" and b[0] not in ("sockdir", "base"):
+        diag = "proc"
     else:
         diag = model.places[b[0]]["diag"]
     return f"{r['route']} (B: {diag})"

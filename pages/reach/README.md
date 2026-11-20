@@ -27,9 +27,9 @@ Assumptions of the estimates:
 
 | Value | Bytes | Meaning |
 |---|---|---|
-| `D` | 10 | D's name (random, 10 alphanumerics). The name length is still open ("Open" in DR-0017); an estimate |
-| `E` | 2 | the name of resolve's E. It only has to be unique within the process (DR-0017); estimated at 2 characters, enough for 3844 with a base62 counter |
-| `Er` | 10 | the name of a per-call E (thread-cwd, at and the default connect's link-file) (random, 10 alphanumerics). An estimate |
+| `D` | 10 | D's name (random, 10 alphanumerics; DR-0017) |
+| `E` | 2 | the name of resolve's E, a base-36 counter within the process (DR-0017). 1 character for up to 36 and 2 for up to 1296; estimated at 2 characters |
+| `Er` | 10 | the name of a per-call E (thread-cwd, at and the default connect's link-file) (random, 10 alphanumerics; DR-0017) |
 | `Bname` | 11 | the length of B's name sockat-<uid>. Estimated with a 4-digit uid (e.g. 1000); macOS's 501 is 1 shorter, a larger uid is longer by as much |
 | `Bname_runtime` | 6 | the length of B's name sockat under $XDG_RUNTIME_DIR |
 | `pid` | 7 | the digits of <pid> in procB. 7 for Linux's pid_max 4194304 (a smaller pid reaches a longer file name by as much) |
@@ -52,15 +52,15 @@ Assumptions of the estimates:
 | $XDG_RUNTIME_DIR | default bind<br>bind_ex<br>resolve_for_bind<br>default connect<br>resolve_for_connect | the second base for B |
 | $TMPDIR | default bind<br>bind_ex<br>resolve_for_bind<br>default connect<br>resolve_for_connect | the third base for B |
 | Socket's directory writable | default connect<br>resolve_for_connect | the fourth base for B. bind creates the socket file, so it is assumed writable |
-| Options.base | bind_ex<br>resolve_for_bind<br>resolve_for_connect | the path of B itself. When given, the automatic bases are not used. With usable_cross_uid, EPERM unless the path gives other x. Errors of the other checks (a missing parent etc.) are not in the tables |
+| Options.base | bind_ex<br>resolve_for_bind<br>resolve_for_connect | the path of B itself. When given, the automatic bases are not used. With usable_cross_uid, EPERM unless the path and the base itself give other x. Errors of the other checks (a missing parent etc.) are not in the tables |
 | PrivateTmp (either side has /tmp isolated) | default bind<br>bind_ex<br>resolve_for_bind | systemd's PrivateTmp etc. Affects only whether the peer can follow the spelling |
-| Options.usable_cross_uid (peer with another uid) | bind_ex<br>resolve_for_bind | given, talking to a peer with another uid. Affects which B is chosen (only bases whose path gives other x), not using procB, and whether the peer can follow the spelling |
+| Options.usable_cross_uid (peer with another uid) | bind_ex<br>resolve_for_bind | given, talking to a peer with another uid. Affects which B is chosen (only bases whose path and B itself give other x), not using procB, and whether the peer can follow the spelling |
 
 How B is chosen ("How B is made" in [SPEC-routes](../../docs/SPEC-routes.md)):
 
-- One B per process. Without `Options.base`, the first of `/tmp` → `$XDG_RUNTIME_DIR` → `$TMPDIR` → the socket's directory where it can be made. When B's spelling does not fit, the next base is not tried
+- Without `Options.base`, B is the first of `/tmp` → `$XDG_RUNTIME_DIR` → `$TMPDIR` → the socket's directory where it can be made. A B in `/tmp`, `$XDG_RUNTIME_DIR` or `$TMPDIR` is one per process; a B in the socket's directory is one per directory. When B's spelling does not fit, the next base is not tried
 - The spelling is procB (when `/proc` is usable and it fits), then B's realpath. When B is in the socket's directory, the realpath spelling is longer than the original path, so only procB
-- With `usable_cross_uid`, only bases in the same order whose path gives other x are used for B (another B), and procB is not used. If none, or it does not fit, thread-cwd / at
+- With `usable_cross_uid`, only bases in the same order whose path and B itself give other x are used for B (another B), and procB is not used. If none, or it does not fit, thread-cwd / at
 - The E of thread-cwd and at is made in D of the process's B. For bind the socket's directory is writable, so B can always be made
 
 Bases (typical values. The length is the realpath's bytes; B's realpath is the base + `/` + B's name. With `Options.base`, the given place is B):
@@ -82,28 +82,28 @@ Bases (typical values. The length is the realpath's bytes; B's realpath is the b
 | Operation | Order | Route | Spelling | File name reached | OS | Needs | Spelling's properties (bind) |
 |---|---|---|---|---|---|---|---|
 | default bind | 1 | link-dir (procB) | `/proc/<pid>/fd/<fd>/<D>/<E>/<F>` | sockaddr − 34 | Linux / Android | /proc<br>skipped with usable_cross_uid<br>B can be made (D inside it) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true |
-| default bind | 2 | link-dir (B's realpath) | `<B>/<D>/<E>/<F>` | sockaddr − 15 − B's realpath | all | B's realpath spelling (with usable_cross_uid, a B whose path gives other x; not usable when B is in the socket's directory) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true if the path to B gives other x<br>usable_with_private_tmp: true unless B is under /tmp or /var/tmp |
-| default bind | 3 | link-file (B's realpath) | `<B>/<D>/<E>` | any (B's realpath ≤ sockaddr − 14) | all | bind follows the symlink (by the OS where measured, told at run time elsewhere)<br>B's realpath spelling (with usable_cross_uid, a B whose path gives other x; not usable when B is in the socket's directory) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true if the path to B gives other x<br>usable_with_private_tmp: true unless B is under /tmp or /var/tmp |
+| default bind | 2 | link-dir (B's realpath) | `<B>/<D>/<E>/<F>` | sockaddr − 15 − B's realpath | all | B's realpath spelling (with usable_cross_uid, a B whose path and itself give other x; not usable when B is in the socket's directory) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true if the path to B and B itself give other x<br>usable_with_private_tmp: true unless B is under /tmp or /var/tmp |
+| default bind | 3 | link-file (B's realpath) | `<B>/<D>/<E>` | any (B's realpath ≤ sockaddr − 14) | all | bind follows the symlink (by the OS where measured, told at run time elsewhere)<br>B's realpath spelling (with usable_cross_uid, a B whose path and itself give other x; not usable when B is in the socket's directory) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true if the path to B and B itself give other x<br>usable_with_private_tmp: true unless B is under /tmp or /var/tmp |
 | default bind | 4 | thread-cwd | `<Er>/<F>` | sockaddr − 11 | Linux / Android<br>macOS<br>iOS and the other Apple OSes | thread cwd<br>B can be made (D inside it) | Dangling |
 | default bind | 5 | at | `<Er>/<F>` | sockaddr − 11 | FreeBSD | B can be made (D inside it) | Dangling |
 | bind_ex | 1 | link-dir (procB) | `/proc/<pid>/fd/<fd>/<D>/<E>/<F>` | sockaddr − 34 | Linux / Android | /proc<br>skipped with usable_cross_uid<br>B can be made (D inside it) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true |
-| bind_ex | 2 | link-dir (B's realpath) | `<B>/<D>/<E>/<F>` | sockaddr − 15 − B's realpath | all | B's realpath spelling (with usable_cross_uid, a B whose path gives other x; not usable when B is in the socket's directory) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true if the path to B gives other x<br>usable_with_private_tmp: true unless B is under /tmp or /var/tmp |
-| bind_ex | 3 | link-file (B's realpath) | `<B>/<D>/<E>` | any (B's realpath ≤ sockaddr − 14) | all | bind follows the symlink (by the OS where measured, told at run time elsewhere)<br>B's realpath spelling (with usable_cross_uid, a B whose path gives other x; not usable when B is in the socket's directory) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true if the path to B gives other x<br>usable_with_private_tmp: true unless B is under /tmp or /var/tmp |
+| bind_ex | 2 | link-dir (B's realpath) | `<B>/<D>/<E>/<F>` | sockaddr − 15 − B's realpath | all | B's realpath spelling (with usable_cross_uid, a B whose path and itself give other x; not usable when B is in the socket's directory) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true if the path to B and B itself give other x<br>usable_with_private_tmp: true unless B is under /tmp or /var/tmp |
+| bind_ex | 3 | link-file (B's realpath) | `<B>/<D>/<E>` | any (B's realpath ≤ sockaddr − 14) | all | bind follows the symlink (by the OS where measured, told at run time elsewhere)<br>B's realpath spelling (with usable_cross_uid, a B whose path and itself give other x; not usable when B is in the socket's directory) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true if the path to B and B itself give other x<br>usable_with_private_tmp: true unless B is under /tmp or /var/tmp |
 | bind_ex | 4 | thread-cwd | `<Er>/<F>` | sockaddr − 11 | Linux / Android<br>macOS<br>iOS and the other Apple OSes | thread cwd<br>B can be made (D inside it) | Dangling |
 | bind_ex | 5 | at | `<Er>/<F>` | sockaddr − 11 | FreeBSD | B can be made (D inside it) | Dangling |
 | resolve_for_bind | 1 | link-dir (procB) | `/proc/<pid>/fd/<fd>/<D>/<E>/<F>` | sockaddr − 34 | Linux / Android | /proc<br>skipped with usable_cross_uid<br>B can be made (D inside it) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true |
-| resolve_for_bind | 2 | link-dir (B's realpath) | `<B>/<D>/<E>/<F>` | sockaddr − 15 − B's realpath | all | B's realpath spelling (with usable_cross_uid, a B whose path gives other x; not usable when B is in the socket's directory) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true if the path to B gives other x<br>usable_with_private_tmp: true unless B is under /tmp or /var/tmp |
-| resolve_for_bind | 3 | link-file (B's realpath) | `<B>/<D>/<E>` | any (B's realpath ≤ sockaddr − 14) | all | an OS where bind is measured to follow the symlink (macOS, NetBSD)<br>B's realpath spelling (with usable_cross_uid, a B whose path gives other x; not usable when B is in the socket's directory) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true if the path to B gives other x<br>usable_with_private_tmp: true unless B is under /tmp or /var/tmp |
+| resolve_for_bind | 2 | link-dir (B's realpath) | `<B>/<D>/<E>/<F>` | sockaddr − 15 − B's realpath | all | B's realpath spelling (with usable_cross_uid, a B whose path and itself give other x; not usable when B is in the socket's directory) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true if the path to B and B itself give other x<br>usable_with_private_tmp: true unless B is under /tmp or /var/tmp |
+| resolve_for_bind | 3 | link-file (B's realpath) | `<B>/<D>/<E>` | any (B's realpath ≤ sockaddr − 14) | all | an OS where bind is measured to follow the symlink (macOS, NetBSD)<br>B's realpath spelling (with usable_cross_uid, a B whose path and itself give other x; not usable when B is in the socket's directory) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true if the path to B and B itself give other x<br>usable_with_private_tmp: true unless B is under /tmp or /var/tmp |
 | default connect | 1 | proc-direct | `/proc/self/fd/<fd>/<F>` | sockaddr − 17 | Linux / Android | /proc |  |
 | default connect | 2 | relative | `<rel>` | any (relative path ≤ sockaddr) | Linux / Android<br>macOS<br>iOS and the other Apple OSes<br>NetBSD<br>OpenBSD<br>illumos<br>other Unix | only when /proc is not usable |  |
 | default connect | 3 | widened | `<rel>` | any (relative path ≤ 253) | macOS<br>iOS and the other Apple OSes | — |  |
 | default connect | 4 | at-direct | `<F>` | sockaddr | FreeBSD | — |  |
 | default connect | 5 | thread-cwd-direct | `<F>` | sockaddr | Linux / Android<br>macOS<br>iOS and the other Apple OSes | thread cwd |  |
-| default connect | 6 | link-file (B's realpath) | `<B>/<Er>` | any (B's realpath ≤ sockaddr − 11) | all | B's realpath spelling (with usable_cross_uid, a B whose path gives other x; not usable when B is in the socket's directory) |  |
+| default connect | 6 | link-file (B's realpath) | `<B>/<Er>` | any (B's realpath ≤ sockaddr − 11) | all | B's realpath spelling (with usable_cross_uid, a B whose path and itself give other x; not usable when B is in the socket's directory) |  |
 | resolve_for_connect | 1 | link-file (procB) | `/proc/<pid>/fd/<fd>/<D>/<E>` | any | Linux / Android | /proc<br>B can be made (D inside it) |  |
-| resolve_for_connect | 2 | link-file (B's realpath) | `<B>/<D>/<E>` | any (B's realpath ≤ sockaddr − 14) | all | B's realpath spelling (with usable_cross_uid, a B whose path gives other x; not usable when B is in the socket's directory) |  |
+| resolve_for_connect | 2 | link-file (B's realpath) | `<B>/<D>/<E>` | any (B's realpath ≤ sockaddr − 14) | all | B's realpath spelling (with usable_cross_uid, a B whose path and itself give other x; not usable when B is in the socket's directory) |  |
 
-Spelling symbols: `<F>` is the file name, `<rel>` the shorter of the original and the relative path, `<B>` B's realpath, anything else a value from "Assumptions of the estimates". sockaddr is the length that fits a sockaddr (107 on Linux / illumos, 103 elsewhere). `(B: …)` in the route column of the tables is the B that was used, named by the values of the diagnostic `base` (`Options.base` is the given B; the SPEC has no `base` value for it)
+Spelling symbols: `<F>` is the file name, `<rel>` the shorter of the original and the relative path, `<B>` B's realpath, anything else a value from "Assumptions of the estimates". sockaddr is the length that fits a sockaddr (107 on Linux / illumos, 103 elsewhere). `(B: …)` in the route column of the tables is the B that was used, named by the values of the diagnostic `base` (`given` for the B of `Options.base`)
 
 ## Summary: reach by file name length
 
@@ -359,18 +359,18 @@ Conditions with no effect: Language
 
 | File name (bytes) | Thread cwd usable | /proc usable | $XDG_RUNTIME_DIR | $TMPDIR | /tmp | Options.base | PrivateTmp (either side has /tmp isolated) | Options.usable_cross_uid (peer with another uid) | Reached | Route | Spelling | Peer can follow the spelling | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| any | any | any | any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | any | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base does not give other x) | — | estimate |
+| any | any | any | any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | any | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base or the base itself does not give other x) | — | estimate |
 | 1–76 | any | any | any | any | writable (1777) | not given | ○ | ○ | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | no (PrivateTmp) | — | — | estimate |
 | 1–76 | any | any | any | any | writable (1777) | not given | × | ○ | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–72 | any | any | any | /var/tmp (8, 1777) | not writable | not given | ○ | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | no (PrivateTmp) | — | — | estimate |
 | 1–72 | any | any | any | /var/tmp (8, 1777) | not writable | not given | × | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
-| 1–73 | any | ○ | any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | any | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | yes (until the process exits) | — | — | estimate |
+| 1–73 | any | ○ | any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | any | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | yes (until the process exits) | — | — | estimate |
 | 1–73 | any | ○ | /run/user/<uid> (14, 0700) | any | any | not given | any | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | yes (until the process exits) | — | — | estimate |
 | 1–73 | any | ○ | absent or not writable | /var/tmp (8, 1777)<br>deep (113, under 0700) | any | not given | any | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | yes (until the process exits) | — | — | estimate |
 | 1–73 | any | ○ | absent or not writable | unset or not writable | writable (1777) | not given | any | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | yes (until the process exits) | — | — | estimate |
 | 1–73 | any | ○ | absent or not writable | unset or not writable | not writable | not given | any | × | ○ | link-dir (B: sockdir) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | yes (until the process exits) | — | — | estimate |
-| 1–72 | any | × | any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | no (PrivateTmp) | — | — | estimate |
-| 1–72 | any | × | any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| 1–72 | any | × | any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | no (PrivateTmp) | — | — | estimate |
+| 1–72 | any | × | any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–76 | any | × | any | any | writable (1777) | not given | ○ | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | no (PrivateTmp) | — | — | estimate |
 | 1–76 | any | × | any | any | writable (1777) | not given | × | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–71 | any | × | /run/user/<uid> (14, 0700) | any | not writable | not given | any | × | ○ | link-dir (B: runtime) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | yes (until cleanup) | — | — | estimate |
@@ -452,8 +452,8 @@ Conditions with no effect: Language
 
 | File name (bytes) | Thread cwd usable | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (peer with another uid) | Reached | Route | Spelling | Peer can follow the spelling | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| any | any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base does not give other x) | — | estimate |
-| 1–68 | any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| any | any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base or the base itself does not give other x) | — | estimate |
+| 1–68 | any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–64 | any | any | writable (1777) | not given | any | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–20 | any | default (/private/var/folders/…/T, 56, 0700) | not writable | not given | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | yes (until cleanup) | — | — | estimate |
 | 1–92 | ○ | any | any | deep (113, under 0700) | × | ○ | thread-cwd | Dangling | no (cleaned up) | — | — | estimate |
@@ -465,7 +465,7 @@ Conditions with no effect: Language
 | 1–92 | × | unset or not writable | not writable | not given | × | × | — | — | — | link-dir (B's realpath): B is in the socket's directory, so the realpath spelling is longer than the original path<br>link-file (B's realpath): B is in the socket's directory, so the realpath spelling is longer than the original path<br>thread-cwd: thread cwd not usable | [reached](../fork-cwd.md#bind-apple-without-thread-cwd) | estimate |
 | 21–255 | any | default (/private/var/folders/…/T, 56, 0700) | not writable | not given | × | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | yes (until cleanup) | — | — | estimate |
 | 65–255 | any | any | writable (1777) | not given | any | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
-| 69–255 | any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-file (B: Options.base) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| 69–255 | any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-file (B: given) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 93–255 | ○ | any | any | deep (113, under 0700) | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (128 > 103 without the file name)<br>link-file (B's realpath): B's spelling too long (spelling 127 > 103)<br>thread-cwd: file name > 92 | — | estimate |
 | 93–255 | ○ | any | not writable | not given | ○ | × | — | — | — | link-dir (B's realpath): no base where a B another uid can traverse can be made<br>link-file (B's realpath): no base where a B another uid can traverse can be made<br>thread-cwd: file name > 92 | — | estimate |
 | 93–255 | ○ | deep (113, under 0700) | not writable | not given | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (140 > 103 without the file name)<br>link-file (B's realpath): B's spelling too long (spelling 139 > 103)<br>thread-cwd: file name > 92 | — | estimate |
@@ -481,8 +481,8 @@ Conditions with no effect: Language
 
 | File name (bytes) | Thread cwd usable | bind follows a symlink | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (peer with another uid) | Reached | Route | Spelling | Peer can follow the spelling | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| any | any | any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base does not give other x) | — | estimate |
-| 1–68 | any | any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| any | any | any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base or the base itself does not give other x) | — | estimate |
+| 1–68 | any | any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–64 | any | any | any | writable (1777) | not given | any | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–20 | any | any | default (/private/var/folders/…/T, 56, 0700) | not writable | not given | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | yes (until cleanup) | — | — | estimate |
 | 1–92 | ○ | any | any | any | deep (113, under 0700) | × | ○ | thread-cwd | Dangling | no (cleaned up) | — | — | estimate |
@@ -502,7 +502,7 @@ Conditions with no effect: Language
 | 65–255 | any | ○ | any | writable (1777) | not given | any | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 65–92 | ○ | × | any | writable (1777) | not given | any | ○ | thread-cwd | Dangling | no (cleaned up) | — | — | estimate |
 | 65–92 | × | × | any | writable (1777) | not given | any | × | — | — | — | link-dir (B's realpath): file name > 64<br>link-file (B's realpath): bind does not follow the symlink<br>thread-cwd: thread cwd not usable | [reached](../fork-cwd.md#bind-apple-without-thread-cwd) | estimate |
-| 69–255 | any | ○ | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-file (B: Options.base) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| 69–255 | any | ○ | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-file (B: given) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 69–92 | ○ | × | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | thread-cwd | Dangling | no (cleaned up) | — | — | estimate |
 | 69–92 | × | × | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | × | — | — | — | link-dir (B's realpath): file name > 68<br>link-file (B's realpath): bind does not follow the symlink<br>thread-cwd: thread cwd not usable | [reached](../fork-cwd.md#bind-apple-without-thread-cwd) | estimate |
 | 93–255 | ○ | ○ | any | any | deep (113, under 0700) | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (128 > 103 without the file name)<br>link-file (B's realpath): B's spelling too long (spelling 127 > 103)<br>thread-cwd: file name > 92 | — | estimate |
@@ -534,8 +534,8 @@ Conditions with no effect: Language
 
 | File name (bytes) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (peer with another uid) | Reached | Route | Spelling | Peer can follow the spelling | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base does not give other x) | — | estimate |
-| 1–68 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base or the base itself does not give other x) | — | estimate |
+| 1–68 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–68 | any | any | deep (113, under 0700) | × | ○ | at | Dangling | no (cleaned up) | — | — | estimate |
 | 1–72 | any | writable (1777) | not given | any | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–68 | /var/tmp (8, 1777) | not writable | not given | any | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
@@ -557,15 +557,15 @@ Conditions with no effect: Language
 
 | File name (bytes) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (peer with another uid) | Reached | Route | Spelling | Peer can follow the spelling | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base does not give other x) | — | estimate |
-| 1–68 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base or the base itself does not give other x) | — | estimate |
+| 1–68 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–92 | any | any | deep (113, under 0700) | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (128 > 103 without the file name)<br>link-file (B's realpath): B's spelling too long (spelling 127 > 103) | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
 | 1–72 | any | writable (1777) | not given | any | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–68 | /var/tmp (8, 1777) | not writable | not given | any | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–92 | deep (113, under 0700)<br>unset or not writable | not writable | not given | ○ | × | — | — | — | link-dir (B's realpath): no base where a B another uid can traverse can be made<br>link-file (B's realpath): no base where a B another uid can traverse can be made | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
 | 1–92 | deep (113, under 0700) | not writable | not given | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (140 > 103 without the file name)<br>link-file (B's realpath): B's spelling too long (spelling 139 > 103) | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
 | 1–92 | unset or not writable | not writable | not given | × | × | — | — | — | link-dir (B's realpath): B is in the socket's directory, so the realpath spelling is longer than the original path<br>link-file (B's realpath): B is in the socket's directory, so the realpath spelling is longer than the original path | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
-| 69–255 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-file (B: Options.base) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| 69–255 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-file (B: given) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 69–255 | /var/tmp (8, 1777) | not writable | not given | any | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 73–255 | any | writable (1777) | not given | any | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 93–255 | any | any | deep (113, under 0700) | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (128 > 103 without the file name)<br>link-file (B's realpath): B's spelling too long (spelling 127 > 103) | — | estimate |
@@ -579,8 +579,8 @@ Conditions with no effect: Language
 
 | File name (bytes) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (peer with another uid) | Reached | Route | Spelling | Peer can follow the spelling | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base does not give other x) | — | estimate |
-| 1–68 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base or the base itself does not give other x) | — | estimate |
+| 1–68 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–92 | any | any | deep (113, under 0700) | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (128 > 103 without the file name) | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
 | 1–72 | any | writable (1777) | not given | any | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–68 | /var/tmp (8, 1777) | not writable | not given | any | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
@@ -604,8 +604,8 @@ Conditions with no effect: Language
 
 | File name (bytes) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (peer with another uid) | Reached | Route | Spelling | Peer can follow the spelling | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base does not give other x) | — | estimate |
-| 1–72 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base or the base itself does not give other x) | — | estimate |
+| 1–72 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–96 | any | any | deep (113, under 0700) | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (128 > 107 without the file name) | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
 | 1–76 | any | writable (1777) | not given | any | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–72 | /var/tmp (8, 1777) | not writable | not given | any | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
@@ -629,8 +629,8 @@ Conditions with no effect: Language
 
 | File name (bytes) | bind follows a symlink | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (peer with another uid) | Reached | Route | Spelling | Peer can follow the spelling | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| any | any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base does not give other x) | — | estimate |
-| 1–68 | any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| any | any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base or the base itself does not give other x) | — | estimate |
+| 1–68 | any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–72 | any | any | writable (1777) | not given | any | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–68 | any | /var/tmp (8, 1777) | not writable | not given | any | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–92 | ○ | any | any | deep (113, under 0700) | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (128 > 103 without the file name)<br>link-file (B's realpath): B's spelling too long (spelling 127 > 103) | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
@@ -641,7 +641,7 @@ Conditions with no effect: Language
 | 1–92 | × | deep (113, under 0700)<br>unset or not writable | not writable | not given | ○ | × | — | — | — | link-dir (B's realpath): no base where a B another uid can traverse can be made<br>link-file (B's realpath): bind does not follow the symlink | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
 | 1–92 | × | deep (113, under 0700) | not writable | not given | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (140 > 103 without the file name)<br>link-file (B's realpath): bind does not follow the symlink | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
 | 1–92 | × | unset or not writable | not writable | not given | × | × | — | — | — | link-dir (B's realpath): B is in the socket's directory, so the realpath spelling is longer than the original path<br>link-file (B's realpath): bind does not follow the symlink | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
-| 69–255 | ○ | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-file (B: Options.base) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| 69–255 | ○ | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-file (B: given) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 69–255 | ○ | /var/tmp (8, 1777) | not writable | not given | any | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 69–92 | × | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | × | — | — | — | link-dir (B's realpath): file name > 68<br>link-file (B's realpath): bind does not follow the symlink | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
 | 69–92 | × | /var/tmp (8, 1777) | not writable | not given | any | × | — | — | — | link-dir (B's realpath): file name > 68<br>link-file (B's realpath): bind does not follow the symlink | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
@@ -669,19 +669,19 @@ Conditions with no effect: Language
 
 | File name (bytes) | /proc usable | $XDG_RUNTIME_DIR | $TMPDIR | /tmp | Options.base | PrivateTmp (either side has /tmp isolated) | Options.usable_cross_uid (peer with another uid) | Reached | Route | Spelling | Peer can follow the spelling | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| any | any | any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | any | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base does not give other x) | — | estimate |
+| any | any | any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | any | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base or the base itself does not give other x) | — | estimate |
 | 1–76 | any | any | any | writable (1777) | not given | ○ | ○ | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | no (PrivateTmp) | — | — | estimate |
 | 1–76 | any | any | any | writable (1777) | not given | × | ○ | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–72 | any | any | /var/tmp (8, 1777) | not writable | not given | ○ | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | no (PrivateTmp) | — | — | estimate |
 | 1–72 | any | any | /var/tmp (8, 1777) | not writable | not given | × | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
-| 1–73 | ○ | any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | any | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | yes (until the process exits) | — | — | estimate |
+| 1–73 | ○ | any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | any | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | yes (until the process exits) | — | — | estimate |
 | 1–96 | ○ | any | deep (113, under 0700)<br>unset or not writable | not writable | not given | any | ○ | × | — | — | — | link-dir (procB): not used with usable_cross_uid<br>link-dir (B's realpath): no base where a B another uid can traverse can be made | [reached](../fork-cwd.md#bind-linux-without-thread-cwd) | estimate |
 | 1–73 | ○ | /run/user/<uid> (14, 0700) | any | any | not given | any | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | yes (until the process exits) | — | — | estimate |
 | 1–73 | ○ | absent or not writable | /var/tmp (8, 1777)<br>deep (113, under 0700) | any | not given | any | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | yes (until the process exits) | — | — | estimate |
 | 1–73 | ○ | absent or not writable | unset or not writable | writable (1777) | not given | any | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | yes (until the process exits) | — | — | estimate |
 | 1–73 | ○ | absent or not writable | unset or not writable | not writable | not given | any | × | ○ | link-dir (B: sockdir) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | yes (until the process exits) | — | — | estimate |
-| 1–72 | × | any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | no (PrivateTmp) | — | — | estimate |
-| 1–72 | × | any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| 1–72 | × | any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | no (PrivateTmp) | — | — | estimate |
+| 1–72 | × | any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–96 | × | any | any | any | deep (113, under 0700) | any | × | × | — | — | — | link-dir (procB): /proc not usable<br>link-dir (B's realpath): B's spelling too long (128 > 107 without the file name) | [reached](../fork-cwd.md#bind-linux-without-thread-cwd) | estimate |
 | 1–76 | × | any | any | writable (1777) | not given | ○ | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | no (PrivateTmp) | — | — | estimate |
 | 1–76 | × | any | any | writable (1777) | not given | × | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
@@ -733,8 +733,8 @@ Conditions with no effect: Language
 
 | File name (bytes) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (peer with another uid) | Reached | Route | Spelling | Peer can follow the spelling | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base does not give other x) | — | estimate |
-| 1–68 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base or the base itself does not give other x) | — | estimate |
+| 1–68 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–92 | any | any | deep (113, under 0700) | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (128 > 103 without the file name)<br>link-file (B's realpath): B's spelling too long (spelling 127 > 103) | [reached](../fork-cwd.md#bind-apple-without-thread-cwd) | estimate |
 | 1–64 | any | writable (1777) | not given | any | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–92 | any | not writable | not given | ○ | × | — | — | — | link-dir (B's realpath): no base where a B another uid can traverse can be made<br>link-file (B's realpath): no base where a B another uid can traverse can be made | [reached](../fork-cwd.md#bind-apple-without-thread-cwd) | estimate |
@@ -743,7 +743,7 @@ Conditions with no effect: Language
 | 1–92 | unset or not writable | not writable | not given | × | × | — | — | — | link-dir (B's realpath): B is in the socket's directory, so the realpath spelling is longer than the original path<br>link-file (B's realpath): B is in the socket's directory, so the realpath spelling is longer than the original path | [reached](../fork-cwd.md#bind-apple-without-thread-cwd) | estimate |
 | 21–255 | default (/private/var/folders/…/T, 56, 0700) | not writable | not given | × | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | yes (until cleanup) | — | — | estimate |
 | 65–255 | any | writable (1777) | not given | any | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
-| 69–255 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-file (B: Options.base) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| 69–255 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-file (B: given) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 93–255 | any | any | deep (113, under 0700) | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (128 > 103 without the file name)<br>link-file (B's realpath): B's spelling too long (spelling 127 > 103) | — | estimate |
 | 93–255 | any | not writable | not given | ○ | × | — | — | — | link-dir (B's realpath): no base where a B another uid can traverse can be made<br>link-file (B's realpath): no base where a B another uid can traverse can be made | — | estimate |
 | 93–255 | deep (113, under 0700) | not writable | not given | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (140 > 103 without the file name)<br>link-file (B's realpath): B's spelling too long (spelling 139 > 103) | — | estimate |
@@ -755,8 +755,8 @@ Conditions with no effect: Language
 
 | File name (bytes) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (peer with another uid) | Reached | Route | Spelling | Peer can follow the spelling | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base does not give other x) | — | estimate |
-| 1–68 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base or the base itself does not give other x) | — | estimate |
+| 1–68 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–92 | any | any | deep (113, under 0700) | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (128 > 103 without the file name)<br>link-file (B's realpath): an OS where it is not checked whether bind follows a symlink (resolve cannot tell) | [reached](../fork-cwd.md#bind-apple-without-thread-cwd) | estimate |
 | 1–64 | any | writable (1777) | not given | any | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–92 | any | not writable | not given | ○ | × | — | — | — | link-dir (B's realpath): no base where a B another uid can traverse can be made<br>link-file (B's realpath): an OS where it is not checked whether bind follows a symlink (resolve cannot tell) | [reached](../fork-cwd.md#bind-apple-without-thread-cwd) | estimate |
@@ -780,8 +780,8 @@ Conditions with no effect: Language
 
 | File name (bytes) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (peer with another uid) | Reached | Route | Spelling | Peer can follow the spelling | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base does not give other x) | — | estimate |
-| 1–68 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base or the base itself does not give other x) | — | estimate |
+| 1–68 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–92 | any | any | deep (113, under 0700) | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (128 > 103 without the file name) | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
 | 1–72 | any | writable (1777) | not given | any | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–68 | /var/tmp (8, 1777) | not writable | not given | any | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
@@ -805,15 +805,15 @@ Conditions with no effect: Language
 
 | File name (bytes) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (peer with another uid) | Reached | Route | Spelling | Peer can follow the spelling | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base does not give other x) | — | estimate |
-| 1–68 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base or the base itself does not give other x) | — | estimate |
+| 1–68 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–92 | any | any | deep (113, under 0700) | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (128 > 103 without the file name)<br>link-file (B's realpath): B's spelling too long (spelling 127 > 103) | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
 | 1–72 | any | writable (1777) | not given | any | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–68 | /var/tmp (8, 1777) | not writable | not given | any | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–92 | deep (113, under 0700)<br>unset or not writable | not writable | not given | ○ | × | — | — | — | link-dir (B's realpath): no base where a B another uid can traverse can be made<br>link-file (B's realpath): no base where a B another uid can traverse can be made | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
 | 1–92 | deep (113, under 0700) | not writable | not given | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (140 > 103 without the file name)<br>link-file (B's realpath): B's spelling too long (spelling 139 > 103) | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
 | 1–92 | unset or not writable | not writable | not given | × | × | — | — | — | link-dir (B's realpath): B is in the socket's directory, so the realpath spelling is longer than the original path<br>link-file (B's realpath): B is in the socket's directory, so the realpath spelling is longer than the original path | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
-| 69–255 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-file (B: Options.base) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| 69–255 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-file (B: given) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 69–255 | /var/tmp (8, 1777) | not writable | not given | any | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 73–255 | any | writable (1777) | not given | any | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 93–255 | any | any | deep (113, under 0700) | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (128 > 103 without the file name)<br>link-file (B's realpath): B's spelling too long (spelling 127 > 103) | — | estimate |
@@ -827,8 +827,8 @@ Conditions with no effect: Language
 
 | File name (bytes) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (peer with another uid) | Reached | Route | Spelling | Peer can follow the spelling | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base does not give other x) | — | estimate |
-| 1–68 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base or the base itself does not give other x) | — | estimate |
+| 1–68 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–92 | any | any | deep (113, under 0700) | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (128 > 103 without the file name) | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
 | 1–72 | any | writable (1777) | not given | any | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–68 | /var/tmp (8, 1777) | not writable | not given | any | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
@@ -852,8 +852,8 @@ Conditions with no effect: Language
 
 | File name (bytes) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (peer with another uid) | Reached | Route | Spelling | Peer can follow the spelling | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base does not give other x) | — | estimate |
-| 1–72 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base or the base itself does not give other x) | — | estimate |
+| 1–72 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–96 | any | any | deep (113, under 0700) | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (128 > 107 without the file name) | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
 | 1–76 | any | writable (1777) | not given | any | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–72 | /var/tmp (8, 1777) | not writable | not given | any | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
@@ -877,8 +877,8 @@ Conditions with no effect: Language
 
 | File name (bytes) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (peer with another uid) | Reached | Route | Spelling | Peer can follow the spelling | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base does not give other x) | — | estimate |
-| 1–68 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | × | — | — | — | EPERM (with usable_cross_uid and Options.base, the path to base or the base itself does not give other x) | — | estimate |
+| 1–68 | any | any | /tmp/app-<uid>/sockat (20, under 0700) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–92 | any | any | deep (113, under 0700) | × | × | — | — | — | link-dir (B's realpath): B's spelling too long (128 > 103 without the file name)<br>link-file (B's realpath): an OS where it is not checked whether bind follows a symlink (resolve cannot tell) | [reached](../fork-cwd.md#bind-without-thread-cwd-means) | estimate |
 | 1–72 | any | writable (1777) | not given | any | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
 | 1–68 | /var/tmp (8, 1777) | not writable | not given | any | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | yes (until cleanup) | — | — | estimate |
@@ -1110,13 +1110,13 @@ Conditions with no effect: Language, File name (bytes)
 
 | /proc usable | $XDG_RUNTIME_DIR | $TMPDIR | /tmp | Socket's directory writable | Options.base | Reached | Route | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|---|---|
-| ○ | any | any | writable (1777) | any | any | ○ | link-file (B: proc) | — | — | estimate |
-| ○ | any | /var/tmp (8, 1777)<br>deep (113, under 0700) | not writable | any | any | ○ | link-file (B: proc) | — | — | estimate |
-| ○ | /run/user/<uid> (14, 0700) | unset or not writable | not writable | any | any | ○ | link-file (B: proc) | — | — | estimate |
-| ○ | absent or not writable | unset or not writable | not writable | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | link-file (B: proc) | — | — | estimate |
+| ○ | any | any | any | any | /tmp/app-<uid>/sockat (20, under 0700)<br>deep (113, under 0700) | ○ | link-file (B: given) | — | — | estimate |
+| ○ | any | any | writable (1777) | any | not given | ○ | link-file (B: proc) | — | — | estimate |
+| ○ | any | /var/tmp (8, 1777)<br>deep (113, under 0700) | not writable | any | not given | ○ | link-file (B: proc) | — | — | estimate |
+| ○ | /run/user/<uid> (14, 0700) | unset or not writable | not writable | any | not given | ○ | link-file (B: proc) | — | — | estimate |
 | ○ | absent or not writable | unset or not writable | not writable | writable | not given | ○ | link-file (B: sockdir) | — | — | estimate |
 | ○ | absent or not writable | unset or not writable | not writable | not writable | not given | × | — | link-file (procB): no base where B can be made<br>link-file (B's realpath): no base where B can be made | — | estimate |
-| × | any | any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | link-file (B: Options.base) | — | — | estimate |
+| × | any | any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | link-file (B: given) | — | — | estimate |
 | × | any | any | any | any | deep (113, under 0700) | × | — | link-file (procB): /proc not usable<br>link-file (B's realpath): B's spelling too long (spelling 127 > 107) | — | estimate |
 | × | any | any | writable (1777) | any | not given | ○ | link-file (B: tmp) | — | — | estimate |
 | × | /run/user/<uid> (14, 0700) | any | not writable | any | not given | ○ | link-file (B: runtime) | — | — | estimate |
@@ -1131,7 +1131,7 @@ Conditions with no effect: Language, File name (bytes)
 
 | $TMPDIR | /tmp | Socket's directory writable | Options.base | Reached | Route | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | link-file (B: Options.base) | — | — | estimate |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | link-file (B: given) | — | — | estimate |
 | any | any | any | deep (113, under 0700) | × | — | link-file (B's realpath): B's spelling too long (spelling 127 > 103) | — | estimate |
 | any | writable (1777) | any | not given | ○ | link-file (B: tmp) | — | — | estimate |
 | default (/private/var/folders/…/T, 56, 0700) | not writable | any | not given | ○ | link-file (B: tmpdir) | — | — | estimate |
@@ -1145,7 +1145,7 @@ Conditions with no effect: Language, File name (bytes)
 
 | $TMPDIR | /tmp | Socket's directory writable | Options.base | Reached | Route | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | link-file (B: Options.base) | — | — | estimate |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | link-file (B: given) | — | — | estimate |
 | any | any | any | deep (113, under 0700) | × | — | link-file (B's realpath): B's spelling too long (spelling 127 > 103) | — | estimate |
 | any | writable (1777) | any | not given | ○ | link-file (B: tmp) | — | — | estimate |
 | default (/private/var/folders/…/T, 56, 0700) | not writable | any | not given | ○ | link-file (B: tmpdir) | — | — | estimate |
@@ -1159,7 +1159,7 @@ Conditions with no effect: Language, File name (bytes)
 
 | $TMPDIR | /tmp | Socket's directory writable | Options.base | Reached | Route | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | link-file (B: Options.base) | — | — | estimate<br>whether connect can use link-file on FreeBSD is not checked yet ("Open" in the SPEC) |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | link-file (B: given) | — | — | estimate<br>whether connect can use link-file on FreeBSD is not checked yet ("Open" in the SPEC) |
 | any | any | any | deep (113, under 0700) | × | — | link-file (B's realpath): B's spelling too long (spelling 127 > 103) | — | estimate |
 | any | writable (1777) | any | not given | ○ | link-file (B: tmp) | — | — | estimate<br>whether connect can use link-file on FreeBSD is not checked yet ("Open" in the SPEC) |
 | /var/tmp (8, 1777) | not writable | any | not given | ○ | link-file (B: tmpdir) | — | — | estimate<br>whether connect can use link-file on FreeBSD is not checked yet ("Open" in the SPEC) |
@@ -1173,7 +1173,7 @@ Conditions with no effect: Language, File name (bytes)
 
 | $TMPDIR | /tmp | Socket's directory writable | Options.base | Reached | Route | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | link-file (B: Options.base) | — | — | estimate |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | link-file (B: given) | — | — | estimate |
 | any | any | any | deep (113, under 0700) | × | — | link-file (B's realpath): B's spelling too long (spelling 127 > 103) | — | estimate |
 | any | writable (1777) | any | not given | ○ | link-file (B: tmp) | — | — | estimate |
 | /var/tmp (8, 1777) | not writable | any | not given | ○ | link-file (B: tmpdir) | — | — | estimate |
@@ -1187,7 +1187,7 @@ Conditions with no effect: Language, File name (bytes)
 
 | $TMPDIR | /tmp | Socket's directory writable | Options.base | Reached | Route | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | link-file (B: Options.base) | — | — | estimate |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | link-file (B: given) | — | — | estimate |
 | any | any | any | deep (113, under 0700) | × | — | link-file (B's realpath): B's spelling too long (spelling 127 > 103) | — | estimate |
 | any | writable (1777) | any | not given | ○ | link-file (B: tmp) | — | — | estimate |
 | /var/tmp (8, 1777) | not writable | any | not given | ○ | link-file (B: tmpdir) | — | — | estimate |
@@ -1201,7 +1201,7 @@ Conditions with no effect: Language, File name (bytes)
 
 | $TMPDIR | /tmp | Socket's directory writable | Options.base | Reached | Route | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | link-file (B: Options.base) | — | — | estimate |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | link-file (B: given) | — | — | estimate |
 | any | any | any | deep (113, under 0700) | × | — | link-file (B's realpath): B's spelling too long (spelling 127 > 107) | — | estimate |
 | any | writable (1777) | any | not given | ○ | link-file (B: tmp) | — | — | estimate |
 | /var/tmp (8, 1777) | not writable | any | not given | ○ | link-file (B: tmpdir) | — | — | estimate |
@@ -1215,7 +1215,7 @@ Conditions with no effect: Language, File name (bytes)
 
 | $TMPDIR | /tmp | Socket's directory writable | Options.base | Reached | Route | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | link-file (B: Options.base) | — | — | estimate |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | link-file (B: given) | — | — | estimate |
 | any | any | any | deep (113, under 0700) | × | — | link-file (B's realpath): B's spelling too long (spelling 127 > 103) | — | estimate |
 | any | writable (1777) | any | not given | ○ | link-file (B: tmp) | — | — | estimate |
 | /var/tmp (8, 1777) | not writable | any | not given | ○ | link-file (B: tmpdir) | — | — | estimate |

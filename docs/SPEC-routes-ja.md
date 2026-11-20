@@ -16,13 +16,14 @@
 
 自動の置き場も `Options.base` も同じ手順。
 
-1. ルートから親までの途中を全部確かめる: どれも、持ち主が root か自分で他人が書けない、か、sticky が立っている (OpenSSH の StrictModes と同じ考え。祖先が他人に書けると親ごと付け替えられる)。プロセスで最初の 1 回だけ
-2. 親を `O_DIRECTORY | O_NOFOLLOW` で開いて fd で掴み、`mkdirat(親の fd, 名前, 0700)` で作る
-3. 作った物を `O_NOFOLLOW` で開き、`fstat` で実ディレクトリ・持ち主が自分を確かめてから `fchmod` で 0711
-4. `EEXIST` なら、既にある物を同じく確かめる (実ディレクトリ・持ち主が自分・他人が書けない)。外れたら、自動の置き場は乱数の名前に落とし、`Options.base` はエラー
+1. 置き場のパス (`Options.base` は親のパス) を realpath で実パスにする (macOS の `/tmp` → `/private/tmp` 等)。以後の確かめ・開く・綴るは、この実パスで行う
+2. ルートから親までの途中を全部確かめる: どれも、持ち主が root か自分で他人が書けない、か、sticky が立っている (OpenSSH の StrictModes と同じ考え。祖先が他人に書けると親ごと付け替えられる)。プロセスで最初の 1 回だけ
+3. 親を `O_DIRECTORY | O_NOFOLLOW` で開いて fd で掴み、`mkdirat(親の fd, 名前, 0700)` で作る
+4. 作った物を `O_NOFOLLOW` で開き、`fstat` で実ディレクトリ・持ち主が自分を確かめてから `fchmod` で 0711
+5. `EEXIST` なら、既にある物を同じく確かめる (実ディレクトリ・持ち主が自分・他人が書けない)。mode が 0711 でなくても使い、mode を変えない。外れたら、自動の置き場は `sockat-<uid>.<乱数 10 文字>` に落とし、`Options.base` はエラー
 
 - 途中のディレクトリが無い時、sockat は作らずにエラー (アプリの管理する場所の作り方はアプリが決める)
-- 名前は `sockat-<uid>` (`$XDG_RUNTIME_DIR` の下は `sockat`、ソケットのディレクトリの下は `.sockat.XXXXXXXXXX`)。`Options.base` は B そのもののパスで、その最後の要素が名前
+- 名前は `sockat-<uid>` (`$XDG_RUNTIME_DIR` の下は `sockat`、ソケットのディレクトリの下は `.sockat.<乱数 10 文字>`)。`Options.base` は B そのもののパスで、その最後の要素が名前
 - `Options.base` のエラー: 途中のディレクトリが無い時は `ENOENT`、base がディレクトリでない時は `ENOTDIR`、持ち主・権限の確かめに外れた時は `EPERM`
 
 ### 実体の置き場
@@ -36,6 +37,10 @@ B の実体をどこに作るかと、B をどう綴るか ([綴りの形](#綴�
 | 3 | `$TMPDIR` | macOS の `$TMPDIR` は dirhelper が 3 日で消しうる (生きている D も) |
 | 4 | ソケットのディレクトリ | 1〜3 のどこにも作れない時 |
 
+- `$TMPDIR`・`$XDG_RUNTIME_DIR` が空か相対パスの時は、その置き場を使わない
+- 1 つのプロセスが使う B が 1 つなのは置き場 1〜3 のこと。4 (ソケットのディレクトリ) の B はソケットのディレクトリごと
+- 綴りが収まらないと先に分かる時 (置き場の実パスの長さから見積もれる時) は、B を作らない
+- 既定の connect が link-file で B を初めて作った時も、その B (と fd) をプロセスの B として以後も使う (D は作らない)
 - `Options.base` を指定した時は、そのパスを B にする。sockat は中にプロセスごとの D を作るだけで、B の掃除はアプリに任せる。確かめて外れたらエラーで、自動の置き場に落とさない
 - 呼び出しごとに違う `Options.base` を渡せば、1 つのプロセスが複数の B を持ち、D は (プロセス, B) ごとに作る
 - `usable_cross_uid` の時の B の選び方は「[別の uid と PrivateTmp](#別の-uid-と-privatetmp)」
@@ -46,20 +51,22 @@ sockat が自分で判断する。上から順に、収まる物。
 
 | 綴り | 形 | 使う時 | 診断の `base` | 他のプロセスが辿れるか |
 |---|---|---|---|---|
-| procB | `/proc/<pid>/fd/<B の fd>/D/…` | `/proc` を使えて収まる時 (`usable_cross_uid` の時は使わない) | `proc` (B がソケットのディレクトリの時は `sockdir`) | 同じ uid・同じ PID 名前空間だけ (root は辿れる)。プロセスが終われば辿れない |
-| 実パス | B の実パス `…/B/D/…` | 収まる時 | B の置き場 (`tmp` / `runtime` / `tmpdir`) | B までの途中が全部 other に x を持てば別の uid も (`/tmp` の B)、そうでなければ同じ uid だけ (`/run/user/<uid>` と macOS の `$TMPDIR` は 0700) |
+| procB | `/proc/<pid>/fd/<B の fd>/D/…` | `/proc` を使えて収まる時 (`usable_cross_uid` の時は使わない) | `proc` (B がソケットのディレクトリの時は `sockdir`、`Options.base` の B の時は `given`) | 同じ uid・同じ PID 名前空間だけ (root は辿れる)。プロセスが終われば辿れない |
+| 実パス | B の実パス `…/B/D/…` | 収まる時 | B の置き場 (`tmp` / `runtime` / `tmpdir`。`Options.base` の B の時は `given`) | B までの途中と B 自身が全部 other に x を持てば別の uid も (`/tmp` の B)、そうでなければ同じ uid だけ (`/run/user/<uid>` と macOS の `$TMPDIR` は 0700) |
 
 - procB は実体の置き場がどこでも同じ形
+- 診断の `base` は、B が一時の置き場 (`/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR`) の時は綴りの形 (procB は `proc`、実パスは置き場の名前)、一時の置き場でない B (ソケットのディレクトリ・`Options.base`) の時は綴りの形によらずその B (`sockdir`・`given`) を表す。綴りが procB か実パスかは `Spelling` の `until` で分かる
 - B をソケットのディレクトリに作った時は、実パスの綴りは元のパスより長くなるので、使えるのは procB の綴りだけ。`/proc` を使えない OS では resolve の綴りを使えず、thread-cwd / at へ
 - どの綴りも収まらなければ thread-cwd / at へ
 
 ### 別の uid と PrivateTmp
 
-- `Options.usable_cross_uid` の時は、実体の置き場の順のうち、B までの途中のディレクトリが全部 other に x (辿る権限) を持つ所だけを B に使い (その中で最初に作れた所)、procB の綴りは使わない (子が 0711 でも親が 0700 なら別の uid は辿れない。実測)
+- `Options.usable_cross_uid` の時は、実体の置き場の順のうち、B までの途中のディレクトリと B 自身が全部 other に x (辿る権限) を持つ所だけを B に使い (その中で最初に作れた所。既にある B が 0700 なら満たさない)、procB の綴りは使わない (子が 0711 でも親が 0700 なら別の uid は辿れない。実測)
   - `/tmp` (1777) はいつも当たる
   - `$XDG_RUNTIME_DIR` (`/run/user/<uid>`) と macOS の `$TMPDIR` は 0700 なので外れる。`$TMPDIR` を辿れる場所に向けた環境なら当たる
 - 当たる所が無いか、その B の綴りが収まらなければ、満たさない綴りに落とさず thread-cwd / at (`Dangling`) に進む
-- `Options.base` と一緒の時は、その base までの途中が全部 other に x を持つかを確かめ、外れたら `EPERM` (自動の置き場に落とさない)
+- `Options.base` と一緒の時は、その base までの途中と base 自身が全部 other に x を持つかを確かめ、外れたら `EPERM` (自動の置き場に落とさない)
+- connect 系 (既定の connect、`connect_ex`、`resolve_for_connect`) は `usable_cross_uid` を見ない (connect の綴りは相手に残らない)。`Options.base` は connect 系でも B の置き場として使う
 - この B が普段の B と違う所になる時は、もう 1 つの B として使う (自動の置き場で 1 つのプロセスが複数の B を使うのはこの時だけ)
 - 相手の `/tmp` が隔離されている場合 (systemd の `PrivateTmp` 等) は選択肢にしない (procB を先に試すので Linux ではまず起きない)。辿れるかは結果の `Spelling` の `usable_with_private_tmp` で分かる
 
@@ -69,18 +76,20 @@ sockat が自分で判断する。上から順に、収まる物。
 |---|---|---|
 | 置く所 | B の中 | resolve の E と thread-cwd・at の E は D の中。既定の connect の link-file の E は B の直下 |
 | 作る単位 | (プロセス, B) ごとに 1 つ。作るのは、綴りを残す bind (thread-cwd・at を含む) と `resolve_for_connect` だけ | resolve ごと。thread-cwd・at と既定の connect の link-file は呼び出しごと |
-| 名前 | 乱数 | resolve の E はプロセスの中で一意なら短くてよい (D が (プロセス, B) ごとに一意)。thread-cwd・at の E と B の直下の E は乱数 |
+| 名前 | 乱数 10 文字 | resolve の E はプロセスの中のカウンタ (36 進。D が (プロセス, B) ごとに一意なので短くてよい)。thread-cwd・at の E と B の直下の E は乱数 10 文字 |
 | mode | 0711 (`/tmp` の B の綴りを別の uid が辿れるように) | 無し (symlink の mode は辿る権限に効かない) |
 | 生きている間 | プロセスが flock (共有ロック) を掛けた fd を持ち続ける | resolve の E は消さない |
 | 片付け | sockat はしない。`sweep()` を呼んだ時だけ、ロックの外れた D を消す | resolve の E は `cleanup`。呼び出しごとの E は呼び出しの中で unlink |
 
 D の作り方:
 
-1. B の fd を基準に、乱数の名前で `mkdirat` する。`EEXIST` なら名前を引き直し、16 回で打ち切る (名前の長さは [SPEC の未確定](SPEC-ja.md#未確定))
+1. B の fd を基準に、乱数の名前で `mkdirat` する。`EEXIST` なら名前を引き直し、16 回で打ち切る
 2. 作った D を `O_DIRECTORY | O_NOFOLLOW` で開き、`fstat` で実ディレクトリ・持ち主が自分を確かめる
 3. その fd に flock (共有ロック) を掛けて持ち続ける。fd は close-on-exec
-4. `sweep()` は、B の中の D に `flock(LOCK_EX | LOCK_NB)` が取れたら持ち主が死んだとみなして消す
+4. 名前で `lstat` した `(st_dev, st_ino)` が fd と同じかを確かめる。違えば (1 と 3 の間に他のプロセスの `sweep()` が消した) fd を閉じて 1 から作り直す
 
+- `sweep()` と `sweep_base(path)` は、B の中の D に `flock(LOCK_EX | LOCK_NB)` が取れたら持ち主が死んだとみなして消す (対象の B は [SPEC の `sweep`](SPEC-ja.md#sweep))
+- 乱数は英数 62 種の文字で、OS の安全な乱数から作る。名前の作り方は 3 言語でそろえる
 - D の名前をカウンタにしないのは、プロセスが終わった後に同じ PID・同じ fd 番号の別のプロセスが現れても綴りが同じにならないため
 - D が生きている間は flock で守られ、B と D が 0711 なので、綴りが後で無関係なファイルに当たらない (procB はプロセスが終われば辿れない、実パスの綴りは D が消えるまで同じ所を指す)
 - systemd-tmpfiles (v242 以上) はロックの掛かったディレクトリを配下ごと掃除しない
@@ -99,7 +108,7 @@ D の作り方:
 
 ### link-dir
 
-- やり方: D の中にソケットのディレクトリの realpath を指す E を作り、`B/D/E/<ファイル名>` で bind する。E は `cleanup` まで残す
+- やり方: D の中にソケットのディレクトリの realpath を指す E を作り、`B/D/E/<ファイル名>` で bind する。E は `cleanup` まで残す。bind して失敗した時は ([経路の失敗の扱い](#経路の失敗の扱い))、E をその場で消してからエラーを返す
 - 使う時: bind の順の 2 (procB) と 3 (実パス)。`resolve_for_bind` が先に選ぶ綴り。procB と実パスで試しても `skipped` には 1 件 (理由は最後の物)
 - 使えない時: 綴りが sockaddr に入らない、B・D・E を作れない、procB では `/proc` を使えないか `usable_cross_uid`
 - 届くファイル名: sockaddr に入る長さ − (B の綴り + D + E + 区切り 3)。procB の Linux はおよそ 70 ([SPEC の未確定](SPEC-ja.md#未確定))
@@ -108,7 +117,7 @@ D の作り方:
 ### link-file
 
 - やり方: ソケットのファイルの綴り (相対パスなら cwd を前に付ける) を指す E を作り、その綴りで bind / connect する
-  - bind と `resolve_for_bind`・`resolve_for_connect`: E は D の中、綴りは `B/D/E` (B の綴りは「[綴りの形](#綴りの形)」の procB か実パス)。E は `cleanup` まで残す
+  - bind と `resolve_for_bind`・`resolve_for_connect`: E は D の中、綴りは `B/D/E` (B の綴りは「[綴りの形](#綴りの形)」の procB か実パス)。E は `cleanup` まで残す。bind して失敗した時は (エラーを返す時も、下の見分け方で次へ進む時も)、E をその場で消す
   - 既定の connect 系: D を作らず、B の直下に乱数の名前の E を作り、B の実パスの `B/E` で connect し (procB は使わない。B は `/tmp` が先なので短い)、connect の後すぐ E を unlink する。片付けは unlink だけで待ちは入らない
 - 使う時: bind の順の 4 (実パスだけ。procB の link-file は無い: `/proc` のある Linux は bind が symlink を辿らない)。connect の順の 4。`resolve_for_bind` は bind が symlink を辿ると実測した OS (macOS・NetBSD) だけで使い、未確認の OS では使わない (resolve の時点では bind しないので、下の見分け方を使えない)。`resolve_for_connect` はこれだけを使い、使えなければ `ENAMETOOLONG`
 - 使えない時: 綴りが sockaddr に入らない、B・D・E を作れない。bind では、カーネルが symlink を辿らなかった (下)
@@ -223,6 +232,7 @@ resolve の綴りが収まらない時の bind が使う。
 ## 経路の失敗の扱い
 
 - 経路が実際に bind / connect して失敗したら (`ENOENT`、`EADDRINUSE`、`ECONNREFUSED` 等)、そのエラーを返し、次の経路を試さない
+- その時、その呼び出しで作った E は返す前に消す (link-dir・link-file・thread-cwd・at。既定の connect の link-file も)。D と B は残す
 - 次へ進むのは、経路自体が使えない時だけ (各経路の節の「使えない時」)
   - 綴りが収まらない
   - B・D・E を作れない

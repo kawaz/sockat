@@ -70,7 +70,7 @@ Usually not. The sender chooses its own reply path, so it can put it somewhere s
 
 ### Is connecting to the same path many times fast?
 
-Call `resolve_for_connect` once, use the spelling for as many connects as needed, and `cleanup` when done. The work of making the spelling (creating and removing the symlink in the base) happens once. The default `connect` keeps no spelling and no state in the process.
+Call `resolve_for_connect` once, use the spelling for as many connects as needed, and `cleanup` when done. The work of making the spelling (creating and removing the symlink in the base) happens once. The default `connect` keeps no spelling and no D or E in the process (it reuses only B and its fd).
 
 ### Is the default `connect` heavy?
 
@@ -84,7 +84,7 @@ It would put hidden state in the process, the caller could not see when it is cl
 
 ### What does the default `bind` leave behind?
 
-For a long path, it leaves the process's D and an E pointing to the socket's directory or file in the base B (when bound through the thread cwd etc., E is removed at once and only D stays). The default `bind` returns no way to clean up, so E stays until the process exits and is removed with D by the OS's temporary-directory cleaning (10 days for Linux's `/tmp`, until reboot for macOS's `/tmp`). To clean up, use `remove()` / `cleanup()` of `_ex`, or resolve. The D of dead processes are removed by calling `sweep()`.
+For a long path, it leaves the process's D and an E pointing to the socket's directory or file in the base B (when bound through the thread cwd etc., E is removed at once and only D stays). The default `bind` returns no way to clean up, so E stays until the process exits and is removed with D by the OS's temporary-directory cleaning (10 days for Linux's `/tmp`, until reboot for macOS's `/tmp`). To clean up, use `remove()` / `cleanup()` of `_ex`, or resolve. The D of dead processes are removed by calling `sweep()` (`sweep_base(path)` for those in the B of `Options.base`).
 
 ### When do I call `remove()`?
 

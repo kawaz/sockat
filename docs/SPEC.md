@@ -24,7 +24,7 @@ How sockat behaves, independent of the language (the promise to users and to tho
 | unusable / failure | unusable: the route itself cannot be used (the spelling does not fit, the means is missing, B / D / E cannot be created). failure: the bind / connect was actually made and the OS returned an error ([How a failing route is treated](SPEC-routes.md#how-a-failing-route-is-treated)) |
 | base | where B is created. One of `/tmp`, `$XDG_RUNTIME_DIR`, `$TMPDIR` and the socket's directory ([Where B is created](SPEC-routes.md#where-b-is-created)). Not used when the user gives B itself in `Options.base` |
 | B | a real directory created in the base. One per user, reused across processes |
-| D | a directory created in B, one per (process, B). Its name is random |
+| D | a directory created in B, one per (process, B). Its name is 10 random characters |
 | E | a symlink. One kind points to the socket's directory (link-dir and thread-cwd / at), the other to the socket file (link-file) |
 | procB | spelling B as `/proc/<pid>/fd/<B's fd>`. Only processes of the same uid can follow it, and it cannot be followed after the process exits |
 | real-path spelling | spelling B by its real path |
@@ -53,7 +53,7 @@ OSes are grouped as follows.
 - They are placed in a module per type, in the standard library's form (stream at the crate root, `datagram::`, `seqpacket::`)
 - The default operations take only a path. For those who need cleanup and diagnostics, one `_ex(…, Options)` is provided for each default operation
 - For those who hand the spelling to the standard library themselves, there are two resolves, one per use ([resolve](#resolve))
-- `sweep()` removes the dead D in the base ([`sweep`](#sweep))
+- `sweep()` removes the dead D in the bases, and `sweep_base(path)` removes the dead D in the B of `Options.base` ([`sweep`](#sweep))
 - There is no way for the user to choose or combine routes, and no function that changes a process-wide default
 - Names follow each language's conventions. Python puts `_ex` in the submodule `sockat.ex` (to keep them apart from the standard `socket.connect_ex`). Go's stream functions are `Listen` / `ListenEx` / `Dial` / `DialEx`
 
@@ -80,6 +80,7 @@ Shown with the Rust names.
 | resolve | `resolve_for_bind(path, Options)` | `ForBind` |
 | resolve | `resolve_for_connect(path, Options)` | `ForConnect` |
 | base | `sweep()` | nothing |
+| base | `sweep_base(path)` | nothing |
 
 - On failure, the default operations return the standard's error type; `_ex` and resolve return an error type that carries diagnostics ([Diagnostics](#diagnostics))
 - For DGRAM, only the functions of the standard `UnixDatagram` that take a path, and `unbound` used with them, are mirrored. `pair` is not
@@ -89,8 +90,8 @@ Shown with the Rust names.
 
 | Field | What it is |
 |---|---|
-| `usable_cross_uid: bool` | asks for a spelling that a peer of another uid can also follow. It affects how B is chosen and keeps procB from being used. When it cannot be met, thread-cwd / at is used ([Another uid and PrivateTmp](SPEC-routes.md#another-uid-and-privatetmp)). Whether it was met is told by the resulting `Spelling` |
-| `base: Option<Path>` | the user gives the path of B itself (an app passes a place it manages, e.g. `/tmp/app-<uid>/sockat`). B is created there; when the checks fail it is an error, and it does not fall back to the automatic bases ([Errors](#errors)). Together with `usable_cross_uid`, it is also checked that every directory on the way to that base gives x to other. Passing a different `base` per call makes one process hold several B. The spelling form is chosen in the same order as in the automatic case |
+| `usable_cross_uid: bool` | asks for a spelling that a peer of another uid can also follow. Only the bind side (`bind_ex`, `resolve_for_bind`) looks at it; the connect side (`connect_ex` etc., `resolve_for_connect`) does not (a connect's spelling does not stay with the peer). It affects how B is chosen and keeps procB from being used. When it cannot be met, thread-cwd / at is used ([Another uid and PrivateTmp](SPEC-routes.md#another-uid-and-privatetmp)). Whether it was met is told by the resulting `Spelling` |
+| `base: Option<Path>` | the user gives the path of B itself (an app passes a place it manages, e.g. `/tmp/app-<uid>/sockat`). B is created there; when the checks fail it is an error, and it does not fall back to the automatic bases ([Errors](#errors)). On the bind side together with `usable_cross_uid`, it is also checked that every directory on the way to that base and the base itself give x to other. The connect side also uses it as the base for B. Passing a different `base` per call makes one process hold several B. The spelling form is chosen in the same order as in the automatic case |
 
 ### What is returned
 
@@ -99,8 +100,8 @@ Shown with the Rust names.
 | `Bound<S>` | `socket` (the standard type), `file: SocketFile` (`remove()`, `cleanup()`), `spelling: Spelling`, diagnostics (`route`, `base`, `skipped`) |
 | `Connected<S>` | `socket` (the standard type), diagnostics (`route`, `skipped`) |
 | `Report` | diagnostics (`route`, `skipped`) |
-| `ForBind` | `path` (the spelling), `spelling`, `remove()`, `cleanup()`, diagnostics |
-| `ForConnect` | `path` (the spelling), `cleanup()`, diagnostics. It has no `remove()` (the type prevents removing by mistake) |
+| `ForBind` | `path` (the spelling), `spelling`, `cleanup()`, `socket_file()` (a call made after the bind that receives a `SocketFile`; [`SocketFile` of `ForBind`](#socketfile-of-forbind)), diagnostics. It has no `remove()` |
+| `ForConnect` | `path` (the spelling), `cleanup()`, diagnostics (`route`, `skipped`). It has no call that receives a `SocketFile` (the type prevents removing by mistake) |
 
 - `remove()` and `cleanup()` are in "[Cleanup](#cleanup)"
 - The properties of a connect's spelling are not returned (a connect's spelling does not stay with the peer)
@@ -127,7 +128,7 @@ On success `_ex` and resolve return the following.
 | Field | What it is |
 |---|---|
 | `route` | the name of the route taken |
-| `base` | the spelling of the B a bind used (`proc`, `sockdir`, `runtime`, `tmpdir`, `tmp`). It has a value only when the spelling goes through B (link-dir, link-file), and none otherwise (standard, thread-cwd, at). `Connected` and `Report` have none |
+| `base` | the spelling of the B a bind used (`proc`, `sockdir`, `runtime`, `tmpdir`, `tmp`, `given`; what the values mean is in [Spelling forms](SPEC-routes.md#spelling-forms)). It has a value only when the spelling goes through B (link-dir, link-file), and none otherwise (standard, thread-cwd, at). `Connected`, `Report` and `ForConnect` have none |
 | `skipped` | the routes tried and found unusable, in the order tried. Each element is `{ name: the route name, reason: why it was unusable }`. For a long path `standard` is included |
 
 - `skipped` has one element per route name. Trying link-dir with procB and with the real path is still one element, with the `reason` of the last try. Not using procB because of `usable_cross_uid` is not skipping a route, so nothing is added
@@ -146,7 +147,7 @@ It turns a long path into a short spelling that keeps pointing to the same place
 |---|---|---|
 | Spelling | `B/D/E/<file name>` (link-dir) first, then `B/D/E` (link-file) | `B/D/E` (link-file), whatever the file name's length |
 | Where link-file is used | only on the OSes measured to follow a symlink on bind (macOS, NetBSD). On OSes not yet checked, link-dir only (resolve does not bind, so whether bind follows cannot be told) | every OS (connect always follows a symlink in the last component) |
-| Returns | `ForBind` (`spelling`, `remove()`, `cleanup()`) | `ForConnect` (`cleanup()`) |
+| Returns | `ForBind` (`spelling`, `cleanup()`, `socket_file()`) | `ForConnect` (`cleanup()`) |
 | When it cannot | `ENAMETOOLONG` (a length only thread-cwd / at reaches) | `ENAMETOOLONG` (link-file cannot be used, e.g. B cannot be created) |
 
 - A path up to the standard length is returned unchanged (`Original` for an absolute path, `CwdRelative` for a relative one)
@@ -183,8 +184,8 @@ Attributes of `Linked`:
 |---|---|---|
 | `removable` | whether unlinking by the spelling removes the real file | true for link-dir (the E in the middle is followed). false for link-file (the last symlink is not followed and E is removed; removing the file needs `remove`) |
 | `until` | until when the spelling can be followed | `Process` (procB: not after the process exits). `Cleanup` (real-path spelling: E stays until `cleanup`, D until the OS cleaning after the process exits) |
-| `usable_cross_uid` | whether a peer of another uid can follow it | false for procB (same uid and same PID namespace only; root can follow). For a real-path spelling, true when every directory on the way to B gives x to other (B in `/tmp`), otherwise false (`/run/user/<uid>` and macOS's `$TMPDIR` are 0700) |
-| `usable_with_private_tmp` | whether the peer can follow it even when either side has its `/tmp` isolated (systemd's `PrivateTmp`, etc.) | true when the spelling does not pass through `/tmp` or `/var/tmp`. A peer in a wholly different mount namespace (a container, etc.) is not covered |
+| `usable_cross_uid` | whether a peer of another uid can follow it | false for procB (same uid and same PID namespace only; root can follow). For a real-path spelling, true when every directory on the way to B and B itself give x to other (B in `/tmp`), otherwise false (`/run/user/<uid>` and macOS's `$TMPDIR` are 0700, and so is an existing B that is 0700) |
+| `usable_with_private_tmp` | whether the peer can follow it even when either side has its `/tmp` isolated (systemd's `PrivateTmp`, etc.) | false when either the path of B's base before realpath or the spelling (the real path) passes through `/tmp` or `/var/tmp` (B in macOS's `/tmp` is false even though its spelling is `/private/tmp`), true when neither does. A peer in a wholly different mount namespace (a container, etc.) is not covered |
 
 - A connect's spelling does not stay with the peer, so its properties are not returned
 
@@ -194,8 +195,8 @@ Attributes of `Linked`:
 
 | Call | What it does | Held by |
 |---|---|---|
-| `remove()` | removes the bound socket file once, and does `cleanup` too | `SocketFile` of `Bound`, `ForBind` |
-| `cleanup()` | cleans up resolve's E once | `SocketFile` of `Bound`, `ForBind`, `ForConnect` |
+| `remove()` | removes the bound socket file once, and does `cleanup` too | `SocketFile` (the one of `Bound`, and the one `socket_file()` of `ForBind` returns) |
+| `cleanup()` | cleans up resolve's E once | `SocketFile`, `ForBind`, `ForConnect` |
 
 - Neither happens automatically (Rust's Drop does not do them either). From the second call on they do nothing (`remove` is idempotent in the sense that it removes what the resolved spelling points to once)
 - sockat does not clean up B and D ([What stays in the base](#what-stays-in-the-base))
@@ -218,16 +219,25 @@ Attributes of `Linked`:
 | Python | the return value includes a function without arguments |
 | Go | the return value includes a `func() error`. Even for a short path, only this removes the file (`SetUnlinkOnClose(false)`) |
 
+### `SocketFile` of `ForBind`
+
+At resolve time nothing is bound, so `ForBind` cannot remember the socket file's `(st_dev, st_ino)` and has no `remove()`. When the user calls `socket_file()` after binding on their own (the name follows each language's convention; in Rust `socket_file(&self) -> io::Result<SocketFile>`), it returns a `SocketFile`. Without that call there is nothing that removes the file.
+
+- At the call it follows the spelling and remembers the socket file's realpath and `(st_dev, st_ino)`. When it cannot follow it (before the bind, no file), it is an error
+- The returned `SocketFile` works like the one of `Bound` ([`remove`](#remove)). Its `cleanup()` cleans up once the same E as `cleanup()` of `ForBind`
+- Call it after the bind and before closing the listener. A replacement between the bind and the call cannot be told apart
+- When the spelling is `CwdRelative`, the process cwd's `(st_dev, st_ino)` at resolve time and at the call are compared, and a difference is an error
+
 ### What stays in the base
 
 | | B | D | E |
 |---|---|---|---|
-| Unit | one per user, reused across processes. A process uses one B in the automatic bases (one more only with `usable_cross_uid`). A B in `Options.base` is one per given path | one per (process, B). Created only by a bind that keeps its spelling (including thread-cwd / at) and by `resolve_for_connect` | one per resolve. One per call for thread-cwd / at and for the default connect's link-file |
+| Unit | one per user, reused across processes. A process uses one B in bases 1 to 3 (`/tmp`, `$XDG_RUNTIME_DIR`, `$TMPDIR`) (one more only with `usable_cross_uid`). A B in the socket's directory is one per directory. A B in `Options.base` is one per given path | one per (process, B). Created only by a bind that keeps its spelling (including thread-cwd / at) and by `resolve_for_connect` | one per resolve. One per call for thread-cwd / at and for the default connect's link-file |
 | While alive | not removed | the process keeps an fd holding a flock (shared lock) | resolve's E is not removed |
 | Cleanup | not by sockat (B in `Options.base` is managed by the app) | not by sockat. A dead process's D is removed by the OS's temporary-directory cleaning. Only when `sweep()` is called are the D whose lock has been released removed | resolve's E by `cleanup`. A per-call E is unlinked within the call |
 
 - The default `bind` returns no `SocketFile`, so its E stays until the process exits and is removed with D by the OS's temporary-directory cleaning. There is no mechanism for cleaning up after a process that execs. Users who care about cleanup use `_ex` or resolve
-- The default `connect` leaves no state in the process (it creates no D, and unlinks the E right under B right after the connect)
+- The default `connect` leaves no D or E in the process (it creates no D, and unlinks the E right under B right after the connect). When it creates B for the first time, that B and its fd are used as the process's B from then on
 
 The OS's temporary-directory cleaning ([research](research/2026-11-20-tmp-cleaners-and-persistent-base.md), Japanese):
 
@@ -245,6 +255,9 @@ The OS's temporary-directory cleaning ([research](research/2026-11-20-tmp-cleane
 ### `sweep`
 
 - Only when called, it removes the D in B whose owners are dead (D whose lock has been released). It does not remove the D of other live processes (how it tells is in [D and E](SPEC-routes.md#d-and-e))
+- `sweep()` covers the B with the default names in bases 1 to 3 (`sockat-<uid>`, `sockat`). Only those that exist; it creates no B
+- `sweep_base(path)` (the name follows each language's convention) removes the dead D in the B passed as `Options.base`. The app that manages that B calls it
+- A B with a random name (fallen back to after the checks failed) and a B in the socket's directory are not covered
 - It is never called automatically (resolve does not list B on each call)
 
 ## Short paths
@@ -373,7 +386,7 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 | `resolve_for_connect` when link-file cannot be used (B cannot be created, the spelling does not fit) | `ENAMETOOLONG` |
 | a directory on the way to `Options.base` is missing | `ENOENT` |
 | `Options.base` is not a directory | `ENOTDIR` |
-| `Options.base` failed the owner / permission checks (including, with `usable_cross_uid`, whether every directory on the way gives x to other) | `EPERM` |
+| `Options.base` failed the owner / permission checks (including, on the bind side with `usable_cross_uid`, whether every directory on the way and the base itself give x to other) | `EPERM` |
 | a path over the standard length that does not end in a name | invalid argument |
 | a path containing NUL anywhere but at the start (whatever its length) | invalid argument |
 | the cwd changed during relative | general error |
@@ -405,10 +418,11 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 | `cleanup` | no E remains after `cleanup` |
 | The default connect | nothing remains right under B after the connect, and it does not wait |
 | `remove` | the file is removed and the listener is not closed. If the file was replaced by another while the listener was open, it is not removed |
+| `socket_file()` of `ForBind` | calling it before the bind is an error. `remove` of the `SocketFile` it returns after the bind does not remove a replaced file |
 | thread-cwd / at | when forced, neither the process's cwd nor the calling thread's cwd changes and no E remains after the call. The socket is created at the original path and can send and receive |
 | link-file on bind | on an OS whose bind does not follow the symlink it goes into `skipped` and nothing remains. When something is at the original path, that error (`EADDRINUSE`) is returned and the next is not tried |
 | The connect routes | forcing proc-direct, relative, widened, at-direct, thread-cwd-direct and link-file one by one reaches the socket |
-| No retry on failure | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` are returned and nothing is created on later routes |
+| No retry on failure | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` are returned and nothing is created on later routes. When a bind by link-dir or link-file fails, no E is left |
 | relative and the cwd | a cwd change during relative gives a general error |
 | macOS | a 253-byte path reaches via widened for the connect variants. bind does not use widened |
 | Non-blocking connect | it fails without waiting when the backlog is full |
@@ -421,12 +435,10 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 ## Open questions
 
 - Reach: a procB spelling takes about 35 bytes for `/proc/<pid>/fd/<fd>/` + D + `/E/`, and the file name reached on Linux is about 70. Between that and thread-cwd, thread-cwd is used
-- The length of the names of B / D / E (it affects the reach; the reach table estimates B at 17 bytes)
 - Whether FreeBSD's connect can use link-file (not checked)
 - `send_to` sends to resolve's spelling, so it does not use relative (a send cannot be taken back). What to do with a `send_to` at a length resolve cannot handle (send with thread-cwd, or `ENAMETOOLONG`)
 - A reply to a DGRAM sender bound to a long path reaches while the spelling lives (procB for the same uid, the real path of B in `/tmp` for another uid too). How `Spelling` expresses the cases where it does not reach (after `cleanup`, procB with another uid)
 - The return type of Rust's SEQPACKET
-- The identity for `remove()` of `ForBind`: at resolve time nothing is bound, so the socket file's `(st_dev, st_ino)` cannot be remembered. The form is open (a proposal: a call made after the bind that receives a `SocketFile`)
 - Android and the Apple OSes other than macOS are not checked at all
 - The peer credentials on NetBSD, OpenBSD and illumos are not checked
 - That a non-blocking connect does not return `EINPROGRESS` is confirmed only on Linux and macOS

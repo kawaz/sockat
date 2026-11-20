@@ -68,42 +68,44 @@ A bind on Linux / Android that cannot use the thread cwd.
 
 | Item | Content |
 |---|---|
-| When | a seccomp filter is in place (the default of docker and systemd's `SystemCallFilter=`), `unshare(CLONE_FS)` is refused, or no thread can be created |
-| Where sockat reaches | default bind: with `/proc` usable, proc up to a file name of 79; otherwise not reached<br>bind_ex: link-dir on procB up to 74. Without `/proc`, link-dir up to 71 when a base is writable (61 on dirB in `$XDG_RUNTIME_DIR`, 71 on tmpB in `/tmp`)<br>resolve_for_bind: as bind_ex |
+| When | default bind, bind_ex: a seccomp filter is in place (the default of docker and systemd's `SystemCallFilter=`), `unshare(CLONE_FS)` is refused, or no thread can be created<br>resolve_for_bind: whatever the thread cwd (it has no thread-cwd)<br>in every case, when the file name does not fit link-dir's spelling |
+| Where sockat reaches | the same for the default bind, bind_ex and resolve_for_bind. link-dir up to these file names (procB and B's real path are tried in turn, so the longer of the usable ones)<br>procB (`/proc` usable, not `usable_cross_uid`): 73<br>B's real path: 76 with B in `/tmp`, 71 with B in `$XDG_RUNTIME_DIR`, 72 with B in `$TMPDIR` at `/var/tmp`, 72 with `Options.base` at `/tmp/app-<uid>/sockat`<br>not reached when B's spelling does not fit (`$TMPDIR` or `Options.base` deep), or when B ends up in the socket's directory and `/proc` is not usable either |
 | Where fork reaches | a file name up to 96 (whatever the base; D can be created in the socket's directory too) |
 | Its own side effects | none visible to the peer (the parent listens). Where a seccomp filter refuses `fork` / `clone`, fork-cwd cannot be used either |
 
 ### bind-apple-without-thread-cwd
 
-A bind on macOS and the other Apple OSes that cannot use the thread cwd (`pthread_fchdir_np` is absent or fails) nor a symlink in a base.
+A bind on macOS and the other Apple OSes that cannot use the thread cwd (`pthread_fchdir_np` is absent or fails) and is not reached by link-file either.
 
 | Item | Content |
 |---|---|
-| When | `pthread_fchdir_np` is absent or fails, and in addition neither `$TMPDIR` nor `/tmp` is writable, or both are too long for the spelling to fit. On the other Apple OSes, when bind does not follow a symlink, this applies whatever the base |
-| Where sockat reaches | default bind: symlink-file, for any file name length when a base exists<br>bind_ex: link-file (dirB, tmpB), for any file name length when a base exists<br>without a base, neither reaches |
+| When | default bind, bind_ex: `pthread_fchdir_np` is absent or fails. resolve_for_bind: whatever the thread cwd<br>in addition, link-file is not usable: there is nowhere to create B or B's spelling does not fit (`/tmp` not writable and `$TMPDIR` unset or deep, `Options.base` deep, `usable_cross_uid` with `/tmp` not writable), or on the other Apple OSes bind does not follow a symlink (resolve_for_bind does not use link-file on the other Apple OSes)<br>in addition, the file name does not fit link-dir's spelling |
+| Where sockat reaches | link-file: any file name length when B's spelling fits (macOS, and the other Apple OSes whose bind follows a symlink)<br>link-dir (B's real path): a file name up to 64 with B in `/tmp`, 20 with B in the default `$TMPDIR`, 68 with `Options.base` at `/tmp/app-<uid>/sockat`<br>not reached when there is nowhere to create B or B's spelling does not fit |
 | Where fork reaches | a file name up to 92 |
 | Its own side effects | none visible to the peer (the parent listens). Do not call Objective-C or CoreFoundation in the child (using them in a child that does not exec after fork is unsafe; not verified) |
 
 ### bind-without-thread-cwd-means
 
-A bind on the BSDs other than FreeBSD, illumos and other Unix, where neither the thread cwd, nor `bindat`, nor `/proc` is usable.
+A bind on the BSDs other than FreeBSD, illumos and other Unix (and FreeBSD's resolve_for_bind), where neither the thread cwd nor `bindat` is usable.
 
 | Item | Content |
 |---|---|
-| When | NetBSD, and other Unix whose bind follows a symlink: when there is no base<br>OpenBSD, illumos, and other Unix that does not follow: always (bind does not follow a symlink, and there is no means) |
-| Where sockat reaches | default bind: NetBSD reaches through symlink-file for any length when a base exists. OpenBSD and illumos do not reach<br>bind_ex / resolve_for_bind: NetBSD reaches through link-file when a base exists. OpenBSD reaches a file name of 67, illumos 71, through link-dir on tmpB (when `/tmp` is writable) |
+| When | NetBSD, and other Unix whose bind follows a symlink: when there is nowhere to create B or B's spelling does not fit (resolve_for_bind on other Unix cannot tell whether it follows and does not use link-file)<br>OpenBSD, illumos, other Unix that does not follow, and FreeBSD's resolve_for_bind: when the file name does not fit link-dir's spelling |
+| Where sockat reaches | link-file (the default bind and bind_ex on NetBSD and on other Unix that follows, resolve_for_bind on NetBSD): any file name length when B's spelling fits<br>link-dir (B's real path): a file name up to 72 with B in `/tmp` (76 on illumos), 68 with B in `$TMPDIR` at `/var/tmp` and with `Options.base` at `/tmp/app-<uid>/sockat` (72 on illumos)<br>not reached when there is nowhere to create B or B's spelling does not fit |
 | Where fork reaches | a file name up to 92 (96 on illumos) |
 | Its own side effects | none visible to the peer (the parent listens) |
 
-- FreeBSD reaches a file name of 92 with `bindat` (at), and fork-cwd also reaches 92, so fork extends nothing there
+- FreeBSD's default bind and bind_ex reach a file name of 92 with at, and fork-cwd also reaches 92, so fork extends nothing there
 
 ### connect-without-place-or-thread-cwd
 
-A connect not reached by the routes that need neither writing nor a thread, that cannot use the thread cwd (or the file name is too long for it), and that has no base for link-file. Typical for a short-lived CLI connecting inside a sandbox.
+A default connect not reached by the routes that need neither writing nor a thread, nor by thread-cwd-direct, and that cannot create link-file's `B/E`. Typical for a short-lived CLI connecting inside a sandbox.
 
 | Item | Content |
 |---|---|
-| When | all of the following<br>on Linux with `/proc` usable the file name is over 90; on other OSes neither the original nor the relative path fits the sockaddr (the widened sockaddr on Apple OSes)<br>the thread cwd is not usable (always on FreeBSD, NetBSD, OpenBSD, illumos and other Unix)<br>B can be created in none of `$XDG_RUNTIME_DIR`, `$TMPDIR` and `/tmp`, and on Linux with `/proc` usable the socket's directory is not writable either |
-| Where sockat reaches | Linux (with `/proc`): proc-direct up to a file name of 90<br>others: relative up to a relative path of 107 / 103, and on Apple OSes widened up to 253 (Go cannot build widened) |
+| When | all of the following<br>not reached by the routes that need neither writing nor a thread: on Linux with `/proc` usable the file name is over 90; elsewhere the shorter of the original and the relative path does not fit the sockaddr (over 253 for rs and py on Apple OSes)<br>not reached by thread-cwd-direct: the thread cwd is not usable (always on NetBSD, OpenBSD, illumos and other Unix), or the file name does not fit the sockaddr<br>not reached by link-file: B can be created in none of `/tmp`, `$XDG_RUNTIME_DIR` and `$TMPDIR`, or the created B's `B/E` does not fit the sockaddr (`$TMPDIR` deep). When B ends up in the socket's directory, `B/E` is longer than the original path |
+| Where sockat reaches | proc-direct (Linux with `/proc` usable): a file name up to 90<br>relative: a relative path up to 107 (Linux / illumos), 103 (others). On Apple OSes rs and py reach 253 with widened (Go cannot build widened)<br>thread-cwd-direct (Linux / Android, Apple OSes): a file name up to 107 / 103<br>link-file: any file name length when B can be created and `B/E` fits |
 | Where fork reaches | a file name up to 107 (Linux / illumos), 103 (BSD, other Unix), 253 (Apple OSes, when the child uses the widened sockaddr) |
 | Its own side effects | the peer pid the server sees is that of the exited child. Cannot be used with a server that authorizes or logs by the peer's pid |
+
+- FreeBSD reaches a file name of 103 with at-direct, and fork-cwd also reaches 103, so fork extends nothing there

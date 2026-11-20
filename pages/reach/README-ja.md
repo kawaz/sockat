@@ -27,9 +27,9 @@ sockat で長いパスに届くか、どの経路で届くか、届かなけれ�
 
 | 値 | バイト | 中身 |
 |---|---|---|
-| `D` | 10 | D の名前 (乱数、英数 10 文字)。名前の長さは未決 (DR-0017 の「未決」) で、見積もり |
-| `E` | 2 | resolve の E の名前。プロセスの中で一意なら短くてよい (DR-0017)。base62 の数え上げで 3844 個まで 2 文字として見積もる |
-| `Er` | 10 | 呼び出しごとの E (thread-cwd・at と既定の connect の link-file) の名前 (乱数、英数 10 文字)。見積もり |
+| `D` | 10 | D の名前 (乱数、英数 10 文字。DR-0017) |
+| `E` | 2 | resolve の E の名前。プロセスの中の 36 進のカウンタ (DR-0017)。36 個までは 1 文字、1296 個まで 2 文字で、2 文字として見積もる |
+| `Er` | 10 | 呼び出しごとの E (thread-cwd・at と既定の connect の link-file) の名前 (乱数、英数 10 文字。DR-0017) |
 | `Bname` | 11 | B の名前 sockat-<uid> の長さ。uid を 4 桁 (例 1000) で見積もる (macOS の 501 は 1 短く、大きな uid はその分長い) |
 | `Bname_runtime` | 6 | $XDG_RUNTIME_DIR の下の B の名前 sockat の長さ |
 | `pid` | 7 | procB の <pid> の桁。Linux の pid_max 4194304 で 7 桁 (小さい pid ではその分届くファイル名が延びる) |
@@ -52,15 +52,15 @@ sockat で長いパスに届くか、どの経路で届くか、届かなけれ�
 | $XDG_RUNTIME_DIR | 既定の bind<br>bind_ex<br>resolve_for_bind<br>既定の connect<br>resolve_for_connect | B の置き場の 2 番目 |
 | $TMPDIR | 既定の bind<br>bind_ex<br>resolve_for_bind<br>既定の connect<br>resolve_for_connect | B の置き場の 3 番目 |
 | ソケットのディレクトリに書ける | 既定の connect<br>resolve_for_connect | B の置き場の 4 番目。bind はソケットのファイルを作るので書ける前提 |
-| Options.base | bind_ex<br>resolve_for_bind<br>resolve_for_connect | B そのもののパス。指定すると自動の置き場を使わない。usable_cross_uid と一緒で途中が other に x を持たなければ EPERM。途中が無い等の確かめのエラーは表に入れない |
+| Options.base | bind_ex<br>resolve_for_bind<br>resolve_for_connect | B そのもののパス。指定すると自動の置き場を使わない。usable_cross_uid と一緒で途中と base 自身が other に x を持たなければ EPERM。途中が無い等の確かめのエラーは表に入れない |
 | PrivateTmp (自分か相手が /tmp を隔離) | 既定の bind<br>bind_ex<br>resolve_for_bind | systemd の PrivateTmp 等。綴りを相手が辿れるかにだけ効く |
-| Options.usable_cross_uid (別の uid の相手) | bind_ex<br>resolve_for_bind | 指定して別の uid の相手と通信する。B の選び方 (途中が other に x の所だけ)、procB を使わないこと、綴りを相手が辿れるかに効く |
+| Options.usable_cross_uid (別の uid の相手) | bind_ex<br>resolve_for_bind | 指定して別の uid の相手と通信する。B の選び方 (途中と B 自身が other に x の所だけ)、procB を使わないこと、綴りを相手が辿れるかに効く |
 
 B の選び方 ([SPEC-routes の「B の作り方」](../../docs/SPEC-routes-ja.md#b-の作り方)):
 
-- B はプロセスごとに 1 つ。`Options.base` を指定しなければ、`/tmp` → `$XDG_RUNTIME_DIR` → `$TMPDIR` → ソケットのディレクトリの順で最初に作れた所。B の綴りが収まらなくても次の置き場には移らない
+- B は、`Options.base` を指定しなければ、`/tmp` → `$XDG_RUNTIME_DIR` → `$TMPDIR` → ソケットのディレクトリの順で最初に作れた所。`/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR` の B はプロセスごとに 1 つ、ソケットのディレクトリの B はディレクトリごと。B の綴りが収まらなくても次の置き場には移らない
 - 綴りは procB (`/proc` を使えて収まる時) → B の実パス。B がソケットのディレクトリにある時は実パスの綴りが元のパスより長いので procB だけ
-- `usable_cross_uid` の時は、同じ順のうち途中が other に x の所だけを B に使い (もう 1 つの B)、procB を使わない。無いか収まらなければ thread-cwd / at
+- `usable_cross_uid` の時は、同じ順のうち途中と B 自身が other に x の所だけを B に使い (もう 1 つの B)、procB を使わない。無いか収まらなければ thread-cwd / at
 - thread-cwd・at の E はプロセスの B の D の中に作る。bind ではソケットのディレクトリに書けるので、いつも B を作れる
 
 置き場 (代表値。長さは実パスのバイト数、B の実パスは置き場 + `/` + B の名前。`Options.base` は指定した所が B):
@@ -82,28 +82,28 @@ B の選び方 ([SPEC-routes の「B の作り方」](../../docs/SPEC-routes-ja.
 | 操作 | 順 | 経路 | 綴り | 届くファイル名 | OS | 要る物 | 綴りの性質 (bind) |
 |---|---|---|---|---|---|---|---|
 | 既定の bind | 1 | link-dir (procB) | `/proc/<pid>/fd/<fd>/<D>/<E>/<F>` | sockaddr − 34 | Linux / Android | /proc<br>usable_cross_uid の指定で飛ばす<br>B を作れる (D をその中に) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true |
-| 既定の bind | 2 | link-dir (B の実パス) | `<B>/<D>/<E>/<F>` | sockaddr − 15 − B の実パス | 全部 | B の実パスの綴り (usable_cross_uid の指定では途中が other に x の B。B がソケットのディレクトリにあれば使えない) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: B までの途中が other に x なら true<br>usable_with_private_tmp: B が /tmp・/var/tmp の下でなければ true |
-| 既定の bind | 3 | link-file (B の実パス) | `<B>/<D>/<E>` | よらない (B の実パス ≤ sockaddr − 14) | 全部 | bind が symlink を辿る (実測した OS は OS で、他は実行時に見分ける)<br>B の実パスの綴り (usable_cross_uid の指定では途中が other に x の B。B がソケットのディレクトリにあれば使えない) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: B までの途中が other に x なら true<br>usable_with_private_tmp: B が /tmp・/var/tmp の下でなければ true |
+| 既定の bind | 2 | link-dir (B の実パス) | `<B>/<D>/<E>/<F>` | sockaddr − 15 − B の実パス | 全部 | B の実パスの綴り (usable_cross_uid の指定では途中と B 自身が other に x の B。B がソケットのディレクトリにあれば使えない) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: B までの途中と B 自身が other に x なら true<br>usable_with_private_tmp: B が /tmp・/var/tmp の下でなければ true |
+| 既定の bind | 3 | link-file (B の実パス) | `<B>/<D>/<E>` | よらない (B の実パス ≤ sockaddr − 14) | 全部 | bind が symlink を辿る (実測した OS は OS で、他は実行時に見分ける)<br>B の実パスの綴り (usable_cross_uid の指定では途中と B 自身が other に x の B。B がソケットのディレクトリにあれば使えない) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: B までの途中と B 自身が other に x なら true<br>usable_with_private_tmp: B が /tmp・/var/tmp の下でなければ true |
 | 既定の bind | 4 | thread-cwd | `<Er>/<F>` | sockaddr − 11 | Linux / Android<br>macOS<br>iOS 等の他の Apple の OS | スレッドの cwd<br>B を作れる (D をその中に) | Dangling |
 | 既定の bind | 5 | at | `<Er>/<F>` | sockaddr − 11 | FreeBSD | B を作れる (D をその中に) | Dangling |
 | bind_ex | 1 | link-dir (procB) | `/proc/<pid>/fd/<fd>/<D>/<E>/<F>` | sockaddr − 34 | Linux / Android | /proc<br>usable_cross_uid の指定で飛ばす<br>B を作れる (D をその中に) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true |
-| bind_ex | 2 | link-dir (B の実パス) | `<B>/<D>/<E>/<F>` | sockaddr − 15 − B の実パス | 全部 | B の実パスの綴り (usable_cross_uid の指定では途中が other に x の B。B がソケットのディレクトリにあれば使えない) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: B までの途中が other に x なら true<br>usable_with_private_tmp: B が /tmp・/var/tmp の下でなければ true |
-| bind_ex | 3 | link-file (B の実パス) | `<B>/<D>/<E>` | よらない (B の実パス ≤ sockaddr − 14) | 全部 | bind が symlink を辿る (実測した OS は OS で、他は実行時に見分ける)<br>B の実パスの綴り (usable_cross_uid の指定では途中が other に x の B。B がソケットのディレクトリにあれば使えない) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: B までの途中が other に x なら true<br>usable_with_private_tmp: B が /tmp・/var/tmp の下でなければ true |
+| bind_ex | 2 | link-dir (B の実パス) | `<B>/<D>/<E>/<F>` | sockaddr − 15 − B の実パス | 全部 | B の実パスの綴り (usable_cross_uid の指定では途中と B 自身が other に x の B。B がソケットのディレクトリにあれば使えない) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: B までの途中と B 自身が other に x なら true<br>usable_with_private_tmp: B が /tmp・/var/tmp の下でなければ true |
+| bind_ex | 3 | link-file (B の実パス) | `<B>/<D>/<E>` | よらない (B の実パス ≤ sockaddr − 14) | 全部 | bind が symlink を辿る (実測した OS は OS で、他は実行時に見分ける)<br>B の実パスの綴り (usable_cross_uid の指定では途中と B 自身が other に x の B。B がソケットのディレクトリにあれば使えない) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: B までの途中と B 自身が other に x なら true<br>usable_with_private_tmp: B が /tmp・/var/tmp の下でなければ true |
 | bind_ex | 4 | thread-cwd | `<Er>/<F>` | sockaddr − 11 | Linux / Android<br>macOS<br>iOS 等の他の Apple の OS | スレッドの cwd<br>B を作れる (D をその中に) | Dangling |
 | bind_ex | 5 | at | `<Er>/<F>` | sockaddr − 11 | FreeBSD | B を作れる (D をその中に) | Dangling |
 | resolve_for_bind | 1 | link-dir (procB) | `/proc/<pid>/fd/<fd>/<D>/<E>/<F>` | sockaddr − 34 | Linux / Android | /proc<br>usable_cross_uid の指定で飛ばす<br>B を作れる (D をその中に) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true |
-| resolve_for_bind | 2 | link-dir (B の実パス) | `<B>/<D>/<E>/<F>` | sockaddr − 15 − B の実パス | 全部 | B の実パスの綴り (usable_cross_uid の指定では途中が other に x の B。B がソケットのディレクトリにあれば使えない) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: B までの途中が other に x なら true<br>usable_with_private_tmp: B が /tmp・/var/tmp の下でなければ true |
-| resolve_for_bind | 3 | link-file (B の実パス) | `<B>/<D>/<E>` | よらない (B の実パス ≤ sockaddr − 14) | 全部 | bind が symlink を辿ると実測した OS (macOS・NetBSD)<br>B の実パスの綴り (usable_cross_uid の指定では途中が other に x の B。B がソケットのディレクトリにあれば使えない) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: B までの途中が other に x なら true<br>usable_with_private_tmp: B が /tmp・/var/tmp の下でなければ true |
+| resolve_for_bind | 2 | link-dir (B の実パス) | `<B>/<D>/<E>/<F>` | sockaddr − 15 − B の実パス | 全部 | B の実パスの綴り (usable_cross_uid の指定では途中と B 自身が other に x の B。B がソケットのディレクトリにあれば使えない) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: B までの途中と B 自身が other に x なら true<br>usable_with_private_tmp: B が /tmp・/var/tmp の下でなければ true |
+| resolve_for_bind | 3 | link-file (B の実パス) | `<B>/<D>/<E>` | よらない (B の実パス ≤ sockaddr − 14) | 全部 | bind が symlink を辿ると実測した OS (macOS・NetBSD)<br>B の実パスの綴り (usable_cross_uid の指定では途中と B 自身が other に x の B。B がソケットのディレクトリにあれば使えない) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: B までの途中と B 自身が other に x なら true<br>usable_with_private_tmp: B が /tmp・/var/tmp の下でなければ true |
 | 既定の connect | 1 | proc-direct | `/proc/self/fd/<fd>/<F>` | sockaddr − 17 | Linux / Android | /proc |  |
 | 既定の connect | 2 | relative | `<rel>` | よらない (相対パス ≤ sockaddr) | Linux / Android<br>macOS<br>iOS 等の他の Apple の OS<br>NetBSD<br>OpenBSD<br>illumos<br>その他の Unix | /proc を使えない時だけ |  |
 | 既定の connect | 3 | widened | `<rel>` | よらない (相対パス ≤ 253) | macOS<br>iOS 等の他の Apple の OS | — |  |
 | 既定の connect | 4 | at-direct | `<F>` | sockaddr | FreeBSD | — |  |
 | 既定の connect | 5 | thread-cwd-direct | `<F>` | sockaddr | Linux / Android<br>macOS<br>iOS 等の他の Apple の OS | スレッドの cwd |  |
-| 既定の connect | 6 | link-file (B の実パス) | `<B>/<Er>` | よらない (B の実パス ≤ sockaddr − 11) | 全部 | B の実パスの綴り (usable_cross_uid の指定では途中が other に x の B。B がソケットのディレクトリにあれば使えない) |  |
+| 既定の connect | 6 | link-file (B の実パス) | `<B>/<Er>` | よらない (B の実パス ≤ sockaddr − 11) | 全部 | B の実パスの綴り (usable_cross_uid の指定では途中と B 自身が other に x の B。B がソケットのディレクトリにあれば使えない) |  |
 | resolve_for_connect | 1 | link-file (procB) | `/proc/<pid>/fd/<fd>/<D>/<E>` | よらない | Linux / Android | /proc<br>B を作れる (D をその中に) |  |
-| resolve_for_connect | 2 | link-file (B の実パス) | `<B>/<D>/<E>` | よらない (B の実パス ≤ sockaddr − 14) | 全部 | B の実パスの綴り (usable_cross_uid の指定では途中が other に x の B。B がソケットのディレクトリにあれば使えない) |  |
+| resolve_for_connect | 2 | link-file (B の実パス) | `<B>/<D>/<E>` | よらない (B の実パス ≤ sockaddr − 14) | 全部 | B の実パスの綴り (usable_cross_uid の指定では途中と B 自身が other に x の B。B がソケットのディレクトリにあれば使えない) |  |
 
-綴りの記号: `<F>` はファイル名、`<rel>` は元のパスと相対パスの短い方、`<B>` は B の実パス、それ以外は「見積もりの前提」の値。sockaddr は sockaddr に入る長さ (Linux / illumos 107、他 103)。表の経路の列の `(B: …)` はどの B を通ったかで、名前は診断の `base` の値 (`Options.base` は指定した B。診断の `base` の値は SPEC に無い)
+綴りの記号: `<F>` はファイル名、`<rel>` は元のパスと相対パスの短い方、`<B>` は B の実パス、それ以外は「見積もりの前提」の値。sockaddr は sockaddr に入る長さ (Linux / illumos 107、他 103)。表の経路の列の `(B: …)` はどの B を通ったかで、名前は診断の `base` の値 (`Options.base` の B は `given`)
 
 ## まとめ: ファイル名の長さごとに届くか
 
@@ -359,18 +359,18 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 
 | ファイル名 (バイト) | スレッドの cwd を使える | /proc を使える | $XDG_RUNTIME_DIR | $TMPDIR | /tmp | Options.base | PrivateTmp (自分か相手が /tmp を隔離) | Options.usable_cross_uid (別の uid の相手) | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | 全部 | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中が other に x を持たない) | — | 見積もり |
+| 全部 | 全部 | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | 全部 | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
 | 1–76 | 全部 | 全部 | 全部 | 全部 | 書ける (1777) | 指定しない | ○ | ○ | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
 | 1–76 | 全部 | 全部 | 全部 | 全部 | 書ける (1777) | 指定しない | × | ○ | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–72 | 全部 | 全部 | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | ○ | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
 | 1–72 | 全部 | 全部 | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | × | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–73 | 全部 | ○ | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | 全部 | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
+| 1–73 | 全部 | ○ | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | 全部 | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
 | 1–73 | 全部 | ○ | /run/user/<uid> (14、0700) | 全部 | 全部 | 指定しない | 全部 | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
 | 1–73 | 全部 | ○ | 無い・書けない | /var/tmp (8、1777)<br>深い所 (113、0700 の下) | 全部 | 指定しない | 全部 | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
 | 1–73 | 全部 | ○ | 無い・書けない | 未設定・書けない | 書ける (1777) | 指定しない | 全部 | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
 | 1–73 | 全部 | ○ | 無い・書けない | 未設定・書けない | 書けない | 指定しない | 全部 | × | ○ | link-dir (B: sockdir) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
-| 1–72 | 全部 | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
-| 1–72 | 全部 | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–72 | 全部 | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
+| 1–72 | 全部 | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–76 | 全部 | × | 全部 | 全部 | 書ける (1777) | 指定しない | ○ | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
 | 1–76 | 全部 | × | 全部 | 全部 | 書ける (1777) | 指定しない | × | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–71 | 全部 | × | /run/user/<uid> (14、0700) | 全部 | 書けない | 指定しない | 全部 | × | ○ | link-dir (B: runtime) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
@@ -452,8 +452,8 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 
 | ファイル名 (バイト) | スレッドの cwd を使える | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (別の uid の相手) | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中が other に x を持たない) | — | 見積もり |
-| 1–68 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
+| 1–68 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–64 | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–20 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 指定しない | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | ○ | 全部 | 全部 | 深い所 (113、0700 の下) | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
@@ -465,7 +465,7 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 | 1–92 | × | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
 | 21–255 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 指定しない | × | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
 | 65–255 | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 69–255 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-file (B: Options.base) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 69–255 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-file (B: given) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 93–255 | ○ | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103)<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
 | 93–255 | ○ | 全部 | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
 | 93–255 | ○ | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
@@ -481,8 +481,8 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 
 | ファイル名 (バイト) | スレッドの cwd を使える | bind が symlink を辿る | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (別の uid の相手) | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中が other に x を持たない) | — | 見積もり |
-| 1–68 | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
+| 1–68 | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–64 | 全部 | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–20 | 全部 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 指定しない | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | ○ | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
@@ -502,7 +502,7 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 | 65–255 | 全部 | ○ | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 65–92 | ○ | × | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
 | 65–92 | × | × | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 69–255 | 全部 | ○ | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-file (B: Options.base) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 69–255 | 全部 | ○ | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-file (B: given) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 69–92 | ○ | × | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
 | 69–92 | × | × | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
 | 93–255 | ○ | ○ | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103)<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
@@ -534,8 +534,8 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 
 | ファイル名 (バイト) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (別の uid の相手) | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中が other に x を持たない) | — | 見積もり |
-| 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
+| 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–68 | 全部 | 全部 | 深い所 (113、0700 の下) | × | ○ | at | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
 | 1–72 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–68 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
@@ -557,15 +557,15 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 
 | ファイル名 (バイト) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (別の uid の相手) | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中が other に x を持たない) | — | 見積もり |
-| 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
+| 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–72 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–68 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–92 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–92 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 69–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-file (B: Options.base) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 69–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-file (B: given) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 69–255 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 73–255 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 93–255 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
@@ -579,8 +579,8 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 
 | ファイル名 (バイト) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (別の uid の相手) | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中が other に x を持たない) | — | 見積もり |
-| 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
+| 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–72 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–68 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
@@ -604,8 +604,8 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 
 | ファイル名 (バイト) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (別の uid の相手) | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中が other に x を持たない) | — | 見積もり |
-| 1–72 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
+| 1–72 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–96 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 107) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–76 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–72 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
@@ -629,8 +629,8 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 
 | ファイル名 (バイト) | bind が symlink を辿る | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (別の uid の相手) | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中が other に x を持たない) | — | 見積もり |
-| 1–68 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
+| 1–68 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–72 | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–68 | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | ○ | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
@@ -641,7 +641,7 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 | 1–92 | × | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–92 | × | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–92 | × | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 69–255 | ○ | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-file (B: Options.base) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 69–255 | ○ | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-file (B: given) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 69–255 | ○ | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 69–92 | × | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 69–92 | × | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
@@ -669,19 +669,19 @@ bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持�
 
 | ファイル名 (バイト) | /proc を使える | $XDG_RUNTIME_DIR | $TMPDIR | /tmp | Options.base | PrivateTmp (自分か相手が /tmp を隔離) | Options.usable_cross_uid (別の uid の相手) | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | 全部 | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中が other に x を持たない) | — | 見積もり |
+| 全部 | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | 全部 | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
 | 1–76 | 全部 | 全部 | 全部 | 書ける (1777) | 指定しない | ○ | ○ | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
 | 1–76 | 全部 | 全部 | 全部 | 書ける (1777) | 指定しない | × | ○ | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–72 | 全部 | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | ○ | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
 | 1–72 | 全部 | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | × | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–73 | ○ | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | 全部 | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
+| 1–73 | ○ | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | 全部 | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
 | 1–96 | ○ | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
 | 1–73 | ○ | /run/user/<uid> (14、0700) | 全部 | 全部 | 指定しない | 全部 | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
 | 1–73 | ○ | 無い・書けない | /var/tmp (8、1777)<br>深い所 (113、0700 の下) | 全部 | 指定しない | 全部 | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
 | 1–73 | ○ | 無い・書けない | 未設定・書けない | 書ける (1777) | 指定しない | 全部 | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
 | 1–73 | ○ | 無い・書けない | 未設定・書けない | 書けない | 指定しない | 全部 | × | ○ | link-dir (B: sockdir) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
-| 1–72 | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
-| 1–72 | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–72 | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
+| 1–72 | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–96 | × | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 107) | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
 | 1–76 | × | 全部 | 全部 | 書ける (1777) | 指定しない | ○ | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
 | 1–76 | × | 全部 | 全部 | 書ける (1777) | 指定しない | × | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
@@ -733,8 +733,8 @@ bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持�
 
 | ファイル名 (バイト) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (別の uid の相手) | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中が other に x を持たない) | — | 見積もり |
-| 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
+| 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
 | 1–64 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | 全部 | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
@@ -743,7 +743,7 @@ bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持�
 | 1–92 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
 | 21–255 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 指定しない | × | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
 | 65–255 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 69–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-file (B: Options.base) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 69–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-file (B: given) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 93–255 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
 | 93–255 | 全部 | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | — | 見積もり |
 | 93–255 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
@@ -755,8 +755,8 @@ bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持�
 
 | ファイル名 (バイト) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (別の uid の相手) | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中が other に x を持たない) | — | 見積もり |
-| 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
+| 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
 | 1–64 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | 全部 | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
@@ -780,8 +780,8 @@ bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持�
 
 | ファイル名 (バイト) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (別の uid の相手) | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中が other に x を持たない) | — | 見積もり |
-| 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
+| 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–72 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–68 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
@@ -805,15 +805,15 @@ bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持�
 
 | ファイル名 (バイト) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (別の uid の相手) | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中が other に x を持たない) | — | 見積もり |
-| 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
+| 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–72 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–68 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–92 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–92 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 69–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-file (B: Options.base) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 69–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-file (B: given) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 69–255 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 73–255 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 93–255 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
@@ -827,8 +827,8 @@ bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持�
 
 | ファイル名 (バイト) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (別の uid の相手) | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中が other に x を持たない) | — | 見積もり |
-| 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
+| 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–72 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–68 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
@@ -852,8 +852,8 @@ bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持�
 
 | ファイル名 (バイト) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (別の uid の相手) | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中が other に x を持たない) | — | 見積もり |
-| 1–72 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
+| 1–72 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–96 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 107) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–76 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–72 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
@@ -877,8 +877,8 @@ bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持�
 
 | ファイル名 (バイト) | $TMPDIR | /tmp | Options.base | Options.usable_cross_uid (別の uid の相手) | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中が other に x を持たない) | — | 見積もり |
-| 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: Options.base) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
+| 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–72 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–68 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
@@ -1110,13 +1110,13 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 
 | /proc を使える | $XDG_RUNTIME_DIR | $TMPDIR | /tmp | ソケットのディレクトリに書ける | Options.base | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| ○ | 全部 | 全部 | 書ける (1777) | 全部 | 全部 | ○ | link-file (B: proc) | — | — | 見積もり |
-| ○ | 全部 | /var/tmp (8、1777)<br>深い所 (113、0700 の下) | 書けない | 全部 | 全部 | ○ | link-file (B: proc) | — | — | 見積もり |
-| ○ | /run/user/<uid> (14、0700) | 未設定・書けない | 書けない | 全部 | 全部 | ○ | link-file (B: proc) | — | — | 見積もり |
-| ○ | 無い・書けない | 未設定・書けない | 書けない | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | link-file (B: proc) | — | — | 見積もり |
+| ○ | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| ○ | 全部 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: proc) | — | — | 見積もり |
+| ○ | 全部 | /var/tmp (8、1777)<br>深い所 (113、0700 の下) | 書けない | 全部 | 指定しない | ○ | link-file (B: proc) | — | — | 見積もり |
+| ○ | /run/user/<uid> (14、0700) | 未設定・書けない | 書けない | 全部 | 指定しない | ○ | link-file (B: proc) | — | — | 見積もり |
 | ○ | 無い・書けない | 未設定・書けない | 書けない | 書ける | 指定しない | ○ | link-file (B: sockdir) | — | — | 見積もり |
 | ○ | 無い・書けない | 未設定・書けない | 書けない | 書けない | 指定しない | × | — | link-file (procB): B を作れる置き場が無い<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| × | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: Options.base) | — | — | 見積もり |
+| × | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
 | × | 全部 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | link-file (procB): /proc を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 107) | — | 見積もり |
 | × | 全部 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
 | × | /run/user/<uid> (14、0700) | 全部 | 書けない | 全部 | 指定しない | ○ | link-file (B: runtime) | — | — | 見積もり |
@@ -1131,7 +1131,7 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 
 | $TMPDIR | /tmp | ソケットのディレクトリに書ける | Options.base | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: Options.base) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
@@ -1145,7 +1145,7 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 
 | $TMPDIR | /tmp | ソケットのディレクトリに書ける | Options.base | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: Options.base) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
@@ -1159,7 +1159,7 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 
 | $TMPDIR | /tmp | ソケットのディレクトリに書ける | Options.base | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: Options.base) | — | — | 見積もり<br>FreeBSD の connect で link-file を使えるかは未確認 (SPEC の「未確定」) |
+| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり<br>FreeBSD の connect で link-file を使えるかは未確認 (SPEC の「未確定」) |
 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり<br>FreeBSD の connect で link-file を使えるかは未確認 (SPEC の「未確定」) |
 | /var/tmp (8、1777) | 書けない | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり<br>FreeBSD の connect で link-file を使えるかは未確認 (SPEC の「未確定」) |
@@ -1173,7 +1173,7 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 
 | $TMPDIR | /tmp | ソケットのディレクトリに書ける | Options.base | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: Options.base) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
 | /var/tmp (8、1777) | 書けない | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
@@ -1187,7 +1187,7 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 
 | $TMPDIR | /tmp | ソケットのディレクトリに書ける | Options.base | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: Options.base) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
 | /var/tmp (8、1777) | 書けない | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
@@ -1201,7 +1201,7 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 
 | $TMPDIR | /tmp | ソケットのディレクトリに書ける | Options.base | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: Options.base) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | link-file (B の実パス): B の綴りが長い (綴り 127 > 107) | — | 見積もり |
 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
 | /var/tmp (8、1777) | 書けない | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
@@ -1215,7 +1215,7 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 
 | $TMPDIR | /tmp | ソケットのディレクトリに書ける | Options.base | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: Options.base) | — | — | 見積もり |
+| 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
 | /var/tmp (8、1777) | 書けない | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |

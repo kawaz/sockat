@@ -68,42 +68,44 @@ Linux / Android で、スレッドの cwd を使えない bind。
 
 | 項目 | 中身 |
 |---|---|
-| 条件 | seccomp の filter が掛かっている (docker や systemd の `SystemCallFilter=` の既定)、`unshare(CLONE_FS)` が断られる、スレッドを作れない |
-| sockat で届く所 | 既定の bind: `/proc` を使えれば proc でファイル名 79 まで、使えなければ届かない<br>bind_ex: procB の link-dir で 74 まで。`/proc` を使えない時は、置き場に書ければ link-dir で 71 まで (`$XDG_RUNTIME_DIR` の dirB で 61、`/tmp` の tmpB で 71)<br>resolve_for_bind: bind_ex と同じ |
+| 条件 | 既定の bind・bind_ex: seccomp の filter が掛かっている (docker や systemd の `SystemCallFilter=` の既定)、`unshare(CLONE_FS)` が断られる、スレッドを作れない<br>resolve_for_bind: スレッドの cwd によらない (thread-cwd を持たない)<br>どれも、ファイル名が link-dir の綴りに収まらない時 |
+| sockat で届く所 | 既定の bind・bind_ex・resolve_for_bind で同じ。link-dir でファイル名が次まで (procB と B の実パスを順に試すので、使える方の長い方)<br>procB (`/proc` を使え、`usable_cross_uid` でない時): 73<br>B の実パス: `/tmp` の B 76、`$XDG_RUNTIME_DIR` の B 71、`$TMPDIR` が `/var/tmp` の B 72、`Options.base` が `/tmp/app-<uid>/sockat` の B 72<br>B の綴りが収まらない (`$TMPDIR` や `Options.base` が深い所) か、B がソケットのディレクトリになり `/proc` も使えない時は届かない |
 | fork で届く所 | ファイル名 96 まで (置き場によらない。D はソケットのディレクトリにも作れる) |
 | 固有の副作用 | 相手から見える副作用は無い (listen は親)。seccomp の filter が `fork` / `clone` を断る環境では fork-cwd も使えない |
 
 ### bind-apple-without-thread-cwd
 
-macOS と他の Apple の OS で、スレッドの cwd を使えず (`pthread_fchdir_np` が無いか失敗する)、置き場の symlink も使えない bind。
+macOS と他の Apple の OS で、スレッドの cwd を使えず (`pthread_fchdir_np` が無いか失敗する)、link-file でも届かない bind。
 
 | 項目 | 中身 |
 |---|---|
-| 条件 | `pthread_fchdir_np` が無い・失敗する。加えて、`$TMPDIR` と `/tmp` のどちらも書けないか、綴りが収まらないほど長い。他の Apple の OS で bind が symlink を辿らない時は、置き場によらずここに入る |
-| sockat で届く所 | 既定の bind: symlink-file で、置き場があればファイル名の長さによらず届く<br>bind_ex: link-file (dirB・tmpB) で、置き場があればファイル名の長さによらず届く<br>置き場が無いと、どちらも届かない |
+| 条件 | 既定の bind・bind_ex: `pthread_fchdir_np` が無い・失敗する。resolve_for_bind: スレッドの cwd によらない<br>加えて、link-file を使えない: B を作れる所が無いか B の綴りが収まらない (`/tmp` に書けず `$TMPDIR` が未設定・深い所、`Options.base` が深い所、`usable_cross_uid` で `/tmp` に書けない)、または他の Apple の OS で bind が symlink を辿らない (resolve_for_bind は他の Apple の OS では link-file を使わない)<br>加えて、ファイル名が link-dir の綴りに収まらない |
+| sockat で届く所 | link-file: B の綴りが収まれば、ファイル名の長さによらず届く (macOS と、bind が symlink を辿る他の Apple の OS)<br>link-dir (B の実パス): ファイル名が `/tmp` の B で 64、`$TMPDIR` の既定の B で 20、`Options.base` が `/tmp/app-<uid>/sockat` の B で 68 まで<br>B を作れる所が無いか B の綴りが収まらない時は届かない |
 | fork で届く所 | ファイル名 92 まで |
 | 固有の副作用 | 相手から見える副作用は無い (listen は親)。子で Objective-C や CoreFoundation を呼ばない (fork の後に exec しない子でそれらを使うのは安全でない、未検証) |
 
 ### bind-without-thread-cwd-means
 
-FreeBSD 以外の BSD、illumos、その他の Unix で、スレッドの cwd も `bindat` も `/proc` も使えない bind。
+FreeBSD 以外の BSD、illumos、その他の Unix (と FreeBSD の resolve_for_bind) で、スレッドの cwd も `bindat` も使えない bind。
 
 | 項目 | 中身 |
 |---|---|
-| 条件 | NetBSD・その他の Unix で bind が symlink を辿る OS: 置き場が無い時<br>OpenBSD・illumos・辿らないその他の Unix: いつも (bind が symlink を辿らず、手段が無い) |
-| sockat で届く所 | 既定の bind: NetBSD は symlink-file で置き場があれば長さによらず届く。OpenBSD・illumos は届かない<br>bind_ex / resolve_for_bind: NetBSD は link-file で置き場があれば届く。OpenBSD は tmpB の link-dir でファイル名 67、illumos は 71 まで (`/tmp` に書ける時) |
+| 条件 | NetBSD・bind が symlink を辿るその他の Unix: B を作れる所が無いか B の綴りが収まらない時 (resolve_for_bind のその他の Unix は辿るかを見分けられず link-file を使わない)<br>OpenBSD・illumos・辿らないその他の Unix・FreeBSD の resolve_for_bind: ファイル名が link-dir の綴りに収まらない時 |
+| sockat で届く所 | link-file (NetBSD と辿るその他の Unix の既定の bind・bind_ex、NetBSD の resolve_for_bind): B の綴りが収まれば、ファイル名の長さによらず届く<br>link-dir (B の実パス): ファイル名が `/tmp` の B で 72 (illumos は 76)、`$TMPDIR` が `/var/tmp` の B と `Options.base` が `/tmp/app-<uid>/sockat` の B で 68 (illumos は 72) まで<br>B を作れる所が無いか B の綴りが収まらない時は届かない |
 | fork で届く所 | ファイル名 92 (illumos は 96) まで |
 | 固有の副作用 | 相手から見える副作用は無い (listen は親) |
 
-- FreeBSD は `bindat` (at) でファイル名 92 まで届き、fork-cwd も 92 までなので、fork で延びる所が無い
+- FreeBSD の既定の bind・bind_ex は at でファイル名 92 まで届き、fork-cwd も 92 までなので、fork で延びる所が無い
 
 ### connect-without-place-or-thread-cwd
 
-書き込みもスレッドも要らない経路で届かず、スレッドの cwd も使えず (かファイル名が長すぎ)、link-file の置き場も無い connect。sandbox の中で短命の CLI が connect する場面に当たりやすい。
+書き込みもスレッドも要らない経路で届かず、thread-cwd-direct でも届かず、link-file の `B/E` を作れない既定の connect。sandbox の中で短命の CLI が connect する場面に当たりやすい。
 
 | 項目 | 中身 |
 |---|---|
-| 条件 | 次が全部そろう<br>`/proc` を使える Linux はファイル名が 90 を超え、他の OS は元のパスも相対パスも sockaddr (Apple の OS は広げた sockaddr) に入らない<br>スレッドの cwd を使えない (FreeBSD・NetBSD・OpenBSD・illumos・その他の Unix はいつも)<br>`$XDG_RUNTIME_DIR`・`$TMPDIR`・`/tmp` に B を作れず、`/proc` を使える Linux ではソケットのディレクトリにも書けない |
-| sockat で届く所 | Linux (`/proc` あり): proc-direct でファイル名 90 まで<br>他: relative で相対パス 107 / 103 まで、Apple の OS は widened で 253 まで (Go は widened を作れない) |
+| 条件 | 次が全部そろう<br>書き込みもスレッドも要らない経路で届かない: `/proc` を使える Linux はファイル名が 90 を超え、他は元のパスと相対パスの短い方が sockaddr に入らない (Apple の OS の rs・py は 253 を超える)<br>thread-cwd-direct で届かない: スレッドの cwd を使えない (NetBSD・OpenBSD・illumos・その他の Unix はいつも) か、ファイル名が sockaddr に入らない<br>link-file で届かない: `/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR` のどこにも B を作れないか、作れた B の `B/E` が sockaddr に入らない (`$TMPDIR` が深い所)。B がソケットのディレクトリになると `B/E` は元のパスより長い |
+| sockat で届く所 | proc-direct (`/proc` を使える Linux): ファイル名 90 まで<br>relative: 相対パス 107 (Linux / illumos)、103 (他) まで。Apple の OS の rs・py は widened で 253 まで (Go は widened を作れない)<br>thread-cwd-direct (Linux / Android・Apple の OS): ファイル名 107 / 103 まで<br>link-file: B を作れて `B/E` が収まれば、ファイル名の長さによらず届く |
 | fork で届く所 | ファイル名 107 (Linux / illumos)、103 (BSD・その他)、253 (Apple の OS、子で広げた sockaddr を使う時) まで |
 | 固有の副作用 | 相手のサーバに見える peer の pid が、もう終わった子の pid になる。peer の pid で認可や記録をするサーバには使えない |
+
+- FreeBSD は at-direct でファイル名 103 まで届き、fork-cwd も 103 までなので、fork で延びる所が無い

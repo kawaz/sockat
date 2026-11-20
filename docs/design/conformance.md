@@ -44,7 +44,7 @@
 | `ok` | bind / connect が通ったか |
 | `error` | 失敗の時、errno の名前 (`ENAMETOOLONG`、`ENOENT` 等)。引数の誤りは `invalid-argument`、一般のエラーは `general` |
 | `route` | 通った経路の名前。失敗の時は実際に bind / connect して失敗した経路の名前か `null` (SPEC の「診断」) |
-| `base` | bind の診断の `base` (通った B の綴り。SPEC の「診断」)。綴りが B を通らなかった時 (standard・thread-cwd・at)、connect、失敗の時は `null` |
+| `base` | bind の診断の `base` (通った B の綴り。`proc`・`sockdir`・`runtime`・`tmpdir`・`tmp`・`given` のどれかで、`given` は入力の `base` に渡した B。SPEC の「診断」)。綴りが B を通らなかった時 (standard・thread-cwd・at)、connect、失敗の時は `null` |
 | `spelling` | bind が通った時の綴りの性質 (下の形)。connect と失敗の時は `null` |
 | `skipped` | 飛ばした経路の名前の並び (試した順)。`reason` は約束しないので出さない |
 
@@ -134,7 +134,7 @@ CLI の出力に加えて、CLI が終わった後に:
 | 最後がファイル名でない長いパス、先頭以外に NUL | `invalid-argument`、何も作らない |
 | `usable_cross_uid` を渡した、長い絶対パスの bind | 通る。`spelling` が `Linked` なら `usable_cross_uid` が true |
 | 長いファイル名 (100 バイト) の bind | thread-cwd・at (ファイル名 92〜96 まで) を超える。bind が symlink を辿る OS (macOS・NetBSD) は link-file で通り、他は `ENAMETOOLONG` (link-dir の綴りも収まらない) |
-| `base` に `{root}/b` を渡した、長い絶対パスの bind | B が `{root}/b` になり、`left` がその中に出る (届くかは `{root}` の長さと OS で変わる) |
+| `base` に `{root}/b` を渡した、長い絶対パスの bind | B が `{root}/b` になり、`left` がその中に出る。B を通る綴りで届いた時の `base` は `given` (届くかは `{root}` の長さと OS で変わる) |
 | `base` の親が無い bind | `ENOENT`、`{root}` の木に何も作らない (自動の置き場に落とさない) |
 | `usable_cross_uid` と、途中が other に x を持たない `base` を渡した bind | `EPERM` (自動の置き場に落とさない) |
 | 長いファイル名 (100 バイト) への connect | 通る、`x` が届く。proc-direct (ファイル名 90 まで) を超え、widened・thread-cwd-direct・link-file 等で届く |

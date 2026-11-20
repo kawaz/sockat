@@ -79,32 +79,41 @@
 
 | | B | D | E |
 |---|---|---|---|
-| 作る単位 | 利用者ごと。プロセスをまたいで使い回す。1 つのプロセスが使う自動の置き場の B は 1 つ (`usable_cross_uid` の時だけ、もう 1 つ使いうる)。`Options.base` の B は指定ごと | (プロセス, B) ごとに 1 つ。作るのは、綴りを残す bind (thread-cwd・at を含む) と `resolve_for_connect` だけ | resolve ごと。thread-cwd・at と既定の connect の link-file は呼び出しごと |
+| 作る単位 | 利用者ごと。プロセスをまたいで使い回す。1 つのプロセスが使う置き場 1〜3 の B は 1 つ (`usable_cross_uid` の時だけ、もう 1 つ使いうる)。置き場 4 (ソケットのディレクトリ) の B はディレクトリごと。`Options.base` の B は指定ごと。綴りが収まらないと先に分かる時は作らない | (プロセス, B) ごとに 1 つ。作るのは、綴りを残す bind (thread-cwd・at を含む) と `resolve_for_connect` だけ | resolve ごと。thread-cwd・at と既定の connect の link-file は呼び出しごと |
 | 置く所 | 「実体の置き場」の順で最初に作れた所か、利用者が `Options.base` で指定した所 | B の中 | D の中。既定の connect の link-file は B の直下 |
-| 名前 | `sockat-<uid>` (`$XDG_RUNTIME_DIR` の下は `sockat`)。使う前に、実ディレクトリ・持ち主が自分・他人が書けない、を確かめ、外れたら乱数の名前 (指定された所なら外れたらエラー) | 乱数 (カウンタにしない。プロセスが終わった後に同じ PID・同じ fd 番号の別のプロセスが現れても綴りが同じにならないため) | resolve の E はプロセスの中で一意なら短くてよい (D が (プロセス, B) ごとに一意)。thread-cwd・at の E と B の直下の E は乱数 |
-| mode | 0711 | 0711 (`/tmp` の B の綴りを別の uid が辿れるように) | 無し (symlink の mode は辿る権限に効かない) |
+| 名前 | `sockat-<uid>` (`$XDG_RUNTIME_DIR` の下は `sockat`、ソケットのディレクトリの下は `.sockat.<乱数 10 文字>`)。使う前に、実ディレクトリ・持ち主が自分・他人が書けない、を確かめ、外れたら `sockat-<uid>.<乱数 10 文字>` (指定された所なら外れたらエラー) | 乱数 10 文字 (カウンタにしない。プロセスが終わった後に同じ PID・同じ fd 番号の別のプロセスが現れても綴りが同じにならないため) | resolve の E はプロセスの中のカウンタ (36 進。D が (プロセス, B) ごとに一意なので短くてよい)。thread-cwd・at の E と B の直下の E は乱数 10 文字 |
+| mode | 作る B は 0711。既にある B は、持ち主が自分で他人が書けなければ 0711 でなくても使い、mode を変えない | 0711 (`/tmp` の B の綴りを別の uid が辿れるように) | 無し (symlink の mode は辿る権限に効かない) |
 | 中身 | D (と、既定の connect の link-file の E) | E | ソケットのディレクトリを指す symlink (link-dir、綴り `B/D/E/<ファイル名>`) か、ソケットのファイルを指す symlink (link-file、綴り `B/D/E`) |
 | 生きている間 | 消さない | プロセスが flock (共有ロック) を掛けた fd を持ち続ける。systemd-tmpfiles (v242 以上) はロックの掛かったディレクトリを配下ごと掃除しない | resolve の E は消さない |
 | 片付け | sockat はしない (利用者が指定した B はアプリが管理) | sockat はしない。死んだプロセスの D は OS の一時ディレクトリの掃除で消える (Linux の `/tmp` は 10 日。macOS の `/tmp` は symlink の入ったディレクトリを消さないので再起動まで残る)。明示の `sweep()` を呼んだ時だけ、ロックの外れた D を消す | resolve の E は `cleanup`。呼び出しごとの E は呼び出しの中で unlink |
 
 - systemd v242 より古い環境 (RHEL 8 の v239 等) では、生きている D も 10 日で消されうる。綴りが辿れなくなるだけで危険はない (説明に書く)
 - link-dir の E と thread-cwd・at の E は、ソケットのディレクトリの realpath を指す
+- 乱数は英数 62 種の文字で、OS の安全な乱数から作る。名前の作り方は 3 言語でそろえる
 
 ### D の作り方
 
-1. B の fd を基準に、乱数の名前で `mkdirat` する。`EEXIST` なら名前を引き直し、16 回で打ち切る (名前の長さは未決)
+1. B の fd を基準に、乱数の名前で `mkdirat` する。`EEXIST` なら名前を引き直し、16 回で打ち切る
 2. 作った D を `O_DIRECTORY | O_NOFOLLOW` で開き、`fstat` で実ディレクトリ・持ち主が自分を確かめる
 3. その fd に flock (共有ロック) を掛けて持ち続ける。fd は close-on-exec
-4. `sweep()` は、B の中の D に `flock(LOCK_EX | LOCK_NB)` が取れたら持ち主が死んだとみなして消す
+4. 名前で `lstat` した `(st_dev, st_ino)` が fd と同じかを確かめる。違えば (1 と 3 の間に他のプロセスの `sweep()` が消した) fd を閉じて 1 から作り直す
+
+### `sweep`
+
+- B の中の D に `flock(LOCK_EX | LOCK_NB)` が取れたら、持ち主が死んだとみなして消す
+- `sweep()` の対象は、置き場 1〜3 の既定の名前の B (`sockat-<uid>`・`sockat`)。あるものだけで、B を作らない
+- `sweep` に base を渡す形 (Rust は `sweep_base(path)`、名前は各言語の慣習) は、`Options.base` の B の中の死んだ D を消す。その B を管理するアプリが呼ぶ
+- 乱数の名前の B (`sockat-<uid>.<乱数>`) とソケットのディレクトリの B は対象にしない
 
 ### B の作り方
 
 自動の置き場も `Options.base` も同じ (kawaz と合意 2026-11-21)。
 
-1. ルートから親までの途中を全部確かめる: どれも、持ち主が root か自分で他人が書けない、か、sticky が立っている (OpenSSH の StrictModes と同じ考え。祖先が他人に書けると親ごと付け替えられる)。プロセスで最初の 1 回だけ
-2. 親を `O_DIRECTORY | O_NOFOLLOW` で開いて fd で掴み、`mkdirat(親の fd, 名前, 0700)` で作る
-3. 作った物を `O_NOFOLLOW` で開き、`fstat` で実ディレクトリ・持ち主が自分を確かめてから `fchmod` で 0711
-4. `EEXIST` なら、既にある物を同じく確かめる (実ディレクトリ・持ち主が自分・他人が書けない)。外れたら、自動の置き場は乱数の名前に落とし、`Options.base` はエラー
+1. 置き場のパス (`Options.base` は親のパス) を realpath で実パスにする (macOS の `/tmp` → `/private/tmp` 等)。以後の確かめ・開く・綴るは、この実パスで行う
+2. ルートから親までの途中を全部確かめる: どれも、持ち主が root か自分で他人が書けない、か、sticky が立っている (OpenSSH の StrictModes と同じ考え。祖先が他人に書けると親ごと付け替えられる)。プロセスで最初の 1 回だけ
+3. 親を `O_DIRECTORY | O_NOFOLLOW` で開いて fd で掴み、`mkdirat(親の fd, 名前, 0700)` で作る
+4. 作った物を `O_NOFOLLOW` で開き、`fstat` で実ディレクトリ・持ち主が自分を確かめてから `fchmod` で 0711
+5. `EEXIST` なら、既にある物を同じく確かめる (実ディレクトリ・持ち主が自分・他人が書けない)。mode が 0711 でなくても使い、mode を変えない。外れたら、自動の置き場は `sockat-<uid>.<乱数 10 文字>` に落とし、`Options.base` はエラー
 
 - 途中のディレクトリが無い時、sockat は作らずにエラー (アプリの管理する場所の作り方はアプリが決める)
 - `Options.base` のエラーの種類: 途中のディレクトリが無い時は `ENOENT`、base がディレクトリでない時は `ENOTDIR`、持ち主・権限の確かめに外れた時は `EPERM`
@@ -120,9 +129,14 @@ B の実体をどこに作るかと、B をどう綴るかは別の軸。B は�
 | 3 | `$TMPDIR` | macOS の `$TMPDIR` は dirhelper が 3 日で消しうる (生きている D も) |
 | 4 | ソケットのディレクトリ (名前は `.sockat.XXXXXXXXXX`) | 1〜3 のどこにも作れない時 |
 
+- `$TMPDIR`・`$XDG_RUNTIME_DIR` が空か相対パスの時は、その置き場を使わない
+- 1 つのプロセスが使う B が 1 つなのは置き場 1〜3 のこと。4 (ソケットのディレクトリ) の B はソケットのディレクトリごと
+- 綴りが収まらないと先に分かる時 (置き場の実パスの長さから見積もれる時) は、B を作らない
+- 既定の connect が link-file で B を初めて作った時も、その B (と fd) をプロセスの B として以後も使う (D は作らない)
 - `Options.base` を指定した時は、その所に B を作る。sockat は中にプロセスごとの D を作るだけで、B の掃除はアプリに任せる。確かめて外れたらエラーで、自動の置き場に落とさない
 - `Options.base` は B そのもののパス。呼び出しごとに違う `base` を渡せば、1 つのプロセスが複数の B を持ち、D は (プロセス, B) ごと
-- `Options.base` と `usable_cross_uid` を一緒に指定した時は、その base までの途中が全部 other に x を持つかを確かめ、外れたらエラー (自動の置き場に落とさない)
+- `Options.base` と `usable_cross_uid` を一緒に指定した時は、その base までの途中と base 自身が全部 other に x を持つかを確かめ、外れたらエラー (自動の置き場に落とさない)
+- `Options.base` は connect 系 (`connect_ex`、`resolve_for_connect`) でも B の置き場として使う
 - `usable_cross_uid` の時の B の選び方は「別の uid と PrivateTmp」
 
 ### 綴りの形
@@ -131,10 +145,11 @@ sockat が自分で判断する。上から順に、収まる物。
 
 | 綴り | 形 | 使う時 | 診断の `base` | 他のプロセスが辿れるか |
 |---|---|---|---|---|
-| procB | `/proc/<pid>/fd/<B の fd>/D/…` | `/proc` を使えて収まる時 (`usable_cross_uid` の時は使わない) | `proc` (B がソケットのディレクトリの時は `sockdir`) | 同じ uid・同じ PID 名前空間だけ (root は辿れる)。プロセスが終われば辿れない |
-| 実パス | B の実パス `…/B/D/…` | 収まる時 | B の置き場 (`tmp` / `runtime` / `tmpdir`) | B までの途中が全部 other に x を持てば別の uid も (`/tmp` の B)、そうでなければ同じ uid だけ (`/run/user/<uid>` と macOS の `$TMPDIR` は 0700) |
+| procB | `/proc/<pid>/fd/<B の fd>/D/…` | `/proc` を使えて収まる時 (`usable_cross_uid` の時は使わない) | `proc` (B がソケットのディレクトリの時は `sockdir`、`Options.base` の B の時は `given`) | 同じ uid・同じ PID 名前空間だけ (root は辿れる)。プロセスが終われば辿れない |
+| 実パス | B の実パス `…/B/D/…` | 収まる時 | B の置き場 (`tmp` / `runtime` / `tmpdir`。`Options.base` の B の時は `given`) | B までの途中が全部 other に x を持てば別の uid も (`/tmp` の B)、そうでなければ同じ uid だけ (`/run/user/<uid>` と macOS の `$TMPDIR` は 0700) |
 
 - procB は実体の置き場がどこでも同じ形
+- 診断の `base` は、B が一時の置き場 (`/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR`) の時は綴りの形 (procB は `proc`、実パスは置き場の名前) を、一時の置き場でない B (ソケットのディレクトリ・`Options.base`) の時は綴りの形によらずその B (`sockdir`・`given`) を表す。一時の置き場の procB は置き場によらず同じ綴りなので `proc` にまとめ、一時の置き場でない B は利用者のディレクトリやアプリの指定の場所に物ができたことを知らせる。綴りが procB か実パスかは `Spelling` の `until` で分かる
 - B をソケットのディレクトリに作った時は、実パスの綴りは元のパスより長くなるので、使えるのは procB の綴りだけ。`/proc` の無い OS では resolve の綴りを使えず、thread-cwd / at へ
 - どの綴りも収まらなければ thread-cwd / at へ
 
@@ -150,10 +165,11 @@ sockat が自分で判断する。上から順に、収まる物。
 
 ### 別の uid と PrivateTmp
 
-- 利用者が `Options.usable_cross_uid` で「別の uid にも辿らせる」と指定した時は、実体の置き場の順のうち、B までの途中のディレクトリが全部 other に x (辿る権限) を持つ所だけを B に使い (その中で最初に作れた所)、procB の綴りは使わない (子が 0711 でも親が 0700 なら別の uid は辿れない。実測)
+- 利用者が `Options.usable_cross_uid` で「別の uid にも辿らせる」と指定した時は、実体の置き場の順のうち、B までの途中のディレクトリと B 自身が全部 other に x (辿る権限) を持つ所だけを B に使い (既にある B が 0700 なら満たさない) (その中で最初に作れた所)、procB の綴りは使わない (子が 0711 でも親が 0700 なら別の uid は辿れない。実測)
   - `/tmp` (1777) はいつも当たる
   - `$XDG_RUNTIME_DIR` (`/run/user/<uid>`) と macOS の `$TMPDIR` は 0700 なので外れる。`$TMPDIR` を辿れる場所に向けた環境なら当たる
 - 当たる所が無いか、その B の綴りが収まらなければ、満たさない綴りに落とさず thread-cwd / at (`Dangling`) に進む。満たせたかは結果の `Spelling` で分かる
+- connect 系 (既定の connect、`connect_ex`、`resolve_for_connect`) は `usable_cross_uid` を見ない (connect の綴りは相手に残らない)
 - この B が普段の B と違う所になる時は、もう 1 つの B として使う (自動の置き場で 1 つのプロセスが複数の B を使うのはこの時だけ)
 - 相手の `/tmp` が隔離されている場合 (systemd の `PrivateTmp` 等) は選択肢にせず説明に書く (procB を先に試すので Linux ではまず起きない)。辿れるかは結果の `Spelling` の `usable_with_private_tmp` で分かる
 
@@ -162,7 +178,7 @@ sockat が自分で判断する。上から順に、収まる物。
 - bind の綴りはカーネルがソケットの寿命の間覚えるので、綴りが辿れ続けることが正しく動く条件 (`getsockname` の綴りで消す、DGRAM の返信)。connect の綴りは相手に残らず、残すのは速さのためのキャッシュでしかない。だから bind は既定でも残し、connect は既定では残さず、再利用したい人が resolve を選ぶ
 - 既定の `bind` は、綴りが収まれば resolve の綴りを使う。thread-cwd・at は収まらない時の後ろ
 - 既定の `bind` は `SocketFile` を返さないので、その E はプロセスが終わるまで残り、D と一緒に OS の一時ディレクトリの掃除で消える。exec をまたぐプロセスの掃除の仕組みは作らない。片付けを気にする利用者は `_ex` か resolve を使う
-- 既定の `connect` はプロセスの中に状態を残さない。link-file まで進んだ時は、プロセスの D を作らず、B の直下に乱数の名前の E を作って `B/E` で connect し、connect の後すぐ E を unlink する。片付けは unlink だけで待ちは入らない (`connect_nonblocking` は待たずに返る)
+- 既定の `connect` はプロセスの中に D と E を残さない (B を初めて作った時は、その B と fd をプロセスの B として以後も使う)。link-file まで進んだ時は、プロセスの D を作らず、B の直下に乱数の名前の E を作って `B/E` で connect し、connect の後すぐ E を unlink する。片付けは unlink だけで待ちは入らない (`connect_nonblocking` は待たずに返る)
 - 既定の `connect` の link-file の綴りは B の実パスの `B/E` だけ (procB を使わない。B は `/tmp` が先なので短い)。収まらなければこの経路は使えない
 - D と flock の fd を持つのは、綴りを残す bind と `resolve_for_connect` だけ
 - 同じパスへの connect の再利用は、`resolve_for_connect` で 1 度作った綴り (`B/D/E`) を何度も connect に使い、最後に `cleanup` する
@@ -179,6 +195,7 @@ sockat が自分で判断する。上から順に、収まる物。
 | 6 | `ENAMETOOLONG` | | | |
 
 - procB の `link-file` は無い (`/proc` のある Linux は bind が symlink を辿らない)
+- link-dir・link-file で実際に bind して失敗した時 (`EADDRINUSE` 等) は、作った E をその場で消してからエラーを返す (残さない。thread-cwd・at の E と同じ)。link-file を実行時に見分けて次へ進む時も E を消す
 - どの B を使ったかは診断用の `base` で返す
 - bind は proc-direct・relative・widened・at-direct を使わない。綴りが後で無関係なファイルに当たる (proc-direct、relative、at-direct) か、アドレスが途中で切れて読む側を壊す (widened)
 
@@ -256,7 +273,7 @@ pub enum Spelling {
         removable: bool,               // 綴りで unlink すると実体が消えるか (link-dir: true、link-file: false)
         until: Until,                  // Process (procB) / Cleanup (実パス)
         usable_cross_uid: bool,        // 別の uid の相手が辿れるか
-        usable_with_private_tmp: bool, // 自分と相手のどちらかが /tmp を隔離していても (systemd の PrivateTmp 等) 相手が辿れるか (綴りが /tmp・/var/tmp を通らなければ true。mount 名前空間が丸ごと違う相手 (コンテナ等) までは保証しない)
+        usable_with_private_tmp: bool, // 自分と相手のどちらかが /tmp を隔離していても (systemd の PrivateTmp 等) 相手が辿れるか (B の置き場の realpath する前のパスと綴りの実パスのどちらかが /tmp・/var/tmp を通れば false。mount 名前空間が丸ごと違う相手 (コンテナ等) までは保証しない)
     },
     Dangling,     // 片付け済みの E を含む綴り。どこにも届かない (thread-cwd・at)
 }
@@ -277,8 +294,8 @@ pub enum Spelling {
 
 | 項目 | 中身 |
 |---|---|
-| `usable_cross_uid: bool` | 別の uid の相手も辿れる綴りを求める。B の選び方と procB を使わないことに効き、満たせなければ thread-cwd / at に進む。満たせたかは結果の `Spelling` で分かる (「別の uid と PrivateTmp」) |
-| `base: Option<Path>` | 利用者が B の実体の場所を指定する (アプリが自分の管理する場所を渡す。例 `/tmp/app-<uid>/sockat`)。綴りの形は自動の時と同じ順で選ぶ |
+| `usable_cross_uid: bool` | 別の uid の相手も辿れる綴りを求める。bind 系 (`bind_ex`、`resolve_for_bind`) だけが見て、connect 系は見ない。B の選び方と procB を使わないことに効き、満たせなければ thread-cwd / at に進む。満たせたかは結果の `Spelling` で分かる (「別の uid と PrivateTmp」) |
+| `base: Option<Path>` | 利用者が B の実体の場所を指定する (アプリが自分の管理する場所を渡す。例 `/tmp/app-<uid>/sockat`)。bind 系も connect 系も B の置き場として使う。綴りの形は自動の時と同じ順で選ぶ |
 
 Rust の一覧:
 
@@ -304,11 +321,12 @@ sockat::datagram::send_to_ex(&UnixDatagram, buf, path, Options) -> Result<(usize
 sockat::seqpacket::bind(path) / connect(path) / connect_nonblocking(path) と各 _ex
 
 // resolve (std に自分で渡す人向け)
-sockat::resolve_for_bind(path, Options) -> Result<ForBind, ExError>       // path / spelling / remove() / cleanup() / 診断
-sockat::resolve_for_connect(path, Options) -> Result<ForConnect, ExError> // path / cleanup() / 診断 (remove は持たない)
+sockat::resolve_for_bind(path, Options) -> Result<ForBind, ExError>       // path / spelling / cleanup() / socket_file() / 診断 (remove は持たない)
+sockat::resolve_for_connect(path, Options) -> Result<ForConnect, ExError> // path / cleanup() / 診断 (route・skipped。base は持たない)
 
 // 置き場 B を片付ける
-sockat::sweep() -> io::Result<()>   // 呼んだ時だけ、持ち主の死んだ D (ロックの外れた D) を消す
+sockat::sweep() -> io::Result<()>              // 呼んだ時だけ、置き場 1〜3 の既定の名前の B の中の、持ち主の死んだ D (ロックの外れた D) を消す
+sockat::sweep_base(path) -> io::Result<()>     // Options.base の B の中の死んだ D を消す
 ```
 
 ```rust
@@ -322,7 +340,8 @@ pub struct Connected<S> { pub socket: S, pub route: &'static str, pub skipped: V
 pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 ```
 
-- connect 用の resolve には `remove` を持たせず、消し間違いを型で防ぐ
+- resolve の戻り値は `remove` を持たない。`ForBind` は、利用者が自分で bind した後に `SocketFile` を受け取る口 (Rust は `socket_file(&self) -> io::Result<SocketFile>`、名前は各言語の慣習) を持ち、消すのはその `SocketFile` の `remove`。呼ばなければ消す口は無い (「`ForBind` の `SocketFile`」)
+- connect 用の resolve には `SocketFile` を受け取る口を持たせず、消し間違いを型で防ぐ
 
 ### `SocketFile` の `remove`
 
@@ -337,12 +356,20 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 | Python | 戻り値に引数なしの関数を含める |
 | Go | 戻り値に `func() error` を含める。短いパスでも消すのはこれだけにする (`SetUnlinkOnClose(false)`) |
 
+### `ForBind` の `SocketFile`
+
+- resolve の時点では bind していないので、ソケットのファイルの `(st_dev, st_ino)` を覚えられない。だから `ForBind` は `remove` を持たず、bind した後に呼ぶ口で `SocketFile` を返す
+- 呼んだ時点で綴りを辿り、ソケットのファイルの realpath と `(st_dev, st_ino)` を覚えた `SocketFile` を返す。辿れなければ (bind する前、ファイルが無い) エラー
+- 返す `SocketFile` は `Bound` の物と同じ働き (`remove` はファイルを 1 回だけ消して `cleanup` もし、`cleanup` は `ForBind` の `cleanup` と同じ E を 1 回だけ片付ける)
+- 約束の範囲は `Bound` の `remove` と同じく listener を開いている間の置き換えまでで、呼ぶのは bind の後・listener を閉じる前。bind から呼ぶまでの間の置き換えは見分けられない
+- 綴りが `CwdRelative` の時は、resolve の時と呼んだ時でプロセスの cwd の `(st_dev, st_ino)` を比べ、違えばエラー (間の cwd の変更で無関係なファイルを覚えないため)
+
 ### 診断と、失敗した時
 
 | 項目 | 中身 |
 |---|---|
 | `route` | 通った経路の名前 |
-| `base` | bind で使った B の綴り (`proc`・`sockdir`・`runtime`・`tmpdir`・`tmp`)。綴りが B を通る時 (link-dir・link-file) だけ値を持ち、他 (standard・thread-cwd・at) は無し。`Connected` には持たせない |
+| `base` | bind で使った B の綴り (`proc`・`sockdir`・`runtime`・`tmpdir`・`tmp`・`given`。`given` は `Options.base` の B で、procB でも実パスでも同じ。「綴りの形」)。綴りが B を通る時 (link-dir・link-file) だけ値を持ち、他 (standard・thread-cwd・at) は無し。`Connected`・`Report`・`ForConnect` には持たせない |
 | `skipped` | 試して使えなかった経路の並び (試した順)。各要素は `{ name: 経路の名前, reason: 使えなかった理由 }`。経路の名前ごとに 1 件 (link-dir を procB と実パスで試しても 1 件で、理由は最後の物)。`usable_cross_uid` で procB を使わないのは経路を飛ばすことではないので、何も足さない |
 
 - 成功した時、`route` より前に試した経路はすべて「使えなかった」もの (実際に bind / connect して失敗したら、そこでエラーを返して次を試さない。bind の link-file を実行時に見分ける時だけは次へ進む)。そのため「使えたか」の真偽値は持たない
@@ -362,10 +389,11 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 - D の名前が乱数で、D が生きている間は flock で守られ、B と D が 0711 なので、綴りが後で無関係なファイルに当たらない (procB はプロセスが終われば辿れない、実パスの綴りは D が消えるまで同じ所を指す)
 - B を利用者ごとに使い回し、D を flock で守り、死んだ D を OS の一時ディレクトリの掃除に任せると、sockat が掃除の仕組みを持たずに済む。PID の判定も exec をまたぐ仕組みも要らない
 - 実体の置き場は、OS の掃除で死んだ D が消え、生きている D が守られる所を先にする。B をプロセスごとに 1 つにすると、その順の理由がどの OS でもそのまま効き、D もプロセスに 1 つで済む
-- 既定の connect は D を作らず、B の直下の E を unlink するだけなので、プロセスの中に状態を残さず、待ちも入らない
+- 既定の connect は D を作らず、B の直下の E を unlink するだけなので、プロセスの中に D と E を残さず、待ちも入らない
 - connect は書き込みもスレッドも要らない経路を先にするので、CLI の 1 回だけの connect は普通そこで終わり、置き場に書けない sandbox でも届く
 - fork をやめると、副作用がプロセス全体に及ぶ経路が無くなり、3 言語で届く所がそろう
-- resolve を用途で分けると、bind と connect で選ぶ綴りが違うことと、connect に `remove` が無いことを型で表せる
+- resolve を用途で分けると、bind と connect で選ぶ綴りが違うことと、connect に消す口が無いことを型で表せる
+- `ForBind` が bind の後に `SocketFile` を返すと、resolve の時点で覚えられない `(st_dev, st_ino)` を bind の後に覚え、`Bound` の `remove` と同じ約束で消せる
 
 悪い面:
 
@@ -411,7 +439,7 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 - 案 N: builder (`Options::new().usable_cross_uid(true).bind(path)`、F3)
   - 不採用理由: `_ex` の数は減るが、型ごとの操作が builder に集まる
 - 案 O: resolve を 1 つにする
-  - 不採用理由: 戻り値に `remove()` があるかが用途で変わる。型で区別して消し間違いを防ぐ
+  - 不採用理由: 戻り値に `SocketFile` を受け取る口があるかが用途で変わる。型で区別して消し間違いを防ぐ
 - 案 P: `PrivateTmp` の相手を `Options` の選択肢にする
   - 不採用理由: procB を先に試すので Linux ではまず起きない。説明に書き、辿れるかは `Spelling` で分かる
 - 案 Q: プロセス全体の既定を変える関数を置く
@@ -447,6 +475,9 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 - 案 AF: 既定の connect の link-file も、プロセスの D の中に E を作る
   - 不採用理由: D と flock の fd がプロセスに残り、既定の connect がプロセスの中に状態を残す
 
+- 案 AG: `ForBind` が `remove()` を持ち、呼ばれた時にそのパスを確かめずに消す
+  - 不採用理由: 置き換えを見分ける `(st_dev, st_ino)` を覚えていないので、`Bound` の `remove` の約束 (置き換えたファイルを消さない) を守れない
+
 ## Consequences
 
 - SPEC を書き直す (公開する操作、経路の名前と試す順番、B・D・E、置き場、綴りの性質、どこから届かなくなるか、長いパスで標準と違う点、試験の観点)。各言語の実装は経路と API を作り直す
@@ -458,12 +489,10 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 ## 未決
 
 - 届く長さ: procB の綴りは `/proc/<pid>/fd/<fd>/` + D + `/E/` でおよそ 35 バイト食い、Linux で届くファイル名はおよそ 70。thread-cwd (96) との間は thread-cwd に回す
-- B・D・E の名前の長さ (届く範囲に効く。届く範囲の表は B を 17 バイトで見積もっている)
 - FreeBSD の connect で link-file を使えるか (未確認)
 - `send_to` は resolve の綴りに送るので relative (送った後に取り消せない) を使わない。resolve で済まない長さの `send_to` をどうするか (thread-cwd で送る、`ENAMETOOLONG` にする)
 - 長いパスに bind した DGRAM の送り手への返信は、綴りが生きている間は届く (procB は同じ uid、`/tmp` の B の実パスは別の uid も)。届かない場面 (`cleanup` の後、procB で別の uid) を `Spelling` でどう表すか
 - Rust の SEQPACKET の返す型
-- `ForBind` の `remove()` の同一性: resolve の時点では bind していないので、ソケットのファイルの `(st_dev, st_ino)` を覚えられない。形は未決 (案: bind した後に呼んで `SocketFile` を受け取る口)
 
 ## 関連
 
@@ -472,5 +501,5 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 - [OS の一時ディレクトリの掃除の調査](../research/2026-11-20-tmp-cleaners-and-persistent-base.md)、[DGRAM / SEQPACKET の調査](../research/2026-11-19-datagram-and-seqpacket.md)
 - [ファイルを指す symlink を通した bind の実測](../findings/2026-11-19-bind-through-file-symlink.md)、[閉じたソケットのファイルの inode 番号の使い回し](../findings/2026-11-19-inode-reuse-after-close.md)
 - [届く範囲の表](../../pages/reach/README-ja.md)、[fork-cwd](../../pages/fork-cwd-ja.md)
-- 裁定: kawaz (2026-11-19: connect の順、thread-cwd・at、`remove` の約束の範囲、`CwdRelative`、link-file の責務外。2026-11-20: RS-Q1 = S1、RS-Q2 = fork をしない、RS-Q3 = F1、RS-Q4 = a、B と D。2026-11-21: B の作り方)。統括 (2026-11-21: B をプロセスごとに 1 つ、`usable_cross_uid` を満たせない時は thread-cwd / at、既定の connect は D を作らない、thread-cwd・at は D を基準にする、D と E の mode。同日の SPEC の書き直しで: `resolve_for_bind` の link-file は実測した OS だけ、`skipped` は名前ごとに 1 件、`base` を持つのは B を通る綴りだけ、`Options.base` は B そのもので複数の B を持ちうる、`Options.base` のエラーの種類、link-dir の E は realpath、D の作り方と `sweep()` の見分け方、`resolve_for_connect` の返す物、既定の connect の link-file は実パスの `B/E`、thread-cwd-direct の届く長さ、DGRAM の connect の順)
+- 裁定: kawaz (2026-11-19: connect の順、thread-cwd・at、`remove` の約束の範囲、`CwdRelative`、link-file の責務外。2026-11-20: RS-Q1 = S1、RS-Q2 = fork をしない、RS-Q3 = F1、RS-Q4 = a、B と D。2026-11-21: B の作り方)。統括 (2026-11-21: B をプロセスごとに 1 つ、`usable_cross_uid` を満たせない時は thread-cwd / at、既定の connect は D を作らない、thread-cwd・at は D を基準にする、D と E の mode。同日の SPEC の書き直しで: `resolve_for_bind` の link-file は実測した OS だけ、`skipped` は名前ごとに 1 件、`base` を持つのは B を通る綴りだけ、`Options.base` は B そのもので複数の B を持ちうる、`Options.base` のエラーの種類、link-dir の E は realpath、D の作り方と `sweep()` の見分け方、`resolve_for_connect` の返す物、既定の connect の link-file は実パスの `B/E`、thread-cwd-direct の届く長さ、DGRAM の connect の順。診断の `base` の値 `given` (`Options.base` の B、綴りの形によらない)、link-dir・link-file で bind に失敗した時は E を消してからエラーを返す、`ForBind` は `remove` を持たず bind の後に `SocketFile` を受け取る口を持つ、置き場の realpath と `usable_with_private_tmp`、connect 系は `usable_cross_uid` を見ない、B・D・E の名前と乱数、既にある B の mode と `usable_cross_uid` の B 自身の x、空・相対パスの `$TMPDIR` / `$XDG_RUNTIME_DIR`、`ForConnect` は `base` を持たない、`sweep()` の対象と `sweep_base`、既定の connect が作った B をプロセスの B にする、D を作った後の `lstat` の確かめ、置き場 4 の B はディレクトリごと・収まらないと分かれば B を作らない)
 - [DR-0003](DR-0003-single-connect-when-standard-never-blocks.md)、[DR-0004](DR-0004-standard-length-per-language.md)、[DR-0006](DR-0006-nul-is-invalid-at-any-length.md)
