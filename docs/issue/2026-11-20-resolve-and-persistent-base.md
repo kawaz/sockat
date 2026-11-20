@@ -10,6 +10,16 @@ origin: kawaz との議論
 
 kawaz との議論 (2026-11-19〜20) で方向が出たものの記録。[DR-0012](../decisions/DR-0012-own-directory-and-thread-cwd.md) の芯 (綴りはすぐ片付け、片付けた後は R がどこにも無い) を覆すので、決まったら DR にする。SOCK_DGRAM / SOCK_SEQPACKET ([2026-11-18-datagram-and-seqpacket](2026-11-18-datagram-and-seqpacket.md)) もこの上に作る。
 
+## 操作ごとに重視すること (kawaz 2026-11-20)
+
+| 操作 | 使われ方の見込み | 重視すること |
+|---|---|---|
+| bind | 息が長く、大量には作らない | 速さ以外 (綴りの寿命、残るもの、安全) |
+| connect | CLI や制御の問い合わせで、必要な時に都度行う | 手数・速さ・IO の回数・負荷。同じパスへの綴り (B / D / `s`) を作り直さず再利用できること |
+
+- connect の再利用は、`resolve_for_connect` で 1 度作った綴りを何度も connect に使い、最後に `cleanup` する形で足りるかを先に見る (既定の `connect` に隠れた状態を持たせない)
+- 経路ごとの費用 (syscall の数、時間、置き場への書き込み) をベンチマークで測り、届く範囲の表と経路の説明に数字で載せる
+
 ## SPEC の記号との対応
 
 この issue の記号は [SPEC](../SPEC-ja.md) の同じ字と別物がある。
