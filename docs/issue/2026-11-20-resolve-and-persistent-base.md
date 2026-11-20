@@ -25,7 +25,7 @@ kawaz との議論 (2026-11-19〜20) で方向が出たものの記録。[DR-001
 
 - 長いパスを、元のパスと同じ所を指し続ける短い綴りに言い換える。綴りが生きている間は、`getsockname` の綴りで消す上のライブラリ、DGRAM の返信、運用の道具が元のパスと同じに働く
 - 綴りはただのパスなので、ソケットの型 (stream / DGRAM / SEQPACKET) と操作 (bind / connect / `send_to`) を問わず、利用者が std に渡して使える
-- fork はしない (kawaz 裁定 2026-11-20。fork の手法の説明と、それで届く場面は [pages/fork-cwd.md](../../pages/fork-cwd.md))。普段はスレッドも使わない
+- fork はしない (kawaz 裁定 2026-11-20。fork の手法の説明と、それで届く場面は [pages/fork-cwd-ja.md](../../pages/fork-cwd-ja.md))。普段はスレッドも使わない
 
 ## 方向 (kawaz と合意)
 
@@ -45,10 +45,10 @@ kawaz との議論 (2026-11-19〜20) で方向が出たものの記録。[DR-001
 |---|---|---|
 | 作る単位 | プロセスごと (fd を持ち続ける) | resolve ごと |
 | 置く所 | 置き場 (「実体の置き場と綴りの形」) | B の中 |
-| 名前 | 未決 (PID を入れる案。「案がまだ無い」の掃除) | 乱数 |
+| 名前 | 未決 (長さが届く範囲に効く) | 乱数 |
 | mode | 0711 (他人は中を一覧できず、名前を知っていれば辿れる) | 0711 (名前は乱数。中は `d` か `s`) |
 | 消す口 | `cleanup_base` | `cleanup` (B ごと消す `cleanup_base` でも消える) |
-| 残る間 | `cleanup_base` か、次の sockat の掃除まで | `cleanup` か `cleanup_base` か、次の sockat の掃除まで |
+| 残る間 | `cleanup_base` まで (procB の綴りはプロセスが終わると辿れない。実体は残る) | `cleanup` か `cleanup_base` まで |
 
 ### 実体の置き場と綴りの形
 
@@ -101,7 +101,7 @@ B の実体をどこに作るかと、B をどう綴るかは別の軸。
 | dirB | `cleanup` (D) か `cleanup_base` (B) まで残る |
 | tmpB | `cleanup` (D) か `cleanup_base` (B) まで残る。`cleanup_base` で B を消した後は、他人が同じ名前で作り直しうる (std の元のパスを消した後に、そのディレクトリに書ける人が作り直せるのと同じ。片付けた後の綴りは使わない、と説明に書く) |
 
-## 整理案 (統括、2026-11-20。kawaz の判断待ち)
+## 整理案 (統括、2026-11-20。RS-Q1〜Q4 は kawaz 裁定済み)
 
 今の route・losses の名前とのつながりは気にしない (kawaz)。
 
@@ -165,16 +165,16 @@ pub enum Spelling {
 - fork の実装を全部なくす (`fork-cwd`・`fork-cwd-sockdir`・`fork-cwd-direct`)。fork の副作用 (fd の複製、`SIGCHLD`、`waitpid(-1)`、`pthread_atfork`、connect では相手に見える pid) はプロセス全体に及び、してほしくない利用者の方が多い
 - 最終手段も無くなる: bind の symlink-dir は tmpB として既定の順に入り、connect の fork-cwd-direct は作らない。引数から最終手段が消え、`forked` も無くなる
 - 3 言語で届く所がそろう (Python・Go はもともと fork の経路を作らない)
-- fork をやめて届かなくなる場面と、fork の手法の説明は [pages/fork-cwd.md](../../pages/fork-cwd.md)。sockat で届かない場面の全体は [届く範囲の表](../../pages/reach/README.md) (選んで絞り込むページは [pages/reach/index.html](../../pages/reach/index.html))
+- fork をやめて届かなくなる場面と、fork の手法の説明は [pages/fork-cwd-ja.md](../../pages/fork-cwd-ja.md)。sockat で届かない場面の全体は [届く範囲の表](../../pages/reach/README-ja.md) (選んで絞り込むページは [pages/reach/index.html](../../pages/reach/index.html?lang=ja))
 
 ### 引数
 
 - `_ex` の引数を `Options` にする: `usable_cross_uid: bool` (別の uid の相手も辿れる綴りを求める。B の選び方にだけ効き、満たせたかは結果の `Spelling` で分かる)
 - 既定の操作は今のとおり path だけ
 
-### 関数 (RS-Q3)
+### 関数 (RS-Q3、kawaz 裁定 2026-11-20: F1)
 
-推しは F1。
+F1 にする。resolve を用途で 2 つに分けるのも採る (戻り値に `remove()` があるかが用途で変わるので、型で区別して消し間違いを防ぐ)。
 
 | 案 | 形 |
 |---|---|
@@ -227,7 +227,7 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 - resolve を用途で 2 つに分ける理由: bind は `link-file` を Linux 等で使えず `link-dir` を先に選ぶ、connect は `link-file` を選ぶ (ファイル名の長さによらない)。connect 用の resolve には `remove` を持たせず、消し間違いを型で防ぐ
 - 「標準にそのまま渡したか」の bool は持たない (`spelling == Original` か `route == "standard"` で分かる)
 - resolve は path を返すだけなので、thread-cwd でしか届かない長さでは `ENAMETOOLONG`。それも届かせたい人は `bind` / `connect` を使う
-- 既定の `bind` は `SocketFile` を返さないので、その D は `cleanup_base` か次の sockat の掃除まで残る (片付け損ねた B・D の掃除が必須になる)
+- 既定の `bind` も綴りを残す (RS-Q4、kawaz 裁定 2026-11-20: a)。`SocketFile` を返さないので、その D はプロセスが終わるまで (dirB・tmpB では `cleanup_base` まで) 残る。exec をまたぐプロセスや片付け損ねた B・D の掃除の仕組みは作らない。片付けを気にする利用者は `_ex` か resolve を使う
 
 ## 利用者の回答 (2026-11-20)
 
@@ -251,14 +251,8 @@ hyoui の統括 (sockat-rs 0.4.1 を使用):
 
 ## 未決
 
-### 整理案で案を出した (判断待ち。[docs/QUESTIONS.md](../QUESTIONS.md))
-
-- RS-Q3: 関数の形 F1〜F3 (「関数」)。返り値の形と名前、B を片付ける口 `cleanup_base` もこの中。「別の uid にも辿らせる」の指定の形は整理案の「引数」(`Options.usable_cross_uid`)
-
 ### 案がまだ無い
 
-- 綴りの寿命と片付けが既定の操作に漏れ出すこと (既定の `bind` が resolve の綴りを使うので、片付け損ねた B・D の掃除が必須になる)
-- 片付け損ねた B・D の掃除 (B の名前に PID を入れ、次の sockat が持ち主のいない B を消すか。PID の使い回しで生きている他人の B を消さない確かめ方)
 - 届く長さ: procB の綴りは `/proc/<pid>/fd/<fd>/` + D + `/d/` でおよそ 35 バイト食い、Linux で届くファイル名はおよそ 70。今の thread-cwd (96) の間は今の経路に回す
 - `send_to` は resolve の綴りに送るので relative の経路 (送った後に取り消せない) を使わない。resolve で済まない長さの `send_to` をどうするか (thread-cwd で送る、`ENAMETOOLONG` にする)
 - 長いパスに bind した DGRAM の送り手への返信は、綴りが生きている間は届く (procB は同じ uid、tmpB は別の uid も)。届かない場面 (`cleanup` の後、procB で別の uid) を綴りの性質 (S1) でどう表すか

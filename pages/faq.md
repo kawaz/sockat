@@ -1,71 +1,73 @@
-# sockat の Q&A
+# sockat Q&A
 
-sockat を使う前に出やすい問いと答え。仕様の正本は [SPEC](../docs/SPEC-ja.md)、届く場面の一覧は [届く範囲の表](reach/README.md)。
+> English | [日本語](./faq-ja.md)
 
-「作り直し後」と書いた答えは、経路を組み直す案 ([issue](../docs/issue/2026-11-20-resolve-and-persistent-base.md)、未実装) の設計に対するもの。
+Questions that come up before using sockat, and their answers. The specification is [SPEC](../docs/SPEC.md); where a path is reached is in [the reach tables](reach/README.md).
 
-## そもそも
+Answers marked "after the rework" are about the design that rebuilds the routes ([issue](../docs/issue/2026-11-20-resolve-and-persistent-base.md), Japanese; not implemented yet).
 
-### パスを短くすれば sockat は要らない?
+## Basics
 
-要らない。ソケットのパスを自分で決められるなら、短い場所に置くのが一番良い。sockat が要るのは、パスを自分で選べない時:
+### If I shorten the path, do I still need sockat?
 
-- 置き場所を環境や設定が決めている (コンテナの実行環境の作業ディレクトリ、深い状態ディレクトリ等)
-- 相手が決めたパスへ connect / 送信する (`NOTIFY_SOCKET` 等の環境変数で渡される)
-- ライブラリで、使う側から渡されたパスをそのまま使う
+No. If you can choose the socket's path, putting it somewhere short is best. sockat is for when you cannot choose the path:
 
-### 長いパスで何が標準と違う?
+- The environment or a setting decides where it goes (the working directory of a container runtime, a deep state directory, etc.)
+- You connect / send to a path the other side chose (passed in an environment variable such as `NOTIFY_SOCKET`)
+- A library uses the path its caller passed as is
 
-カーネルが覚える綴り (`getsockname` や listener のアドレス) が元のパスでなくなる。その綴りでファイルを消したり調べたりしない。消すのは元のパスか `discard()` で行う ([SPEC の「失うもの」](../docs/SPEC-ja.md#失うもの))。
+### What differs from the standard for a long path?
 
-## 環境
+The spelling the kernel keeps (`getsockname`, the listener's address) is no longer the original path. Do not remove or inspect the file by that spelling. Remove it by the original path or with `discard()` ([What is lost in the SPEC](../docs/SPEC.md#what-is-lost)).
 
-### `$TMPDIR` が長い環境でも使える?
+## Environment
 
-使える。作り直し後の設計では、置き場の綴りは Linux なら `/proc/<pid>/fd/<fd>/…` (procB、`$TMPDIR` の長さによらない)、`/proc` の無い OS では `/tmp` の下 (tmpB) を使う。`$TMPDIR` の下の綴り (dirB) は短い時だけ使う。普通は procB か tmpB のどちらかが使える。
+### Does it work when `$TMPDIR` is long?
 
-### PrivateTmp (systemd 等で `/tmp` が隔離された) の環境では?
+Yes. In the design after the rework, the base's spelling is `/proc/<pid>/fd/<fd>/…` on Linux (procB, independent of the length of `$TMPDIR`), and under `/tmp` (tmpB) on OSes without `/proc`. The spelling under `$TMPDIR` (dirB) is used only when it is short. Usually procB or tmpB is usable.
 
-Linux では procB の綴りが `/tmp` を通らないので、自分か相手のどちらかが `/tmp` を隔離していても相手から辿れる。`/proc` の無い macOS で PrivateTmp のような隔離はまず無い。「`/proc` が無く、かつ `/tmp` が隔離されている」組み合わせはまれ。
+### What about PrivateTmp (`/tmp` isolated by systemd etc.)?
 
-### 別の uid のプロセスと通信する時は?
+On Linux the procB spelling does not go through `/tmp`, so the peer can follow it even when either side has `/tmp` isolated. macOS has no `/proc`, and isolation like PrivateTmp is rare there. "No `/proc`, and `/tmp` isolated" is a rare combination.
 
-connect は自分で綴りを解決するので、相手の uid は届くかに影響しない。影響するのは、bind した側の綴りを相手が辿る場面 (DGRAM の返信等) だけ。procB と、持ち主だけが入れる置き場 (`/run/user/<uid>`、macOS の `$TMPDIR`) の下の綴りは、別の uid から辿れない。作り直し後の設計では、`usable_cross_uid` を指定すると別の uid も辿れる置き場 (`/tmp` の下等) の綴りを選ぶ。
+### What about talking to a process with another uid?
 
-### 共有の volume を通してコンテナどうしで通信したい
+A connect resolves the spelling itself, so the peer's uid does not affect whether it is reached. It matters only when the peer follows the bound side's spelling (a DGRAM reply etc.). Another uid cannot follow procB, nor a spelling under a base only the owner can enter (`/run/user/<uid>`, macOS's `$TMPDIR`). In the design after the rework, specifying `usable_cross_uid` chooses a spelling under a base another uid can follow too (under `/tmp` etc.).
 
-共有の volume は運用者が場所を決めて mount するので、短いパスに置く。長いパスにする理由が無い。
+### I want containers to talk through a shared volume
 
-### `ProtectProc=invisible` (systemd) の環境では?
+The operator decides where a shared volume is mounted, so put the socket at a short path. There is no reason to make it long.
 
-隠れるのは他のユーザのプロセスで、同じ uid なら procB の綴りは辿れる。
+### What about `ProtectProc=invisible` (systemd)?
+
+It hides other users' processes. With the same uid the procB spelling can be followed.
 
 ## fork
 
-### sockat は fork する?
+### Does sockat fork?
 
-作り直し後はしない。fork の副作用 (全部の fd の複製、`SIGCHLD`、`waitpid(-1)` の取り違え、`pthread_atfork`、connect では相手に見える pid) はプロセス全体に及ぶため。fork をやめて届かなくなる場面と、利用者が自分で fork する時の手法と注意は [fork-cwd](fork-cwd.md)。
+Not after the rework. The side effects of fork (copies of every fd, `SIGCHLD`, a mix-up with `waitpid(-1)`, `pthread_atfork`, the pid the peer sees on connect) reach the whole process. Where giving up fork means no longer reaching, and how and with what care to fork in your own application, are in [fork-cwd](fork-cwd.md).
 
 ## DGRAM
 
-### bind していないソケットで返信を受けられる?
+### Can an unbound socket receive a reply?
 
-受けられない。bind していないソケットには住所が無く、受け手は返信先を指定できない。返信を受けたい送り手は自分も bind する。例外は `socketpair` (最初からつながった組) と、Linux で `SO_PASSCRED` を付けた時の自動の abstract の名前。どれも OS の仕様で、言語によらない。
+No. An unbound socket has no address, so the receiver cannot name where to reply. A sender that wants replies binds too. The exceptions are `socketpair` (a pair connected from the start) and, on Linux with `SO_PASSCRED`, the automatic abstract name. All of these are OS behavior and do not depend on the language.
 
-### 長いパスに bind した送り手に返信は届く?
+### Does a reply reach a sender bound to a long path?
 
-今の実装では届かない (綴りを bind の直後に片付けるため)。作り直し後の設計では、綴りが生きている間は届く (procB は同じ uid、`/tmp` の下の綴りは別の uid も)。
+Not with the current implementations (they clean up the spelling right after the bind). In the design after the rework it does while the spelling is alive (procB for the same uid, a spelling under `/tmp` for other uids too).
 
-### 返信を受けたい送り手が、長いパスに bind する必要はある?
+### Does a sender that wants replies need to bind to a long path?
 
-普通は無い。返信用のパスは送り手が自分で選べるので、短い場所に置ける。
+Usually not. The sender chooses its own reply path, so it can put it somewhere short.
 
-## 後始末
+## Cleanup
 
-### `discard()` はいつ呼ぶ?
+### When do I call `discard()`?
 
-listener を閉じる前に呼ぶ。`discard()` は bind したファイルの `(st_dev, st_ino)` と今のパスを比べて同じ時だけ消す。listener が開いている間はカーネルがファイルを掴んでいて番号が使い回されないが、閉じた後に消して作り直された物は ext4 や BSD の UFS / FFS で同じ番号になり、見分けられない ([findings](../docs/findings/2026-11-19-inode-reuse-after-close.md))。
+Before closing the listener. `discard()` removes the file only when the current path still has the bound file's `(st_dev, st_ino)`. While the listener is open the kernel holds the file and its number is not reused, but something removed and recreated after it is closed can get the same number on ext4 or BSD UFS / FFS and cannot be told apart ([findings](../docs/findings/2026-11-19-inode-reuse-after-close.md), Japanese).
 
-### 置き場を片付けた後の綴りを他人が作り直せるのは危なくない?
+### Is it dangerous that others can recreate a spelling after the base is cleaned up?
 
-std でも同じ。元のパスのファイルを消した後は、そのディレクトリに書ける人が同じパスに作り直せる。片付けた後の古い綴りやパスを使わない。
+The standard is the same: once the file at the original path is removed, anyone who can write to that directory can recreate the same path. Do not use an old spelling or path after cleanup.

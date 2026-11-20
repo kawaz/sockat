@@ -1,7 +1,8 @@
 # sockat (ハブ) justfile
 #
-# README / docs/SPEC は ja が正本、en が翻訳先。push 時に
-# check-outdated-translations が「en が ja より古い」を止める。
+# README / docs/SPEC / pages は ja が正本、en が翻訳先。push 時に
+# check-outdated-translations が「en が ja より古い」を、
+# check-page-pairs が「pages/ の md に対が無い」を止める。
 # VCS 操作は bump-semver vcs に委譲して jj / git を透過にする。
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
@@ -37,6 +38,23 @@ check-on-default-branch:
 check-outdated-translations: ensure-clean
     bump-semver vcs outdated 'glob:**/*-ja.md' '$1/$2.md'
 
+# 公開するページ (pages/ の md) は日本語 <name>-ja.md と英語 <name>.md の対で置く
+[private]
+[script]
+check-page-pairs:
+    missing=0
+    while IFS= read -r -d '' f; do
+        case "$f" in
+            *-ja.md) pair="${f%-ja.md}.md" ;;
+            *) pair="${f%.md}-ja.md" ;;
+        esac
+        if [[ ! -e "$pair" ]]; then
+            printf >&2 '%s の対 %s が無い\n' "$f" "$pair"
+            missing=1
+        fi
+    done < <(find pages -name '*.md' -print0)
+    exit "$missing"
+
 # ---------- flow ----------
 
 # 現在の worktree を default branch (= origin/<default>) に rebase
@@ -48,7 +66,7 @@ promote:
     bump-semver vcs promote
 
 # push (gate を全部通してから)
-push: check-on-default-branch ensure-clean check-outdated-translations
+push: check-on-default-branch ensure-clean check-outdated-translations check-page-pairs reach-check
     bump-semver vcs push --branch main --jj-bookmark-auto-advance
 
 # ---------- 適合試験 ----------
@@ -59,10 +77,10 @@ conformance *ARGS:
 
 # ---------- 届く範囲の表 ----------
 
-# pages/reach/model.json から README.md と data/ を作り直す
+# pages/reach/model.json から README (日英) と data/ (日英) を作り直す
 reach:
     python3 -I pages/reach/gen.py
 
-# 生成物が model.json とずれていないか、lacks が conformance/langs.json とずれていないかを確かめる
+# 生成物が model.json とずれていないか、lacks が conformance/langs.json とずれていないか、表示用の文字列が日英そろっているかを確かめる
 reach-check:
     python3 -I pages/reach/gen.py --check

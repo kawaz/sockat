@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>sockat の届く範囲</title>
+<title>sockat reach</title>
 <style>
 :root {
   color-scheme: light dark;
@@ -55,33 +55,118 @@ td ul { margin: 0; padding-left: 1rem; }
 td .lines { white-space: pre-line; font-size: 0.9em; }
 .empty { color: var(--muted); padding: 0.75rem; }
 .count { color: var(--muted); font-size: 0.85rem; }
+.langs { float: right; display: flex; gap: 0.5rem; }
+.langs [aria-current] { font-weight: 600; }
 </style>
 </head>
 <body>
-<h1>sockat の届く範囲 (作り直しの案)</h1>
-<p class="lead">長いパスに届くか、どの経路で届くか、届かなければなぜかを、選んだ条件で絞り込む。合わない行と、全部の行で同じになった列が消える。数字はバイトで、未実装の設計に対する綴りの長さからの見積もり (根拠の列が「実測」の行は適合試験の結果と一致)。表の全体と畳み方は <a href="README.md">README.md</a> (JS の無い環境ではこちら)、fork-cwd の手法は <a href="../fork-cwd.md">fork-cwd.md</a>。</p>
+<nav class="langs" id="langs"></nav>
+<h1 data-i18n="h1"></h1>
+<p class="lead" data-i18n="lead"></p>
+<p class="lead" id="links"></p>
 
 <form id="f">
   <label class="stack"><span>OS</span><select name="os"></select></label>
-  <label class="stack"><span>言語</span><select name="lang"></select></label>
-  <label class="stack"><span>ファイル名の長さ (バイト、空なら全部)</span><input name="filename" type="number" min="1" max="255" inputmode="numeric"></label>
-  <label class="stack"><span>元のパスと相対パスの短い方 (connect、空なら全部)</span><input name="relpath" type="number" min="1" inputmode="numeric"></label>
+  <label class="stack"><span data-i18n="f_impl"></span><select name="impl"></select></label>
+  <label class="stack"><span data-i18n="f_filename"></span><input name="filename" type="number" min="1" max="255" inputmode="numeric"></label>
+  <label class="stack"><span data-i18n="f_relpath"></span><input name="relpath" type="number" min="1" inputmode="numeric"></label>
   <label class="stack"><span>$XDG_RUNTIME_DIR</span><select name="xdg"></select></label>
   <label class="stack"><span>$TMPDIR</span><select name="tmpdir"></select></label>
   <label class="stack"><span>/tmp</span><select name="tmp"></select></label>
-  <label class="stack"><span>ソケットのディレクトリ (connect)</span><select name="sockdir"></select></label>
-  <label class="stack"><span>結果</span><select name="result"><option value="">全部</option><option value="ok">届く</option><option value="ng">届かない</option></select></label>
+  <label class="stack"><span data-i18n="f_sockdir"></span><select name="sockdir"></select></label>
+  <label class="stack"><span data-i18n="f_result"></span><select name="result"><option value="" data-i18n="any"></option><option value="ok" data-i18n="reached"></option><option value="ng" data-i18n="not_reached"></option></select></label>
   <fieldset>
-    <label><input type="checkbox" name="proc" checked> /proc を使える</label>
-    <label><input type="checkbox" name="thread_cwd" checked> スレッドの cwd を使える</label>
-    <label><input type="checkbox" name="follows" checked> bind が symlink を辿る (未確認の OS)</label>
-    <label><input type="checkbox" name="private_tmp"> PrivateTmp (自分か相手が /tmp を隔離)</label>
-    <label><input type="checkbox" name="cross_uid"> 別の uid と通信する</label>
+    <label><input type="checkbox" name="proc" checked> <span data-i18n="f_proc"></span></label>
+    <label><input type="checkbox" name="thread_cwd" checked> <span data-i18n="f_thread_cwd"></span></label>
+    <label><input type="checkbox" name="follows" checked> <span data-i18n="f_follows"></span></label>
+    <label><input type="checkbox" name="private_tmp"> <span data-i18n="f_private_tmp"></span></label>
+    <label><input type="checkbox" name="cross_uid"> <span data-i18n="f_cross_uid"></span></label>
   </fieldset>
   <div class="ops" id="ops"></div>
 </form>
 
-<main id="out"><p class="empty">読み込み中…</p></main>
+<main id="out"><p class="empty" data-i18n="loading"></p></main>
+
+<script type="application/json" id="i18n">
+{
+  "ja": {
+    "lang_name": "日本語",
+    "title": "sockat の届く範囲",
+    "h1": "sockat の届く範囲 (作り直しの案)",
+    "lead": "長いパスに届くか、どの経路で届くか、届かなければなぜかを、選んだ条件で絞り込む。合わない行と、全部の行で同じになった列が消える。数字はバイトで、未実装の設計に対する綴りの長さからの見積もり (根拠の列が「実測」の行は適合試験の結果と一致)。",
+    "links": "表の全体と畳み方は {readme} (JS の無い環境ではこちら)、fork-cwd の手法は {fork}。",
+    "readme_href": "README-ja.md",
+    "fork_href": "../fork-cwd-ja.md",
+    "load_error": "{file} を読めない ({status})。{readme} を読む",
+    "f_impl": "言語",
+    "f_filename": "ファイル名の長さ (バイト、空なら全部)",
+    "f_relpath": "元のパスと相対パスの短い方 (connect、空なら全部)",
+    "f_sockdir": "ソケットのディレクトリ (connect)",
+    "f_result": "結果",
+    "any": "全部",
+    "reached": "届く",
+    "not_reached": "届かない",
+    "f_proc": "/proc を使える",
+    "f_thread_cwd": "スレッドの cwd を使える",
+    "f_follows": "bind が symlink を辿る (未確認の OS)",
+    "f_private_tmp": "PrivateTmp (自分か相手が /tmp を隔離)",
+    "f_cross_uid": "別の uid と通信する",
+    "loading": "読み込み中…",
+    "no_rows": "この条件に合う行は無い。",
+    "no_ops": "操作を 1 つ以上選ぶ。",
+    "col_peer": "綴りを相手が辿れるか",
+    "col_spelling": "綴り",
+    "col_route": "経路",
+    "col_why": "届かない理由",
+    "col_fork": "fork-cwd なら",
+    "col_basis": "根拠",
+    "measured": "実測: {cases}",
+    "estimate": "見積もり",
+    "rows": "{n} 行",
+    "same_in_all": "。全部の行で同じ条件: {list}",
+    "sep": "、",
+    "band_open": "{lo} 以上"
+  },
+  "en": {
+    "lang_name": "English",
+    "title": "sockat reach",
+    "h1": "sockat reach (proposed rework)",
+    "lead": "Whether a long path is reached, by which route, and if not, why, filtered by the conditions you choose. Rows that do not match disappear, and so do columns that are the same in every row. Numbers are bytes, estimated from the spelling lengths of a design not yet implemented (rows whose basis is \"measured\" match the conformance results).",
+    "links": "Full tables and how rows are folded: {readme} (read this without JS). The fork-cwd technique: {fork}.",
+    "readme_href": "README.md",
+    "fork_href": "../fork-cwd.md",
+    "load_error": "Cannot load {file} ({status}). Read {readme}",
+    "f_impl": "Language",
+    "f_filename": "File name length (bytes, empty for any)",
+    "f_relpath": "Shorter of the original and the relative path (connect, empty for any)",
+    "f_sockdir": "Socket's directory (connect)",
+    "f_result": "Result",
+    "any": "Any",
+    "reached": "Reached",
+    "not_reached": "Not reached",
+    "f_proc": "/proc usable",
+    "f_thread_cwd": "Thread cwd usable",
+    "f_follows": "bind follows a symlink (OSes not checked)",
+    "f_private_tmp": "PrivateTmp (either side has /tmp isolated)",
+    "f_cross_uid": "Peer has another uid",
+    "loading": "Loading…",
+    "no_rows": "No rows match these conditions.",
+    "no_ops": "Choose at least one operation.",
+    "col_peer": "Peer can follow the spelling",
+    "col_spelling": "Spelling",
+    "col_route": "Route",
+    "col_why": "Why not reached",
+    "col_fork": "With fork-cwd",
+    "col_basis": "Basis",
+    "measured": "measured: {cases}",
+    "estimate": "estimate",
+    "rows": "Rows: {n}",
+    "same_in_all": ". Same in every row: {list}",
+    "sep": ", ",
+    "band_open": "≥ {lo}"
+  }
+}
+</script>
 
 <script type="module">
 const form = document.getElementById("f");
@@ -91,6 +176,27 @@ const BOOL_DIMS = ["proc", "thread_cwd", "follows", "private_tmp", "cross_uid"];
 const PLACE_DIMS = ["xdg", "tmpdir", "tmp", "sockdir"];
 const BAND_DIMS = ["filename", "relpath"];
 const BIND_OPS = new Set(["bind", "bind_ex", "resolve_for_bind"]);
+
+// 表示の言語: URL の lang、無ければブラウザの言語、どちらも辞書に無ければ英語。
+const I18N = JSON.parse(document.getElementById("i18n").textContent);
+const UI_LANGS = Object.keys(I18N);
+const urlLang = new URLSearchParams(location.search).get("lang");
+const explicitLang = UI_LANGS.includes(urlLang) ? urlLang : null;
+const browserLang = (navigator.languages ?? [navigator.language]).map((l) => l.toLowerCase().split("-")[0]).find((l) => UI_LANGS.includes(l));
+const uiLang = explicitLang ?? browserLang ?? "en";
+const dict = I18N[uiLang];
+
+function t(key, vars = {}) {
+  return dict[key].replace(/\{(\w+)\}/g, (_, k) => String(vars[k]));
+}
+
+// 文字列の {name} を DOM の node に差し替えた並びを返す (リンクを文の中に置くため)。
+function tn(key, nodes) {
+  return dict[key].split(/(\{\w+\})/).map((part) => {
+    const m = /^\{(\w+)\}$/.exec(part);
+    return m ? nodes[m[1]] : part;
+  });
+}
 
 function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
@@ -106,9 +212,28 @@ function h(tag, attrs = {}, ...children) {
   return el;
 }
 
-const res = await fetch("data/reach.json");
+document.documentElement.lang = uiLang;
+document.title = t("title");
+for (const el of document.querySelectorAll("[data-i18n]")) el.textContent = dict[el.dataset.i18n];
+document.getElementById("links").replaceChildren(...tn("links", {
+  readme: h("a", { href: t("readme_href") }, t("readme_href")),
+  fork: h("a", { href: t("fork_href") }, "fork-cwd"),
+}));
+
+const langsNav = document.getElementById("langs");
+function refreshLangLinks() {
+  langsNav.replaceChildren(...UI_LANGS.map((l) => {
+    const q = new URLSearchParams(location.search);
+    q.set("lang", l);
+    return h("a", { href: `?${q}`, hreflang: l, "aria-current": l === uiLang ? "true" : null }, I18N[l].lang_name);
+  }));
+}
+refreshLangLinks();
+
+const dataFile = `data/reach-${uiLang}.json`;
+const res = await fetch(dataFile);
 if (!res.ok) {
-  out.replaceChildren(h("p", { class: "empty" }, `data/reach.json を読めない (${res.status})。`, h("a", { href: "README.md" }, "README.md"), " を読む"));
+  out.replaceChildren(h("p", { class: "empty" }, tn("load_error", { file: dataFile, status: String(res.status), readme: h("a", { href: t("readme_href") }, t("readme_href")) })));
   throw new Error(`fetch ${res.status}`);
 }
 const data = await res.json();
@@ -117,7 +242,7 @@ const condLabel = new Map(data.conditions.map((c) => [c.id, c.label]));
 
 function fillSelect(name, options) {
   const sel = form.elements.namedItem(name);
-  sel.replaceChildren(h("option", { value: "" }, "全部"), ...options.map((o) => h("option", { value: o.id }, o.label)));
+  sel.replaceChildren(h("option", { value: "" }, t("any")), ...options.map((o) => h("option", { value: o.id }, o.label)));
 }
 
 function placeValues(dim, osId) {
@@ -129,7 +254,7 @@ function placeValues(dim, osId) {
 }
 
 fillSelect("os", data.oses.map((o) => ({ id: o.id, label: o.label })));
-fillSelect("lang", data.langs.map((l) => ({ id: l.id, label: l.label })));
+fillSelect("impl", data.langs.map((l) => ({ id: l.id, label: l.label })));
 for (const op of data.ops) {
   opsBox.append(h("label", { title: op.note }, h("input", { type: "checkbox", name: `op_${op.id}`, checked: true }), op.label));
 }
@@ -171,12 +296,14 @@ const DEFAULTS = readState();
 
 function writeUrl(s) {
   const q = new URLSearchParams();
+  if (explicitLang) q.set("lang", explicitLang);
   for (const [k, v] of Object.entries(s)) {
     if (v === DEFAULTS[k]) continue;
     q.set(k, typeof v === "boolean" ? (v ? "1" : "0") : v);
   }
   const qs = q.toString();
   history.replaceState(null, "", qs ? `?${qs}` : location.pathname);
+  refreshLangLinks();
 }
 
 function readUrl() {
@@ -206,7 +333,7 @@ function bandLabel(ids) {
     if (last && last[1] !== null && last[1] + 1 === lo) last[1] = hi;
     else merged.push([lo, hi]);
   }
-  return merged.map(([lo, hi]) => (hi === null ? `${lo} 以上` : lo === hi ? `${lo}` : `${lo}–${hi}`)).join("\n");
+  return merged.map(([lo, hi]) => (hi === null ? t("band_open", { lo }) : lo === hi ? `${lo}` : `${lo}–${hi}`)).join("\n");
 }
 
 function valueLabel(dim, osId, ids) {
@@ -224,7 +351,7 @@ function matches(row, op, s) {
   if (s.result === "ok" && !r.reach) return false;
   if (s.result === "ng" && r.reach) return false;
   const dims = osById.get(osId).dims[op];
-  if (s.lang && c.lang && !c.lang.includes(s.lang)) return false;
+  if (s.impl && c.lang && !c.lang.includes(s.impl)) return false;
   for (const dim of BOOL_DIMS) {
     if (!dims.includes(dim) || form.elements.namedItem(dim).disabled) continue;
     if (c[dim] && !c[dim].includes(s[dim])) return false;
@@ -257,7 +384,7 @@ function renderOp(op, s) {
   const rows = data.rows[op.id].filter((row) => matches(row, op.id, s));
   const section = h("section", {}, h("h2", {}, op.label, h("small", {}, op.note)));
   if (rows.length === 0) {
-    section.append(h("p", { class: "empty" }, "この条件に合う行は無い。"));
+    section.append(h("p", { class: "empty" }, t("no_rows")));
     return section;
   }
   const condDims = [];
@@ -270,7 +397,7 @@ function renderOp(op, s) {
       condDims.push(dim);
     } else if (!keys.has("null")) {
       const [osId, c] = rows[0];
-      constant.push(`${condLabel.get(dim)}: ${valueLabel(dim, osId, c[dim]).replaceAll("\n", "、")}`);
+      constant.push(`${condLabel.get(dim)}: ${valueLabel(dim, osId, c[dim]).replaceAll("\n", t("sep"))}`);
     }
   }
   const results = rows.map(([, , ri]) => data.results[ri]);
@@ -278,12 +405,12 @@ function renderOp(op, s) {
   const showFork = results.some((r) => r.fork);
   const isBind = BIND_OPS.has(op.id);
   const head = [
-    ...condDims.map((d) => (d === "os" ? "OS" : condLabel.get(d))),
-    "届く", "経路",
-    ...(isBind ? ["綴り", "綴りを相手が辿れるか"] : []),
-    ...(showWhy ? ["届かない理由"] : []),
-    ...(showFork ? ["fork-cwd なら"] : []),
-    "根拠",
+    ...condDims.map((d) => condLabel.get(d)),
+    t("reached"), t("col_route"),
+    ...(isBind ? [t("col_spelling"), t("col_peer")] : []),
+    ...(showWhy ? [t("col_why")] : []),
+    ...(showFork ? [t("col_fork")] : []),
+    t("col_basis"),
   ];
   const tbody = h("tbody");
   for (const [osId, c, ri] of rows) {
@@ -291,7 +418,7 @@ function renderOp(op, s) {
     const cells = condDims.map((d) => {
       if (d === "os") return h("td", { class: "cond" }, osById.get(osId).label);
       if (d !== "lang" && !osById.get(osId).dims[op.id].includes(d)) return h("td", { class: "cond all" }, "—");
-      if (c[d] === undefined) return h("td", { class: "cond all" }, "全部");
+      if (c[d] === undefined) return h("td", { class: "cond all" }, t("any"));
       return h("td", { class: "cond" }, h("span", { class: "lines" }, valueLabel(d, osId, c[d])));
     });
     cells.push(h("td", { class: r.reach ? "reach-ok" : "reach-ng" }, r.reach ? "○" : "×"));
@@ -301,14 +428,14 @@ function renderOp(op, s) {
       cells.push(h("td", {}, r.peer ?? "—"));
     }
     if (showWhy) cells.push(h("td", {}, r.why ? h("ul", {}, r.why.map((w) => h("li", {}, w))) : "—"));
-    if (showFork) cells.push(h("td", {}, r.fork ? h("a", { href: `${data.fork_doc}#${r.fork}` }, "届く") : "—"));
-    const basis = r.basis.measured.length ? [`実測: ${r.basis.measured.join("、")}`] : ["見積もり"];
+    if (showFork) cells.push(h("td", {}, r.fork ? h("a", { href: `${data.fork_doc}#${r.fork}` }, t("reached")) : "—"));
+    const basis = r.basis.measured.length ? [t("measured", { cases: r.basis.measured.join(t("sep")) })] : [t("estimate")];
     cells.push(h("td", {}, h("span", { class: "lines" }, [...basis, ...r.basis.notes].join("\n"))));
     tbody.append(h("tr", {}, cells));
   }
   section.append(
-    h("p", { class: "count" }, `${rows.length} 行`, constant.length ? `。全部の行で同じ条件: ${constant.join(" / ")}` : ""),
-    h("div", { class: "scroll" }, h("table", {}, h("thead", {}, h("tr", {}, head.map((t) => h("th", {}, t)))), tbody)),
+    h("p", { class: "count" }, t("rows", { n: rows.length }), constant.length ? t("same_in_all", { list: constant.join(" / ") }) : ""),
+    h("div", { class: "scroll" }, h("table", {}, h("thead", {}, h("tr", {}, head.map((x) => h("th", {}, x)))), tbody)),
   );
   return section;
 }
@@ -318,7 +445,7 @@ function render() {
   const s = readState();
   writeUrl(s);
   const sections = data.ops.filter((op) => s[`op_${op.id}`]).map((op) => renderOp(op, s));
-  out.replaceChildren(...(sections.length ? sections : [h("p", { class: "empty" }, "操作を 1 つ以上選ぶ。")]));
+  out.replaceChildren(...(sections.length ? sections : [h("p", { class: "empty" }, t("no_ops"))]));
 }
 
 readUrl();
