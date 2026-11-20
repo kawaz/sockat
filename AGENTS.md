@@ -22,6 +22,7 @@ sockat は、`sun_path` の上限を超えるパスでも Unix domain socket を
 | `docs/QUESTIONS.md` | kawaz の裁定を待つ問い (統括が書く) |
 | `docs/design/conformance.md` | 適合試験の決まり (各言語の試験用 CLI の入出力、表の書き方) |
 | `conformance/` | 適合試験の表と、それを流して突き合わせるスクリプト |
+| `pages/` | 利用者向けに公開するサイトの元 (届く範囲の表 `reach/`、fork-cwd の手法、Q&A `faq.md`)。開発用の文書は docs/ |
 
 ## 守ること
 
