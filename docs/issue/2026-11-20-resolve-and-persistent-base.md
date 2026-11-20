@@ -107,8 +107,8 @@ pub enum Spelling {
     Linked {
         removable: bool,             // 綴りで unlink すると実体が消えるか (link-dir: true、link-file: false)
         until: Until,                // Process (procB) / Cleanup (dirB・tmpB)
-        others_can_follow: bool,     // 別の uid が辿れるか
-        through_tmp: bool,           // 綴りが /tmp か /var/tmp を通るか (通るなら /tmp を隔離した相手 (systemd の PrivateTmp 等) からは辿れない。tmpB と、$TMPDIR が /tmp の下の dirB)
+        followable_by_other_uids: bool,    // 別の uid の相手が辿れるか
+        followable_from_private_tmp: bool, // /tmp を隔離した相手 (systemd の PrivateTmp 等) が辿れるか (綴りが /tmp・/var/tmp を通らなければ true。mount 名前空間が丸ごと違う相手 (コンテナ等) までは保証しない)
         recreatable_after_cleanup: bool, // cleanup の後に他人が作り直せるか (tmpB)
     },
     Dangling,     // 片付け済みの R を含む綴り。どこにも届かない (thread-cwd・at・fork-cwd)
@@ -127,7 +127,7 @@ fork したかは別の `forked: bool` にする。
 
 ### 引数
 
-- `_ex` の引数を `Options` にする: `others_can_follow: bool` (別の uid にも辿らせる。B の選び方にだけ効き、満たせなければ結果の `Spelling` で分かる)、案 L を採らなければ `last_resort: bool` (connect だけ)
+- `_ex` の引数を `Options` にする: `followable_by_other_uids: bool` (別の uid にも辿らせる。B の選び方にだけ効き、満たせたかは結果の `Spelling` で分かる)、案 L を採らなければ `last_resort: bool` (connect だけ)
 - 既定の操作は今のとおり path だけ
 
 ### 関数
@@ -138,7 +138,7 @@ fork したかは別の `forked: bool` にする。
 |---|---|
 | F1 | 型ごとのモジュールに std の形で置く (stream は crate 直下、`datagram::`、`seqpacket::`)。操作ごとに `_ex(…, Options)`。resolve は用途ごとに 2 つ |
 | F2 | 型を引数で渡す (`bind(path, Type)`)。std の形から外れる |
-| F3 | builder (`Options::new().others_can_follow(true).bind(path)`)。`_ex` の数は減るが、型ごとの操作が builder に集まる |
+| F3 | builder (`Options::new().followable_by_other_uids(true).bind(path)`)。`_ex` の数は減るが、型ごとの操作が builder に集まる |
 
 F1 の一覧 (Rust):
 
