@@ -52,7 +52,6 @@ TEXT = {
     "why.rel": {"ja": "相対パス > {limit}", "en": "relative path > {limit}"},
     "why.spelling": {"ja": "B の綴りが長い (綴り {n} > {limit})", "en": "B's spelling too long (spelling {n} > {limit})"},
     "why.no_route": {"ja": "この OS で試す経路が無い", "en": "no route to try on this OS"},
-    "why.follows_unmeasured": {"ja": "bind が symlink を辿るか未確認の OS (resolve では見分けられない)", "en": "an OS where it is not checked whether bind follows a symlink (resolve cannot tell)"},
     "why.base_eperm": {"ja": "EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない)", "en": "EPERM (with usable_cross_uid and Options.base, the path to base or the base itself does not give other x)"},
     # 綴りを相手が辿れるか
     "peer.dangling": {"ja": "辿れない (片付け済み)", "en": "no (cleaned up)"},
@@ -76,6 +75,7 @@ TEXT = {
     "req.thread_cwd": {"ja": "スレッドの cwd", "en": "thread cwd"},
     "req.proc": {"ja": "/proc", "en": "/proc"},
     "req.!proc": {"ja": "/proc を使えない時だけ", "en": "only when /proc is not usable"},
+    "req.proc_row": {"ja": "/proc を使える時だけ", "en": "only when /proc is usable"},
     "req.follows": {"ja": "bind が symlink を辿る (実測した OS は OS で、他は実行時に見分ける)", "en": "bind follows the symlink (by the OS where measured, told at run time elsewhere)"},
     "req.follows_measured": {"ja": "bind が symlink を辿ると実測した OS (macOS・NetBSD)", "en": "an OS where bind is measured to follow the symlink (macOS, NetBSD)"},
     "req.!cross": {"ja": "usable_cross_uid の指定で飛ばす", "en": "skipped with usable_cross_uid"},
@@ -146,24 +146,24 @@ TEXT = {
     "md.cond.head": {"ja": "| 条件 | 効く操作 | 中身 |", "en": "| Condition | Operations it affects | Meaning |"},
     "md.b.lead": {"ja": "B の選び方 ([SPEC-routes の「B の作り方」](../../docs/SPEC-routes-ja.md#b-の作り方)):", "en": "How B is chosen (\"How B is made\" in [SPEC-routes](../../docs/SPEC-routes.md)):"},
     "md.b.1": {
-        "ja": "- B は、`Options.base` を指定しなければ、`/tmp` → `$XDG_RUNTIME_DIR` → `$TMPDIR` → ソケットのディレクトリの順で最初に作れた所。`/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR` の B はプロセスごとに 1 つ、ソケットのディレクトリの B はディレクトリごと。B の綴りが収まらなくても次の置き場には移らない",
-        "en": "- Without `Options.base`, B is the first of `/tmp` → `$XDG_RUNTIME_DIR` → `$TMPDIR` → the socket's directory where it can be made. A B in `/tmp`, `$XDG_RUNTIME_DIR` or `$TMPDIR` is one per process; a B in the socket's directory is one per directory. When B's spelling does not fit, the next base is not tried",
+        "ja": "- B は、`Options.base` を指定しなければ、`/tmp` → `$XDG_RUNTIME_DIR` → `$TMPDIR` → ソケットのディレクトリの順に見る。作らずに分かる外れ (置き場が無い。`usable_cross_uid` では other に x が無い) を飛ばし、残った最初の置き場で綴りの長さを見積もる。収まらなければそこで止まり次の置き場に移らない。見積もりに通った後に作れなければ (書けない等) 次の置き場で同じことをする。`Options.base` も作る前に見積もる。`/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR` の B はプロセスごとに 1 つ、ソケットのディレクトリの B はディレクトリごと。表は B をまだ持っていないプロセスの 1 回目の呼び出しで計算する",
+        "en": "- Without `Options.base`, the bases are looked at in the order `/tmp` → `$XDG_RUNTIME_DIR` → `$TMPDIR` → the socket's directory. Misses known without making anything (the base is absent; with `usable_cross_uid`, no x for other) are skipped, and the spelling length is estimated at the first remaining base. If it does not fit, the walk stops there and does not move to the next base. If B cannot be made after passing the estimate (not writable etc.), the same is done at the next base. `Options.base` is estimated before it is made too. A B in `/tmp`, `$XDG_RUNTIME_DIR` or `$TMPDIR` is one per process; a B in the socket's directory is one per directory. The tables are computed for the first call of a process that holds no B yet",
     },
     "md.b.2": {
         "ja": "- 綴りは procB (`/proc` を使えて収まる時) → B の実パス。B がソケットのディレクトリにある時は実パスの綴りが元のパスより長いので procB だけ",
         "en": "- The spelling is procB (when `/proc` is usable and it fits), then B's realpath. When B is in the socket's directory, the realpath spelling is longer than the original path, so only procB",
     },
     "md.b.3": {
-        "ja": "- `usable_cross_uid` の時は、同じ順のうち途中と B 自身が other に x の所だけを B に使い (もう 1 つの B)、procB を使わない。無いか収まらなければ thread-cwd / at",
-        "en": "- With `usable_cross_uid`, only bases in the same order whose path and B itself give other x are used for B (another B), and procB is not used. If none, or it does not fit, thread-cwd / at",
+        "ja": "- `usable_cross_uid` の時は、同じ順のうち途中と B 自身が other に x の所だけを B に使い、procB を使わない。この B は普段の B と別の枠で、同じディレクトリなら共有する。無いか収まらなければ thread-cwd / at",
+        "en": "- With `usable_cross_uid`, only bases in the same order whose path and B itself give other x are used for B, and procB is not used. This B is held apart from the usual B and shared with it when it is the same directory. If none, or it does not fit, thread-cwd / at",
     },
     "md.b.4": {
-        "ja": "- thread-cwd・at の E はプロセスの B の D の中に作る。bind ではソケットのディレクトリに書けるので、いつも B を作れる",
-        "en": "- The E of thread-cwd and at is made in D of the process's B. For bind the socket's directory is writable, so B can always be made",
+        "ja": "- thread-cwd・at の E は普段の B (最初に作れた置き場) の D の中に作る。綴りに B が出ないので見積もりによらない。bind ではソケットのディレクトリに書けるので、いつも B を作れる",
+        "en": "- The E of thread-cwd and at is made in D of the usual B (the first base that can be made). B does not appear in the spelling, so the estimate does not apply. For bind the socket's directory is writable, so B can always be made",
     },
     "md.places.lead": {
-        "ja": "置き場 (代表値。長さは実パスのバイト数、B の実パスは置き場 + `/` + B の名前。`Options.base` は指定した所が B):",
-        "en": "Bases (typical values. The length is the realpath's bytes; B's realpath is the base + `/` + B's name. With `Options.base`, the given place is B):",
+        "ja": "置き場 (代表値。長さは実パスのバイト数、B の実パスは置き場 + `/` + B の名前。`Options.base` は指定した所が B。書けない置き場も、作る前の見積もりに使うので長さを持つ):",
+        "en": "Bases (typical values. The length is the realpath's bytes; B's realpath is the base + `/` + B's name. With `Options.base`, the given place is B. A base that is not writable still has a length, as it is used for the estimate before making B):",
     },
     "md.places.head": {
         "ja": "| 置き場 | OS | 値 | 長さ | B の実パスの長さ | 別の uid が辿れる | /tmp・/var/tmp の下 |",
@@ -304,13 +304,16 @@ class Model:
                 out[cid] = [True, False]
         return out
 
-    def choose_b(self, op, os, cond):
-        """(プロセスの B, usable_cross_uid の B)。どちらも (置き場, profile) か None。"""
+    def walk_b(self, op, os, cond):
+        """(普段の B を選ぶ時に見る置き場の並び, usable_cross_uid の B を選ぶ時に見る置き場の並び)。
+        要素は (置き場, profile)。作らずに分かる外れ (置き場が無い。usable_cross_uid では other に x が無い) は
+        並びに入れない。並びの置き場は、作る前の見積もりに使い、作れなければ (made が false) 次へ進む
+        (SPEC-routes の「実体の置き場」の B を選ぶ順)。"""
         base_id = cond.get("base", "unset")
         if base_id != "unset":
             prof = next(p for p in self.places["base"]["profiles"] if p["id"] == base_id)
-            return ("base", prof), (("base", prof) if prof.get("traversable") else None)
-        cands = []
+            return [("base", prof)], ([("base", prof)] if prof.get("traversable") else [])
+        walk = []
         for place in self.b_order:
             profs = self.place_profiles(place, os)
             if place == "sockdir" and op in BIND_OPS:
@@ -319,10 +322,12 @@ class Model:
                 pid = cond.get(place, profs[0]["id"])
             prof = next(p for p in profs if p["id"] == pid)
             if prof.get("usable", True) is not False:
-                cands.append((place, prof))
-        normal = cands[0] if cands else None
-        cross = next((c for c in cands if c[1].get("traversable")), None)
-        return normal, cross
+                walk.append((place, prof))
+        return walk, [w for w in walk if w[1].get("traversable")]
+
+    def first_made(self, walk):
+        """並びのうち最初に作れる置き場 (見積もりによらない B。D を置くだけの thread-cwd・at と procB が使う)。"""
+        return next((w for w in walk if w[1].get("made", True)), None)
 
 
 def spelling_parts(spelling):
@@ -422,8 +427,12 @@ def requires_ok(model, op, os, cond, token):
         return bool(os.get("proc")) and cond.get("proc", False), ["proc"]
     if token == "!proc":
         return not (os.get("proc") and cond.get("proc", False)), None
+    if token == "proc_row":
+        # /proc を使えない時は、その呼び出しの順の行に無い (skipped に入れない。SPEC の「診断」)。
+        return bool(os.get("proc")) and cond.get("proc", False), None
     if token == "follows_measured":
-        return os["bind_follows_symlink"] is True, (["follows_unmeasured"] if os["bind_follows_symlink"] == "probe" else None)
+        # 実測していない OS の resolve_for_bind は link-file を使わない (順の行に無い)。
+        return os["bind_follows_symlink"] is True, None
     if token == "follows":
         if op not in BIND_OPS:
             return True, None
@@ -439,31 +448,39 @@ def try_route(model, op, os, lang, cond, F, rel, r):
     if r["route"] in lang["lacks"]:
         return False, ["lacks"], None
     cross = model.cond_applies("cross_uid", op, os) and cond.get("cross_uid", False)
-    normal, cross_b = model.choose_b(op, os, cond)
+    walk, cross_walk = model.walk_b(op, os, cond)
     env = {"F": F, "rel": rel}
+    limit = model.limit(r["limit"], os)
     used = None
+    real_walk = None
     for token in r.get("requires", []):
         if token == "!cross":
             if cross:
                 return False, ["cross_skip"], None
         elif token == "B":
-            if normal is None:
+            used = model.first_made(walk)
+            if used is None:
                 return False, ["no_place"], None
-            used = normal
         elif token == "Breal":
-            b = cross_b if cross else normal
-            if b is None:
-                return False, (["no_place_cross"] if cross else ["no_place"]), None
-            n = model.b_len(b[0], b[1], os)
-            if n is None:
-                return False, ["sockdir_b"], None
-            env["B"] = n
-            used = b
+            real_walk = cross_walk if cross else walk
         else:
             ok, why = requires_ok(model, op, os, cond, token)
             if not ok:
                 return False, why, None
-    limit = model.limit(r["limit"], os)
+    if real_walk is not None:
+        # 残った最初の置き場で綴りの長さを見積もり、収まらなければ止まる (次の置き場に移らない)。
+        # 見積もりに通った後に作れなければ次の置き場で同じことをする。
+        for b in real_walk:
+            n = model.b_len(b[0], b[1], os)
+            if n is None:
+                return False, ["sockdir_b"], None
+            env["B"] = n
+            total = spelling_len(model, r["spelling"], env)
+            if total > limit:
+                return False, too_long_reason(model, r, limit, env, total), None
+            if b[1].get("made", True):
+                return True, None, b
+        return False, (["no_place_cross"] if cross else ["no_place"]), None
     n = spelling_len(model, r["spelling"], env)
     if n <= limit:
         return True, None, used
@@ -550,7 +567,7 @@ def fork_scenario(model, op, os):
 
 def evaluate(model, op, os, lang, cond, F, rel):
     if (model.cond_applies("cross_uid", op, os) and cond.get("cross_uid") and cond.get("base", "unset") != "unset"
-            and model.choose_b(op, os, cond)[1] is None):
+            and not model.walk_b(op, os, cond)[1]):
         return {"reach": False, "why": [[None, "base_eperm"]], "notes": []}
     tried = []
     for rid in model.orders[op]:

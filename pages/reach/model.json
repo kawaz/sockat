@@ -39,11 +39,12 @@
   "places": {
     "tmp": {"label": {"ja": "/tmp", "en": "/tmp"}, "b_name": "Bname", "diag": "tmp", "profiles": [
       {"id": "writable", "label": {"ja": "書ける (1777)", "en": "writable (1777)"}, "len": "os.tmp_realpath", "traversable": true, "under_tmp": true},
-      {"id": "none", "label": {"ja": "書けない", "en": "not writable"}, "usable": false}
+      {"id": "none", "label": {"ja": "書けない (作る前の見積もりには使う)", "en": "not writable (still used for the estimate before making B)"}, "len": "os.tmp_realpath", "made": false, "traversable": true, "under_tmp": true}
     ]},
     "xdg": {"label": {"ja": "$XDG_RUNTIME_DIR", "en": "$XDG_RUNTIME_DIR"}, "os": ["linux"], "b_name": "Bname_runtime", "diag": "runtime", "profiles": [
       {"id": "run-user", "label": {"ja": "/run/user/<uid> (14、0700)", "en": "/run/user/<uid> (14, 0700)"}, "len": 14, "traversable": false, "under_tmp": false},
-      {"id": "none", "label": {"ja": "無い・書けない", "en": "absent or not writable"}, "usable": false}
+      {"id": "unwritable", "label": {"ja": "/run/user/<uid> に書けない (14。作る前の見積もりには使う)", "en": "/run/user/<uid> not writable (14; still used for the estimate before making B)"}, "len": 14, "made": false, "traversable": false, "under_tmp": false},
+      {"id": "none", "label": {"ja": "無い (空・相対パスを含む)", "en": "absent (including empty or relative)"}, "usable": false}
     ]},
     "tmpdir": {"label": {"ja": "$TMPDIR", "en": "$TMPDIR"}, "b_name": "Bname", "diag": "tmpdir", "profiles_by_family": {
       "apple": [
@@ -111,7 +112,7 @@
       "spelling": "<Er>/<F>", "limit": "sockaddr", "kind": "Dangling"},
     "at": {"route": "at", "os": ["freebsd"], "requires": ["B"],
       "spelling": "<Er>/<F>", "limit": "sockaddr", "kind": "Dangling"},
-    "proc-direct": {"route": "proc-direct", "os_attr": "proc", "requires": ["proc"],
+    "proc-direct": {"route": "proc-direct", "os_attr": "proc", "requires": ["proc_row"],
       "spelling": "/proc/self/fd/<fd>/<F>", "limit": "sockaddr", "unchanged": true},
     "relative": {"route": "relative", "os": ["linux", "macos", "apple-other", "netbsd", "openbsd", "illumos", "other"], "requires": ["!proc"],
       "spelling": "<rel>", "limit": "sockaddr", "unchanged": true},

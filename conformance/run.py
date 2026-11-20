@@ -597,8 +597,11 @@ def rule_violations(case, result):
     """値が場面によらず 1 つに決まらないが、満たすべき決まり。戻り値は {項目: 期待の説明} (破った物だけ)。"""
     out = {}
     sp = result["spelling"]
+    es = [x for x in result["left"] if "<E> -> " in x]
+    if case["op"] == "bind" and not result["ok"] and es:
+        # 実際に bind して失敗した経路は、作った E を消してからエラーを返す。初めての bind でできた D は残ってよい。
+        out["left"] = "失敗した bind は E を残さない (D は残ってよい)"
     if case["op"] == "bind" and result["ok"]:
-        es = [x for x in result["left"] if "<E> -> " in x]
         if sp is not None and sp["kind"] == "Linked" and len(es) != 1:
             out["left"] = "Linked の bind は E を 1 つ残す"
         if sp is not None and sp["kind"] in ("Original", "CwdRelative", "Dangling") and es:

@@ -58,17 +58,19 @@ sockat で長いパスに届くか、どの経路で届くか、届かなけれ�
 
 B の選び方 ([SPEC-routes の「B の作り方」](../../docs/SPEC-routes-ja.md#b-の作り方)):
 
-- B は、`Options.base` を指定しなければ、`/tmp` → `$XDG_RUNTIME_DIR` → `$TMPDIR` → ソケットのディレクトリの順で最初に作れた所。`/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR` の B はプロセスごとに 1 つ、ソケットのディレクトリの B はディレクトリごと。B の綴りが収まらなくても次の置き場には移らない
+- B は、`Options.base` を指定しなければ、`/tmp` → `$XDG_RUNTIME_DIR` → `$TMPDIR` → ソケットのディレクトリの順に見る。作らずに分かる外れ (置き場が無い。`usable_cross_uid` では other に x が無い) を飛ばし、残った最初の置き場で綴りの長さを見積もる。収まらなければそこで止まり次の置き場に移らない。見積もりに通った後に作れなければ (書けない等) 次の置き場で同じことをする。`Options.base` も作る前に見積もる。`/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR` の B はプロセスごとに 1 つ、ソケットのディレクトリの B はディレクトリごと。表は B をまだ持っていないプロセスの 1 回目の呼び出しで計算する
 - 綴りは procB (`/proc` を使えて収まる時) → B の実パス。B がソケットのディレクトリにある時は実パスの綴りが元のパスより長いので procB だけ
-- `usable_cross_uid` の時は、同じ順のうち途中と B 自身が other に x の所だけを B に使い (もう 1 つの B)、procB を使わない。無いか収まらなければ thread-cwd / at
-- thread-cwd・at の E はプロセスの B の D の中に作る。bind ではソケットのディレクトリに書けるので、いつも B を作れる
+- `usable_cross_uid` の時は、同じ順のうち途中と B 自身が other に x の所だけを B に使い、procB を使わない。この B は普段の B と別の枠で、同じディレクトリなら共有する。無いか収まらなければ thread-cwd / at
+- thread-cwd・at の E は普段の B (最初に作れた置き場) の D の中に作る。綴りに B が出ないので見積もりによらない。bind ではソケットのディレクトリに書けるので、いつも B を作れる
 
-置き場 (代表値。長さは実パスのバイト数、B の実パスは置き場 + `/` + B の名前。`Options.base` は指定した所が B):
+置き場 (代表値。長さは実パスのバイト数、B の実パスは置き場 + `/` + B の名前。`Options.base` は指定した所が B。書けない置き場も、作る前の見積もりに使うので長さを持つ):
 
 | 置き場 | OS | 値 | 長さ | B の実パスの長さ | 別の uid が辿れる | /tmp・/var/tmp の下 |
 |---|---|---|---|---|---|---|
 | /tmp | Linux / Android<br>macOS<br>iOS 等の他の Apple の OS<br>FreeBSD<br>NetBSD<br>OpenBSD<br>illumos<br>その他の Unix | 書ける (1777) | 4、12 | 16、24 | ○ | ○ |
+| /tmp | Linux / Android<br>macOS<br>iOS 等の他の Apple の OS<br>FreeBSD<br>NetBSD<br>OpenBSD<br>illumos<br>その他の Unix | 書けない (作る前の見積もりには使う) | 4、12 | 16、24 | ○ | ○ |
 | $XDG_RUNTIME_DIR | Linux / Android | /run/user/<uid> (14、0700) | 14 | 21 | × | × |
+| $XDG_RUNTIME_DIR | Linux / Android | /run/user/<uid> に書けない (14。作る前の見積もりには使う) | 14 | 21 | × | × |
 | $TMPDIR | Linux / Android<br>FreeBSD<br>NetBSD<br>OpenBSD<br>illumos<br>その他の Unix | /var/tmp (8、1777) | 8 | 20 | ○ | ○ |
 | $TMPDIR | Linux / Android<br>FreeBSD<br>NetBSD<br>OpenBSD<br>illumos<br>その他の Unix | 深い所 (113、0700 の下) | 113 | 125 | × | × |
 | $TMPDIR | macOS<br>iOS 等の他の Apple の OS | 既定 (/private/var/folders/…/T、56、0700) | 56 | 68 | × | × |
@@ -94,7 +96,7 @@ B の選び方 ([SPEC-routes の「B の作り方」](../../docs/SPEC-routes-ja.
 | resolve_for_bind | 1 | link-dir (procB) | `/proc/<pid>/fd/<fd>/<D>/<E>/<F>` | sockaddr − 34 | Linux / Android | /proc<br>usable_cross_uid の指定で飛ばす<br>B を作れる (D をその中に) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true |
 | resolve_for_bind | 2 | link-dir (B の実パス) | `<B>/<D>/<E>/<F>` | sockaddr − 15 − B の実パス | 全部 | B の実パスの綴り (usable_cross_uid の指定では途中と B 自身が other に x の B。B がソケットのディレクトリにあれば使えない) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: B までの途中と B 自身が other に x なら true<br>usable_with_private_tmp: B が /tmp・/var/tmp の下でなければ true |
 | resolve_for_bind | 3 | link-file (B の実パス) | `<B>/<D>/<E>` | よらない (B の実パス ≤ sockaddr − 14) | 全部 | bind が symlink を辿ると実測した OS (macOS・NetBSD)<br>B の実パスの綴り (usable_cross_uid の指定では途中と B 自身が other に x の B。B がソケットのディレクトリにあれば使えない) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: B までの途中と B 自身が other に x なら true<br>usable_with_private_tmp: B が /tmp・/var/tmp の下でなければ true |
-| 既定の connect | 1 | proc-direct | `/proc/self/fd/<fd>/<F>` | sockaddr − 17 | Linux / Android | /proc |  |
+| 既定の connect | 1 | proc-direct | `/proc/self/fd/<fd>/<F>` | sockaddr − 17 | Linux / Android | /proc を使える時だけ |  |
 | 既定の connect | 2 | relative | `<rel>` | よらない (相対パス ≤ sockaddr) | Linux / Android<br>macOS<br>iOS 等の他の Apple の OS<br>NetBSD<br>OpenBSD<br>illumos<br>その他の Unix | /proc を使えない時だけ |  |
 | 既定の connect | 3 | widened | `<rel>` | よらない (相対パス ≤ 253) | macOS<br>iOS 等の他の Apple の OS | — |  |
 | 既定の connect | 4 | at-direct | `<F>` | sockaddr | FreeBSD | — |  |
@@ -164,52 +166,41 @@ bind_ex と同じ順で、Options を取らない。綴りは残す (E はプロ
 
 | ファイル名 (バイト) | スレッドの cwd を使える | /proc を使える | $XDG_RUNTIME_DIR | $TMPDIR | /tmp | PrivateTmp (自分か相手が /tmp を隔離) | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1–73 | 全部 | ○ | /run/user/<uid> (14、0700) | 全部 | 全部 | 全部 | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
-| 1–73 | 全部 | ○ | 無い・書けない | /var/tmp (8、1777)<br>深い所 (113、0700 の下) | 全部 | 全部 | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
-| 1–73 | 全部 | ○ | 無い・書けない | 未設定・書けない | 書ける (1777) | 全部 | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
-| 1–73 | 全部 | ○ | 無い・書けない | 未設定・書けない | 書けない | 全部 | ○ | link-dir (B: sockdir) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
-| 1–76 | 全部 | × | 全部 | 全部 | 書ける (1777) | ○ | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
-| 1–76 | 全部 | × | 全部 | 全部 | 書ける (1777) | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 1–71 | 全部 | × | /run/user/<uid> (14、0700) | 全部 | 書けない | 全部 | ○ | link-dir (B: runtime) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 1–72 | 全部 | × | 無い・書けない | /var/tmp (8、1777) | 書けない | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
-| 1–72 | 全部 | × | 無い・書けない | /var/tmp (8、1777) | 書けない | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 1–96 | ○ | × | 無い・書けない | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 全部 | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 1–96 | × | × | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 1–96 | × | × | 無い・書けない | 未設定・書けない | 書けない | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 72–96 | ○ | × | /run/user/<uid> (14、0700) | 全部 | 書けない | 全部 | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 72–96 | × | × | /run/user/<uid> (14、0700) | 全部 | 書けない | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 71<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 73–96 | ○ | × | 無い・書けない | /var/tmp (8、1777) | 書けない | 全部 | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 73–96 | × | × | 無い・書けない | /var/tmp (8、1777) | 書けない | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 74–76 | 全部 | ○ | 全部 | 全部 | 書ける (1777) | ○ | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
-| 74–76 | 全部 | ○ | 全部 | 全部 | 書ける (1777) | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 74–96 | ○ | ○ | 全部 | 全部 | 書けない | 全部 | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 74–96 | × | ○ | /run/user/<uid> (14、0700) | 全部 | 書けない | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 71<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 74–96 | × | ○ | 無い・書けない | /var/tmp (8、1777) | 書けない | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 74–96 | × | ○ | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 74–96 | × | ○ | 無い・書けない | 未設定・書けない | 書けない | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 77–96 | ○ | 全部 | 全部 | 全部 | 書ける (1777) | 全部 | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 77–96 | × | ○ | 全部 | 全部 | 書ける (1777) | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 77–96 | × | × | 全部 | 全部 | 書ける (1777) | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 97–255 | ○ | ○ | 全部 | 全部 | 書ける (1777) | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | ○ | /run/user/<uid> (14、0700) | 全部 | 書けない | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 71<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | ○ | 無い・書けない | /var/tmp (8、1777) | 書けない | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | ○ | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107)<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | ○ | 無い・書けない | 未設定・書けない | 書けない | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | × | 全部 | 全部 | 書ける (1777) | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | × | /run/user/<uid> (14、0700) | 全部 | 書けない | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 71<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | × | 無い・書けない | /var/tmp (8、1777) | 書けない | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | × | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107)<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | × | 無い・書けない | 未設定・書けない | 書けない | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | × | ○ | 全部 | 全部 | 書ける (1777) | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | ○ | /run/user/<uid> (14、0700) | 全部 | 書けない | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 71<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | ○ | 無い・書けない | /var/tmp (8、1777) | 書けない | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | ○ | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107)<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | ○ | 無い・書けない | 未設定・書けない | 書けない | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | × | 全部 | 全部 | 書ける (1777) | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | × | /run/user/<uid> (14、0700) | 全部 | 書けない | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 71<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | × | 無い・書けない | /var/tmp (8、1777) | 書けない | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | × | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107)<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | × | 無い・書けない | 未設定・書けない | 書けない | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
+| 1–73 | 全部 | ○ | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
+| 1–73 | 全部 | ○ | 全部 | /var/tmp (8、1777)<br>深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
+| 1–73 | 全部 | ○ | /run/user/<uid> (14、0700) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
+| 1–73 | 全部 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-dir (B: sockdir) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
+| 1–73 | 全部 | × | 全部 | 全部 | 書ける (1777) | ○ | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
+| 1–73 | 全部 | × | 全部 | 全部 | 書ける (1777) | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
+| 1–71 | 全部 | × | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-dir (B: runtime) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
+| 1–71 | 全部 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
+| 1–71 | 全部 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
+| 1–71 | ○ | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 全部 | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 1–71 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 1–71 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 72 | 全部 | × | 無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
+| 72 | 全部 | × | 無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
+| 72 | ○ | × | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 全部 | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 72 | ○ | × | /run/user/<uid> (14、0700)<br>/run/user/<uid> に書けない (14。作る前の見積もりには使う) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 72–76 | × | × | /run/user/<uid> (14、0700)<br>/run/user/<uid> に書けない (14。作る前の見積もりには使う) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 71<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 72–76 | × | × | 無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 72–76 | × | × | 無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 73 | ○ | × | 全部 | 全部 | 書けない (作る前の見積もりには使う) | 全部 | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 73–76 | × | × | 無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 74–76 | 全部 | 全部 | 全部 | 全部 | 書ける (1777) | ○ | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
+| 74–76 | 全部 | 全部 | 全部 | 全部 | 書ける (1777) | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
+| 74–76 | ○ | 全部 | 全部 | 全部 | 書けない (作る前の見積もりには使う) | 全部 | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 74–76 | × | ○ | /run/user/<uid> (14、0700)<br>/run/user/<uid> に書けない (14。作る前の見積もりには使う) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 71<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 74–76 | × | ○ | 無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 74–76 | × | ○ | 無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 74–76 | × | ○ | 無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 77–96 | ○ | 全部 | 全部 | 全部 | 全部 | 全部 | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 77–96 | × | ○ | 全部 | 全部 | 全部 | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 77–96 | × | × | 全部 | 全部 | 全部 | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 97–255 | ○ | ○ | 全部 | 全部 | 全部 | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
+| 97–255 | ○ | × | 全部 | 全部 | 全部 | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
+| 97–255 | × | ○ | 全部 | 全部 | 全部 | 全部 | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
+| 97–255 | × | × | 全部 | 全部 | 全部 | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
 
 #### 既定の bind / macOS
 
@@ -218,16 +209,18 @@ bind_ex と同じ順で、Options を取らない。綴りは残す (E はプロ
 | ファイル名 (バイト) | スレッドの cwd を使える | $TMPDIR | /tmp | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|
 | 1–64 | 全部 | 全部 | 書ける (1777) | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 1–20 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 1–92 | ○ | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 1–92 | × | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 1–92 | × | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 21–255 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
+| 1–20 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
+| 1–92 | ○ | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 1–64 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 1–64 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 21–255 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
 | 65–255 | 全部 | 全部 | 書ける (1777) | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 93–255 | ○ | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | ○ | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | × | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 93–255 | × | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
+| 65–92 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 65–92 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 93–255 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
+| 93–255 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
+| 93–255 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
+| 93–255 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
 
 #### 既定の bind / iOS 等の他の Apple の OS
 
@@ -236,30 +229,26 @@ bind_ex と同じ順で、Options を取らない。綴りは残す (E はプロ
 | ファイル名 (バイト) | スレッドの cwd を使える | bind が symlink を辿る | $TMPDIR | /tmp | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 1–64 | 全部 | 全部 | 全部 | 書ける (1777) | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 1–20 | 全部 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 1–92 | ○ | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 1–92 | × | ○ | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 1–92 | × | ○ | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 1–92 | × | × | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 1–92 | × | × | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 21–255 | 全部 | ○ | 既定 (/private/var/folders/…/T、56、0700) | 書けない | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 21–92 | ○ | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 21–92 | × | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない | × | — | — | — | link-dir (B の実パス): ファイル名 > 20<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 1–20 | 全部 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
+| 1–92 | ○ | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 1–64 | × | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 1–64 | × | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 1–64 | × | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 1–64 | × | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 21–255 | 全部 | ○ | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
+| 21–92 | ○ | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 21–64 | × | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 20<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
 | 65–255 | 全部 | ○ | 全部 | 書ける (1777) | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
 | 65–92 | ○ | × | 全部 | 書ける (1777) | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 65–92 | × | × | 全部 | 書ける (1777) | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 93–255 | ○ | ○ | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | ○ | ○ | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | ○ | × | 全部 | 書ける (1777) | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | ○ | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない | × | — | — | — | link-dir (B の実パス): ファイル名 > 20<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | ○ | × | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | ○ | × | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | × | ○ | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 93–255 | × | ○ | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 93–255 | × | × | 全部 | 書ける (1777) | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 93–255 | × | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない | × | — | — | — | link-dir (B の実パス): ファイル名 > 20<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 93–255 | × | × | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 93–255 | × | × | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
+| 65–92 | × | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 65–92 | × | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 65–92 | × | × | 全部 | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 93–255 | ○ | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
+| 93–255 | ○ | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
+| 93–255 | ○ | × | 全部 | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
+| 93–255 | × | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
+| 93–255 | × | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
+| 93–255 | × | × | 全部 | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
 
 #### 既定の bind / FreeBSD
 
@@ -268,14 +257,11 @@ bind_ex と同じ順で、Options を取らない。綴りは残す (E はプロ
 | ファイル名 (バイト) | $TMPDIR | /tmp | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|
 | 1–72 | 全部 | 書ける (1777) | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 1–68 | /var/tmp (8、1777) | 書けない | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 1–68 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | ○ | at | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 69–72 | 全部 | 書けない | ○ | at | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 1–68 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
+| 1–68 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | ○ | at | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 69–72 | 全部 | 書けない (作る前の見積もりには使う) | ○ | at | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
 | 73–92 | 全部 | 全部 | ○ | at | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 93–255 | 全部 | 書ける (1777) | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>at: ファイル名 > 92 | — | 見積もり |
-| 93–255 | /var/tmp (8、1777) | 書けない | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>at: ファイル名 > 92 | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>at: ファイル名 > 92 | — | 見積もり |
-| 93–255 | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>at: ファイル名 > 92 | — | 見積もり |
+| 93–255 | 全部 | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>at: ファイル名 > 92 | — | 見積もり |
 
 #### 既定の bind / NetBSD
 
@@ -284,13 +270,15 @@ bind_ex と同じ順で、Options を取らない。綴りは残す (E はプロ
 | ファイル名 (バイト) | $TMPDIR | /tmp | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|
 | 1–72 | 全部 | 書ける (1777) | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 1–68 | /var/tmp (8、1777) | 書けない | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 1–92 | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 69–255 | /var/tmp (8、1777) | 書けない | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
+| 1–68 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
+| 1–72 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | 未設定・書けない | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 69–255 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
 | 73–255 | 全部 | 書ける (1777) | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
-| 93–255 | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 73–92 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–92 | 未設定・書けない | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 93–255 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
+| 93–255 | 未設定・書けない | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
 
 #### 既定の bind / OpenBSD
 
@@ -299,15 +287,12 @@ bind_ex と同じ順で、Options を取らない。綴りは残す (E はプロ
 | ファイル名 (バイト) | $TMPDIR | /tmp | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|
 | 1–72 | 全部 | 書ける (1777) | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 1–68 | /var/tmp (8、1777) | 書けない | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 1–92 | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 69–92 | /var/tmp (8、1777) | 書けない | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 73–92 | 全部 | 書ける (1777) | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 93–255 | 全部 | 書ける (1777) | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
-| 93–255 | /var/tmp (8、1777) | 書けない | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103) | — | 見積もり |
-| 93–255 | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 1–68 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
+| 1–72 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | 未設定・書けない | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 69–72 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–92 | 全部 | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 93–255 | 全部 | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
 
 #### 既定の bind / illumos
 
@@ -316,15 +301,12 @@ bind_ex と同じ順で、Options を取らない。綴りは残す (E はプロ
 | ファイル名 (バイト) | $TMPDIR | /tmp | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|
 | 1–76 | 全部 | 書ける (1777) | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 1–72 | /var/tmp (8、1777) | 書けない | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 1–96 | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–96 | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 73–96 | /var/tmp (8、1777) | 書けない | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 77–96 | 全部 | 書ける (1777) | × | — | — | — | link-dir (B の実パス): ファイル名 > 76 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 97–255 | 全部 | 書ける (1777) | × | — | — | — | link-dir (B の実パス): ファイル名 > 76 | — | 見積もり |
-| 97–255 | /var/tmp (8、1777) | 書けない | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
-| 97–255 | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107) | — | 見積もり |
-| 97–255 | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 1–72 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
+| 1–76 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–76 | 未設定・書けない | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–76 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 77–96 | 全部 | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 76 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 97–255 | 全部 | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 76 | — | 見積もり |
 
 #### 既定の bind / その他の Unix
 
@@ -333,21 +315,20 @@ bind_ex と同じ順で、Options を取らない。綴りは残す (E はプロ
 | ファイル名 (バイト) | bind が symlink を辿る | $TMPDIR | /tmp | 届く | 経路 | 綴り | 綴りを相手が辿れるか | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|
 | 1–72 | 全部 | 全部 | 書ける (1777) | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 1–68 | 全部 | /var/tmp (8、1777) | 書けない | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 1–92 | ○ | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | ○ | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | × | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | × | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 69–255 | ○ | /var/tmp (8、1777) | 書けない | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 69–92 | × | /var/tmp (8、1777) | 書けない | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–68 | 全部 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
+| 1–72 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 69–255 | ○ | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
+| 69–72 | × | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 73–255 | ○ | 全部 | 書ける (1777) | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (D と一緒に OS の掃除で消えるまで) | — | — | 見積もり |
-| 73–92 | × | 全部 | 書ける (1777) | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 93–255 | ○ | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
-| 93–255 | ○ | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 93–255 | × | 全部 | 書ける (1777) | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): bind が symlink を辿らない | — | 見積もり |
-| 93–255 | × | /var/tmp (8、1777) | 書けない | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿らない | — | 見積もり |
-| 93–255 | × | 深い所 (113、0700 の下) | 書けない | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿らない | — | 見積もり |
-| 93–255 | × | 未設定・書けない | 書けない | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿らない | — | 見積もり |
+| 73–92 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–92 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–92 | × | 全部 | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 93–255 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
+| 93–255 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 93–255 | × | 全部 | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): bind が symlink を辿らない | — | 見積もり |
 
 ### bind_ex
 
@@ -362,89 +343,70 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 | 全部 | 全部 | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | 全部 | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
 | 1–76 | 全部 | 全部 | 全部 | 全部 | 書ける (1777) | 指定しない | ○ | ○ | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
 | 1–76 | 全部 | 全部 | 全部 | 全部 | 書ける (1777) | 指定しない | × | ○ | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–72 | 全部 | 全部 | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | ○ | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
-| 1–72 | 全部 | 全部 | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | × | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–72 | 全部 | 全部 | 全部 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | ○ | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
+| 1–72 | 全部 | 全部 | 全部 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | × | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–73 | 全部 | ○ | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | 全部 | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
 | 1–73 | 全部 | ○ | /run/user/<uid> (14、0700) | 全部 | 全部 | 指定しない | 全部 | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
-| 1–73 | 全部 | ○ | 無い・書けない | /var/tmp (8、1777)<br>深い所 (113、0700 の下) | 全部 | 指定しない | 全部 | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
-| 1–73 | 全部 | ○ | 無い・書けない | 未設定・書けない | 書ける (1777) | 指定しない | 全部 | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
-| 1–73 | 全部 | ○ | 無い・書けない | 未設定・書けない | 書けない | 指定しない | 全部 | × | ○ | link-dir (B: sockdir) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
+| 1–73 | 全部 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777)<br>深い所 (113、0700 の下) | 全部 | 指定しない | 全部 | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
+| 1–73 | 全部 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書ける (1777) | 指定しない | 全部 | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
+| 1–73 | 全部 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | ○ | link-dir (B: sockdir) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
 | 1–72 | 全部 | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
 | 1–72 | 全部 | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–76 | 全部 | × | 全部 | 全部 | 書ける (1777) | 指定しない | ○ | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
 | 1–76 | 全部 | × | 全部 | 全部 | 書ける (1777) | 指定しない | × | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–71 | 全部 | × | /run/user/<uid> (14、0700) | 全部 | 書けない | 指定しない | 全部 | × | ○ | link-dir (B: runtime) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–72 | 全部 | × | 無い・書けない | /var/tmp (8、1777) | 書けない | 指定しない | ○ | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
-| 1–72 | 全部 | × | 無い・書けない | /var/tmp (8、1777) | 書けない | 指定しない | × | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–96 | ○ | 全部 | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | 全部 | ○ | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 1–71 | 全部 | × | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | ○ | link-dir (B: runtime) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–71 | 全部 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
+| 1–71 | 全部 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–72 | 全部 | × | 無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
+| 1–72 | 全部 | × | 無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–96 | ○ | 全部 | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
 | 1–96 | ○ | × | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | 全部 | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 1–96 | ○ | × | 無い・書けない | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | 全部 | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 1–96 | × | ○ | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 1–96 | ○ | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 1–76 | × | ○ | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
 | 1–96 | × | × | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 107)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 1–96 | × | × | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 1–96 | × | × | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 1–96 | × | × | 無い・書けない | 未設定・書けない | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 72–96 | ○ | × | /run/user/<uid> (14、0700) | 全部 | 書けない | 指定しない | 全部 | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 72–96 | × | × | /run/user/<uid> (14、0700) | 全部 | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 71<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 73–96 | ○ | 全部 | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 1–76 | × | × | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 1–71 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 1–71 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 1–76 | × | × | 無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 1–76 | × | × | 無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 72–96 | ○ | × | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 72–96 | ○ | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 72–76 | × | × | /run/user/<uid> (14、0700)<br>/run/user/<uid> に書けない (14。作る前の見積もりには使う) | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 71<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 73–96 | ○ | 全部 | 全部 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
 | 73–96 | ○ | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | 全部 | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 73–96 | ○ | × | 無い・書けない | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 73–96 | × | ○ | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 73–96 | ○ | × | 無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 73–76 | × | ○ | 全部 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
 | 73–96 | × | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 73–96 | × | × | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 73–96 | × | × | 無い・書けない | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 73–76 | × | × | 全部 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 73–76 | × | × | 無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
 | 74–76 | 全部 | ○ | 全部 | 全部 | 書ける (1777) | 指定しない | ○ | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
 | 74–76 | 全部 | ○ | 全部 | 全部 | 書ける (1777) | 指定しない | × | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 74–96 | ○ | ○ | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | 全部 | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 74–96 | ○ | ○ | 全部 | 全部 | 書けない | 指定しない | 全部 | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 74–96 | ○ | ○ | 全部 | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
 | 74–96 | × | ○ | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
 | 74–96 | × | ○ | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 107)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 74–96 | × | ○ | /run/user/<uid> (14、0700) | 全部 | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 71<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 74–96 | × | ○ | 無い・書けない | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 74–96 | × | ○ | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 74–96 | × | ○ | 無い・書けない | 未設定・書けない | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 74–76 | × | ○ | /run/user/<uid> (14、0700)<br>/run/user/<uid> に書けない (14。作る前の見積もりには使う) | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 71<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 74–76 | × | ○ | 無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 74–76 | × | ○ | 無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 74–76 | × | ○ | 無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
 | 77–96 | ○ | 全部 | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | 全部 | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 77–96 | × | ○ | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 77–96 | × | ○ | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 77–96 | × | × | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 77–96 | × | ○ | 全部 | 全部 | 全部 | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 77–96 | × | ○ | 全部 | 全部 | 全部 | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 77–96 | × | × | 全部 | 全部 | 全部 | 指定しない | 全部 | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 97–255 | ○ | ○ | 全部 | 全部 | 全部 | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
+| 97–255 | ○ | ○ | 全部 | 全部 | 全部 | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
 | 97–255 | ○ | ○ | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
 | 97–255 | ○ | ○ | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 107)<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | ○ | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | ○ | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | ○ | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | ○ | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | ○ | /run/user/<uid> (14、0700) | 全部 | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 71<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | ○ | 無い・書けない | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | ○ | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107)<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | ○ | 無い・書けない | 未設定・書けない | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
+| 97–255 | ○ | × | 全部 | 全部 | 全部 | 指定しない | 全部 | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
 | 97–255 | ○ | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
 | 97–255 | ○ | × | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 107)<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | × | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | × | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | × | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | × | /run/user/<uid> (14、0700) | 全部 | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 71<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | × | 無い・書けない | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | × | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107)<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
-| 97–255 | ○ | × | 無い・書けない | 未設定・書けない | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: ファイル名 > 96 | — | 見積もり |
+| 97–255 | × | ○ | 全部 | 全部 | 全部 | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
+| 97–255 | × | ○ | 全部 | 全部 | 全部 | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
 | 97–255 | × | ○ | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
 | 97–255 | × | ○ | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 107)<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | ○ | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | ○ | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | ○ | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | ○ | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | ○ | /run/user/<uid> (14、0700) | 全部 | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 71<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | ○ | 無い・書けない | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | ○ | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107)<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | ○ | 無い・書けない | 未設定・書けない | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
+| 97–255 | × | × | 全部 | 全部 | 全部 | 指定しない | 全部 | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
 | 97–255 | × | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
 | 97–255 | × | × | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 107)<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | × | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 76<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | × | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | × | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | × | /run/user/<uid> (14、0700) | 全部 | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 71<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | × | 無い・書けない | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | × | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107)<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 97–255 | × | × | 無い・書けない | 未設定・書けない | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
 
 #### bind_ex / macOS
 
@@ -455,25 +417,28 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
 | 1–68 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–64 | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–20 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 指定しない | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–20 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 指定しない | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | ○ | 全部 | 全部 | 深い所 (113、0700 の下) | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 1–92 | ○ | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 指定しない | ○ | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 1–92 | ○ | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | 全部 | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 1–92 | ○ | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 指定しない | ○ | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 1–92 | ○ | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
 | 1–92 | × | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 1–92 | × | 全部 | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 1–92 | × | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 1–92 | × | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 21–255 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 指定しない | × | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–64 | × | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 1–64 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 1–64 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 21–255 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 指定しない | × | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
 | 65–255 | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 65–92 | × | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 65–92 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 65–92 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
 | 69–255 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-file (B: given) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 93–255 | ○ | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103)<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | ○ | 全部 | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | ○ | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | ○ | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
+| 93–255 | ○ | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
+| 93–255 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
+| 93–255 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
 | 93–255 | × | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103)<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 93–255 | × | 全部 | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 93–255 | × | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 93–255 | × | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
+| 93–255 | × | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
+| 93–255 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
+| 93–255 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
 
 #### bind_ex / iOS 等の他の Apple の OS
 
@@ -484,49 +449,44 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 | 全部 | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
 | 1–68 | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–64 | 全部 | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–20 | 全部 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 指定しない | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–20 | 全部 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 指定しない | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | ○ | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 1–92 | ○ | 全部 | 全部 | 書けない | 指定しない | ○ | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 1–92 | ○ | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 1–92 | ○ | 全部 | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | ○ | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 1–92 | ○ | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
 | 1–92 | × | ○ | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 1–92 | × | ○ | 全部 | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 1–92 | × | ○ | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 1–92 | × | ○ | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 1–64 | × | ○ | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 1–64 | × | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 1–64 | × | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
 | 1–92 | × | × | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 1–92 | × | × | 全部 | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 1–92 | × | × | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 1–92 | × | × | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 21–255 | 全部 | ○ | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 指定しない | × | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
-| 21–92 | ○ | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 指定しない | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 21–92 | × | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 20<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 1–64 | × | × | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 1–64 | × | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 1–64 | × | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 21–255 | 全部 | ○ | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 指定しない | × | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
+| 21–92 | ○ | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 指定しない | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 21–64 | × | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 20<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
 | 65–255 | 全部 | ○ | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 65–92 | ○ | × | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 65–92 | × | × | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 65–92 | × | ○ | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 65–92 | × | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 65–92 | × | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 65–92 | × | × | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
 | 69–255 | 全部 | ○ | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-file (B: given) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 69–92 | ○ | × | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | thread-cwd | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
 | 69–92 | × | × | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
 | 93–255 | ○ | ○ | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103)<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | ○ | ○ | 全部 | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | ○ | ○ | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | ○ | ○ | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
+| 93–255 | ○ | ○ | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
+| 93–255 | ○ | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
+| 93–255 | ○ | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
+| 93–255 | ○ | × | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
 | 93–255 | ○ | × | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
 | 93–255 | ○ | × | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | ○ | × | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | ○ | × | 全部 | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | ○ | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 20<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | ○ | × | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
-| 93–255 | ○ | × | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: ファイル名 > 92 | — | 見積もり |
 | 93–255 | × | ○ | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103)<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 93–255 | × | ○ | 全部 | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 93–255 | × | ○ | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 93–255 | × | ○ | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
+| 93–255 | × | ○ | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
+| 93–255 | × | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103)<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
+| 93–255 | × | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
+| 93–255 | × | × | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
 | 93–255 | × | × | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
 | 93–255 | × | × | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 93–255 | × | × | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 93–255 | × | × | 全部 | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 93–255 | × | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 20<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 93–255 | × | × | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
-| 93–255 | × | × | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿らない<br>thread-cwd: スレッドの cwd を使えない | — | 見積もり |
 
 #### bind_ex / FreeBSD
 
@@ -538,18 +498,14 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 | 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–68 | 全部 | 全部 | 深い所 (113、0700 の下) | × | ○ | at | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
 | 1–72 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–68 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–68 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | 全部 | ○ | at | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 1–68 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–68 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | at | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
 | 69–92 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | × | ○ | at | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
-| 69–72 | 全部 | 書けない | 指定しない | 全部 | ○ | at | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 69–72 | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | at | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
 | 73–92 | 全部 | 全部 | 指定しない | 全部 | ○ | at | Dangling | 辿れない (片付け済み) | — | — | 見積もり |
+| 93–255 | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>at: ファイル名 > 92 | — | 見積もり |
 | 93–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>at: ファイル名 > 92 | — | 見積もり |
 | 93–255 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>at: ファイル名 > 92 | — | 見積もり |
-| 93–255 | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>at: ファイル名 > 92 | — | 見積もり |
-| 93–255 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>at: ファイル名 > 92 | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>at: ファイル名 > 92 | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>at: ファイル名 > 92 | — | 見積もり |
-| 93–255 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>at: ファイル名 > 92 | — | 見積もり |
 
 #### bind_ex / NetBSD
 
@@ -561,17 +517,20 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 | 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–72 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–68 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–92 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–68 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–72 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 69–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-file (B: given) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 69–255 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 69–255 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 73–255 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 73–92 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–92 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–92 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 93–255 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
-| 93–255 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 93–255 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | — | 見積もり |
+| 93–255 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
+| 93–255 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
 
 #### bind_ex / OpenBSD
 
@@ -583,20 +542,16 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 | 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–72 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–68 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–92 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–68 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–72 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 69–92 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 69–92 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 73–92 | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 69–72 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–92 | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 93–255 | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
 | 93–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | — | 見積もり |
 | 93–255 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103) | — | 見積もり |
-| 93–255 | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
-| 93–255 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103) | — | 見積もり |
-| 93–255 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
 
 #### bind_ex / illumos
 
@@ -608,20 +563,16 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 | 1–72 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–96 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 107) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–76 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–72 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–96 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–96 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–96 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–76 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–76 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–76 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 73–96 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 73–96 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 77–96 | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 76 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–76 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 77–96 | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 76 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 97–255 | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 76 | — | 見積もり |
 | 97–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
 | 97–255 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 107) | — | 見積もり |
-| 97–255 | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 76 | — | 見積もり |
-| 97–255 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
-| 97–255 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | — | 見積もり |
-| 97–255 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107) | — | 見積もり |
-| 97–255 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
 
 #### bind_ex / その他の Unix
 
@@ -632,32 +583,31 @@ resolve の綴り (link-dir・link-file) を先に試し、収まらなければ
 | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
 | 1–68 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–72 | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–68 | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–68 | 全部 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | ○ | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | ○ | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | ○ | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | ○ | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | ○ | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–92 | × | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | × | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | × | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | × | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | × | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 69–255 | ○ | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-file (B: given) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 69–255 | ○ | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 69–255 | ○ | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 69–92 | × | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 69–92 | × | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 69–72 | × | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 73–255 | ○ | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 73–92 | × | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–92 | ○ | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–92 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–92 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–92 | × | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): bind が symlink を辿らない | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 93–255 | ○ | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
-| 93–255 | ○ | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | — | 見積もり |
-| 93–255 | ○ | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
-| 93–255 | ○ | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 93–255 | ○ | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | — | 見積もり |
+| 93–255 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
+| 93–255 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 93–255 | × | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): bind が symlink を辿らない | — | 見積もり |
 | 93–255 | × | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿らない | — | 見積もり |
 | 93–255 | × | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): bind が symlink を辿らない | — | 見積もり |
-| 93–255 | × | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): bind が symlink を辿らない | — | 見積もり |
-| 93–255 | × | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿らない | — | 見積もり |
-| 93–255 | × | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): bind が symlink を辿らない | — | 見積もり |
-| 93–255 | × | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿らない | — | 見積もり |
-| 93–255 | × | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿らない | — | 見積もり |
 
 ### resolve_for_bind
 
@@ -672,60 +622,52 @@ bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持�
 | 全部 | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | 全部 | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
 | 1–76 | 全部 | 全部 | 全部 | 書ける (1777) | 指定しない | ○ | ○ | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
 | 1–76 | 全部 | 全部 | 全部 | 書ける (1777) | 指定しない | × | ○ | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–72 | 全部 | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | ○ | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
-| 1–72 | 全部 | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | × | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–72 | 全部 | 全部 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | ○ | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
+| 1–72 | 全部 | 全部 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | × | ○ | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–73 | ○ | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | 全部 | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
-| 1–96 | ○ | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 1–76 | ○ | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
 | 1–73 | ○ | /run/user/<uid> (14、0700) | 全部 | 全部 | 指定しない | 全部 | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
-| 1–73 | ○ | 無い・書けない | /var/tmp (8、1777)<br>深い所 (113、0700 の下) | 全部 | 指定しない | 全部 | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
-| 1–73 | ○ | 無い・書けない | 未設定・書けない | 書ける (1777) | 指定しない | 全部 | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
-| 1–73 | ○ | 無い・書けない | 未設定・書けない | 書けない | 指定しない | 全部 | × | ○ | link-dir (B: sockdir) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
+| 1–73 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777)<br>深い所 (113、0700 の下) | 全部 | 指定しない | 全部 | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
+| 1–73 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書ける (1777) | 指定しない | 全部 | × | ○ | link-dir (B: proc) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
+| 1–73 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | ○ | link-dir (B: sockdir) | Linked<br>removable: true<br>until: Process<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (プロセスが終わるまで) | — | — | 見積もり |
 | 1–72 | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
 | 1–72 | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–96 | × | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 107) | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
 | 1–76 | × | 全部 | 全部 | 書ける (1777) | 指定しない | ○ | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
 | 1–76 | × | 全部 | 全部 | 書ける (1777) | 指定しない | × | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–96 | × | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 1–71 | × | /run/user/<uid> (14、0700) | 全部 | 書けない | 指定しない | 全部 | × | ○ | link-dir (B: runtime) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–72 | × | 無い・書けない | /var/tmp (8、1777) | 書けない | 指定しない | ○ | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
-| 1–72 | × | 無い・書けない | /var/tmp (8、1777) | 書けない | 指定しない | × | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–96 | × | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107) | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 1–96 | × | 無い・書けない | 未設定・書けない | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 72–96 | × | /run/user/<uid> (14、0700) | 全部 | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 71 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 73–96 | ○ | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 1–76 | × | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 1–71 | × | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | ○ | link-dir (B: runtime) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–71 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
+| 1–71 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–71 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107) | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 1–71 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 1–72 | × | 無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
+| 1–72 | × | 無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–76 | × | 無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107) | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 1–76 | × | 無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 72–76 | × | /run/user/<uid> (14、0700)<br>/run/user/<uid> に書けない (14。作る前の見積もりには使う) | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 71 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 73–76 | ○ | 全部 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
 | 73–96 | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 73–96 | × | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 73–96 | × | 無い・書けない | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 73–76 | × | 全部 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 73–76 | × | 無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
 | 74–96 | ○ | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
 | 74–96 | ○ | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 107) | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
 | 74–76 | ○ | 全部 | 全部 | 書ける (1777) | 指定しない | ○ | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れない (PrivateTmp) | — | — | 見積もり |
 | 74–76 | ○ | 全部 | 全部 | 書ける (1777) | 指定しない | × | × | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 74–96 | ○ | /run/user/<uid> (14、0700) | 全部 | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 71 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 74–96 | ○ | 無い・書けない | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 74–96 | ○ | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107) | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 74–96 | ○ | 無い・書けない | 未設定・書けない | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 77–96 | ○ | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): ファイル名 > 76 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 77–96 | ○ | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 76 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
-| 77–96 | × | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 76 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 74–76 | ○ | /run/user/<uid> (14、0700)<br>/run/user/<uid> に書けない (14。作る前の見積もりには使う) | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 71 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 74–76 | ○ | 無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 74–76 | ○ | 無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107) | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 74–76 | ○ | 無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 77–96 | ○ | 全部 | 全部 | 全部 | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): ファイル名 > 76 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 77–96 | ○ | 全部 | 全部 | 全部 | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 76 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 77–96 | × | 全部 | 全部 | 全部 | 指定しない | 全部 | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 76 | [届く](../fork-cwd-ja.md#bind-linux-without-thread-cwd) | 見積もり |
+| 97–255 | ○ | 全部 | 全部 | 全部 | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): ファイル名 > 76 | — | 見積もり |
+| 97–255 | ○ | 全部 | 全部 | 全部 | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 76 | — | 見積もり |
 | 97–255 | ○ | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
 | 97–255 | ○ | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 107) | — | 見積もり |
-| 97–255 | ○ | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): ファイル名 > 76 | — | 見積もり |
-| 97–255 | ○ | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 76 | — | 見積もり |
-| 97–255 | ○ | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
-| 97–255 | ○ | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): usable_cross_uid の指定で使わない<br>link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | — | 見積もり |
-| 97–255 | ○ | /run/user/<uid> (14、0700) | 全部 | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 71 | — | 見積もり |
-| 97–255 | ○ | 無い・書けない | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
-| 97–255 | ○ | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107) | — | 見積もり |
-| 97–255 | ○ | 無い・書けない | 未設定・書けない | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): ファイル名 > 73<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 97–255 | × | 全部 | 全部 | 全部 | 指定しない | 全部 | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 76 | — | 見積もり |
 | 97–255 | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
 | 97–255 | × | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 107) | — | 見積もり |
-| 97–255 | × | 全部 | 全部 | 書ける (1777) | 指定しない | 全部 | 全部 | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 76 | — | 見積もり |
-| 97–255 | × | 全部 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
-| 97–255 | × | 全部 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | 全部 | ○ | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | — | 見積もり |
-| 97–255 | × | /run/user/<uid> (14、0700) | 全部 | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 71 | — | 見積もり |
-| 97–255 | × | 無い・書けない | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
-| 97–255 | × | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107) | — | 見積もり |
-| 97–255 | × | 無い・書けない | 未設定・書けない | 書けない | 指定しない | 全部 | × | × | — | — | — | link-dir (procB): /proc を使えない<br>link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
 
 #### resolve_for_bind / macOS
 
@@ -737,17 +679,20 @@ bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持�
 | 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
 | 1–64 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–92 | 全部 | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 1–20 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 指定しない | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–92 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 1–92 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 21–255 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 指定しない | × | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–64 | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 1–20 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 指定しない | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–64 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 1–64 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 21–255 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 指定しない | × | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
 | 65–255 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 65–92 | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 65–92 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 65–92 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
 | 69–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-file (B: given) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 93–255 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
-| 93–255 | 全部 | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
-| 93–255 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 93–255 | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | — | 見積もり |
+| 93–255 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
+| 93–255 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
 
 #### resolve_for_bind / iOS 等の他の Apple の OS
 
@@ -757,22 +702,18 @@ bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持�
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
 | 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–92 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 1–92 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103) | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
 | 1–64 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–92 | 全部 | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 1–20 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 指定しない | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–92 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 1–92 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 21–92 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 20<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 65–92 | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 69–92 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
-| 93–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | — | 見積もり |
-| 93–255 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | — | 見積もり |
-| 93–255 | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 64<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | — | 見積もり |
-| 93–255 | 全部 | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | — | 見積もり |
-| 93–255 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 20<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | — | 見積もり |
-| 93–255 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | — | 見積もり |
+| 1–64 | 全部 | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 1–20 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 指定しない | × | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: true | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–64 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103) | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 1–64 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 21–64 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 20 | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 65–92 | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 64 | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 69–92 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | [届く](../fork-cwd-ja.md#bind-apple-without-thread-cwd) | 見積もり |
+| 93–255 | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 64 | — | 見積もり |
+| 93–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | — | 見積もり |
+| 93–255 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103) | — | 見積もり |
 
 #### resolve_for_bind / FreeBSD
 
@@ -784,20 +725,16 @@ bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持�
 | 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–72 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–68 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–92 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–68 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–72 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 69–92 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 69–92 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 73–92 | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 69–72 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–92 | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 93–255 | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
 | 93–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | — | 見積もり |
 | 93–255 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103) | — | 見積もり |
-| 93–255 | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
-| 93–255 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103) | — | 見積もり |
-| 93–255 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
 
 #### resolve_for_bind / NetBSD
 
@@ -809,17 +746,20 @@ bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持�
 | 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–72 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–68 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–92 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–68 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–72 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 69–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-file (B: given) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 69–255 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 69–255 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | link-file (B: tmpdir) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 73–255 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-file (B: tmp) | Linked<br>removable: false<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 73–92 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–92 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–92 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 93–255 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
-| 93–255 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 93–255 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): 別の uid が辿れる B を作れる置き場が無い | — | 見積もり |
+| 93–255 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
+| 93–255 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
 
 #### resolve_for_bind / OpenBSD
 
@@ -831,20 +771,16 @@ bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持�
 | 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–92 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–72 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–68 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–92 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–68 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–72 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 69–92 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 69–92 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 73–92 | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 69–72 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–92 | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 93–255 | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
 | 93–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | — | 見積もり |
 | 93–255 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103) | — | 見積もり |
-| 93–255 | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
-| 93–255 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103) | — | 見積もり |
-| 93–255 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
 
 #### resolve_for_bind / illumos
 
@@ -856,20 +792,16 @@ bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持�
 | 1–72 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
 | 1–96 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 107) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–76 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–72 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–96 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–96 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–96 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–76 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–76 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–76 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 73–96 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 73–96 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 77–96 | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 76 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–76 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 77–96 | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 76 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 97–255 | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 76 | — | 見積もり |
 | 97–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
 | 97–255 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 107) | — | 見積もり |
-| 97–255 | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 76 | — | 見積もり |
-| 97–255 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
-| 97–255 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | — | 見積もり |
-| 97–255 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 107) | — | 見積もり |
-| 97–255 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
 
 #### resolve_for_bind / その他の Unix
 
@@ -879,22 +811,18 @@ bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持�
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | × | — | — | — | EPERM (usable_cross_uid と Options.base で、base までの途中か base 自身が other に x を持たない) | — | 見積もり |
 | 1–68 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | ○ | link-dir (B: given) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: false<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–92 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–92 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
 | 1–72 | 全部 | 書ける (1777) | 指定しない | 全部 | ○ | link-dir (B: tmp) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–68 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
-| 1–92 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 1–92 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 69–92 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 69–92 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 73–92 | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
-| 93–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | — | 見積もり |
-| 93–255 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103)<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | — | 見積もり |
-| 93–255 | 全部 | 書ける (1777) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | — | 見積もり |
-| 93–255 | /var/tmp (8、1777) | 書けない | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 68<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | — | 見積もり |
-| 93–255 | 深い所 (113、0700 の下) | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103)<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | — | 見積もり |
-| 93–255 | 未設定・書けない | 書けない | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い<br>link-file (B の実パス): bind が symlink を辿るか未確認の OS (resolve では見分けられない) | — | 見積もり |
+| 1–68 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | ○ | link-dir (B: tmpdir) | Linked<br>removable: true<br>until: Cleanup<br>usable_cross_uid: true<br>usable_with_private_tmp: false | 辿れる (cleanup まで) | — | — | 見積もり |
+| 1–72 | 深い所 (113、0700 の下)<br>未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | ○ | × | — | — | — | link-dir (B の実パス): 別の uid が辿れる B を作れる置き場が無い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 140 > 103) | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 1–72 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 指定しない | × | × | — | — | — | link-dir (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 69–92 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 69–72 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 73–92 | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | [届く](../fork-cwd-ja.md#bind-without-thread-cwd-means) | 見積もり |
+| 93–255 | 全部 | 全部 | 指定しない | 全部 | × | — | — | — | link-dir (B の実パス): ファイル名 > 72 | — | 見積もり |
+| 93–255 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | × | × | — | — | — | link-dir (B の実パス): ファイル名 > 68 | — | 見積もり |
+| 93–255 | 全部 | 全部 | 深い所 (113、0700 の下) | × | × | — | — | — | link-dir (B の実パス): B の綴りが長い (ファイル名の他で 128 > 103) | — | 見積もり |
 
 ### 既定の connect
 
@@ -907,39 +835,39 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 | ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | スレッドの cwd を使える | /proc を使える | $XDG_RUNTIME_DIR | $TMPDIR | /tmp | ソケットのディレクトリに書ける | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 全部 | 108 以上 | × | × | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 108 以上 | × | × | /run/user/<uid> (14、0700) | 全部 | 書けない | 全部 | ○ | link-file (B: runtime) | — | — | 見積もり |
-| 全部 | 108 以上 | × | × | 無い・書けない | /var/tmp (8、1777) | 書けない | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 全部 | 108 以上 | × | × | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: runtime) | — | — | 見積もり |
+| 全部 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
 | 1–90 | 全部 | 全部 | ○ | 全部 | 全部 | 全部 | 全部 | ○ | proc-direct | — | — | 実測: linux-long-connect |
 | 1–107 | 1–107 | 全部 | × | 全部 | 全部 | 全部 | 全部 | ○ | relative | — | — | 実測: no-proc-connect-near-cwd |
 | 1–107 | 108 以上 | ○ | × | 全部 | 全部 | 全部 | 全部 | ○ | thread-cwd-direct | — | — | 見積もり |
-| 1–107 | 108 以上 | × | × | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | proc-direct: /proc を使えない<br>relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 1–107 | 108 以上 | × | × | 無い・書けない | 未設定・書けない | 書けない | 書ける | × | — | proc-direct: /proc を使えない<br>relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 1–107 | 108 以上 | × | × | 無い・書けない | 未設定・書けない | 書けない | 書けない | × | — | proc-direct: /proc を使えない<br>relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–107 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–107 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–107 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
 | 91–107 | 全部 | ○ | ○ | 全部 | 全部 | 全部 | 全部 | ○ | thread-cwd-direct | — | — | 見積もり |
-| 91–107 | 全部 | × | ○ | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 91–107 | 全部 | × | ○ | 無い・書けない | 未設定・書けない | 書けない | 書ける | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 91–107 | 全部 | × | ○ | 無い・書けない | 未設定・書けない | 書けない | 書けない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 91–107 | 全部 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 91–107 | 全部 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 91–107 | 全部 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
 | 91–107 | 1–107 | × | ○ | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 91–107 | 1–107 | × | ○ | /run/user/<uid> (14、0700) | 全部 | 書けない | 全部 | ○ | link-file (B: runtime) | — | — | 見積もり |
-| 91–107 | 1–107 | × | ○ | 無い・書けない | /var/tmp (8、1777) | 書けない | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 91–107 | 1–107 | × | ○ | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: runtime) | — | — | 見積もり |
+| 91–107 | 1–107 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
 | 91–255 | 108 以上 | × | ○ | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 91–255 | 108 以上 | × | ○ | /run/user/<uid> (14、0700) | 全部 | 書けない | 全部 | ○ | link-file (B: runtime) | — | — | 見積もり |
-| 91–255 | 108 以上 | × | ○ | 無い・書けない | /var/tmp (8、1777) | 書けない | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 91–255 | 108 以上 | × | ○ | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: runtime) | — | — | 見積もり |
+| 91–255 | 108 以上 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
 | 108–255 | 108 以上 | ○ | 全部 | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 108–255 | 108 以上 | ○ | 全部 | /run/user/<uid> (14、0700) | 全部 | 書けない | 全部 | ○ | link-file (B: runtime) | — | — | 見積もり |
-| 108–255 | 108 以上 | ○ | 全部 | 無い・書けない | /var/tmp (8、1777) | 書けない | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| 108–255 | 108 以上 | ○ | ○ | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
-| 108–255 | 108 以上 | ○ | ○ | 無い・書けない | 未設定・書けない | 書けない | 書ける | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 108–255 | 108 以上 | ○ | ○ | 無い・書けない | 未設定・書けない | 書けない | 書けない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| 108–255 | 108 以上 | ○ | × | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | proc-direct: /proc を使えない<br>relative: 相対パス > 107<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
-| 108–255 | 108 以上 | ○ | × | 無い・書けない | 未設定・書けない | 書けない | 書ける | × | — | proc-direct: /proc を使えない<br>relative: 相対パス > 107<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 108–255 | 108 以上 | ○ | × | 無い・書けない | 未設定・書けない | 書けない | 書けない | × | — | proc-direct: /proc を使えない<br>relative: 相対パス > 107<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| 108–255 | 108 以上 | × | ○ | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
-| 108–255 | 108 以上 | × | ○ | 無い・書けない | 未設定・書けない | 書けない | 書ける | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 108–255 | 108 以上 | × | ○ | 無い・書けない | 未設定・書けない | 書けない | 書けない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| 108–255 | 108 以上 | × | × | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | proc-direct: /proc を使えない<br>relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
-| 108–255 | 108 以上 | × | × | 無い・書けない | 未設定・書けない | 書けない | 書ける | × | — | proc-direct: /proc を使えない<br>relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 108–255 | 108 以上 | × | × | 無い・書けない | 未設定・書けない | 書けない | 書けない | × | — | proc-direct: /proc を使えない<br>relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| 108–255 | 108 以上 | ○ | 全部 | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: runtime) | — | — | 見積もり |
+| 108–255 | 108 以上 | ○ | 全部 | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 108–255 | 108 以上 | ○ | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
+| 108–255 | 108 以上 | ○ | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 108–255 | 108 以上 | ○ | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| 108–255 | 108 以上 | ○ | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 107<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
+| 108–255 | 108 以上 | ○ | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 107<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 108–255 | 108 以上 | ○ | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| 108–255 | 108 以上 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
+| 108–255 | 108 以上 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 108–255 | 108 以上 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| 108–255 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
+| 108–255 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 108–255 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### 既定の connect / macOS
 
@@ -948,39 +876,39 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 | 全部 | 1–103 | 1–103 | 全部 | 全部 | 全部 | 全部 | ○ | relative | — | — | 実測: long-connect |
 | 全部 | 1–103 | 254 以上 | ○ | 全部 | 全部 | 全部 | ○ | thread-cwd-direct | — | — | 見積もり |
 | 全部 | 1–103 | 254 以上 | × | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 1–103 | 254 以上 | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 全部 | 1–103 | 254 以上 | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
 | rs<br>py | 1–253 | 104–253 | 全部 | 全部 | 全部 | 全部 | ○ | widened | — | — | 実測: long-filename-connect |
-| rs<br>py | 1–253 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 1–253 | 254 以上 | × | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 1–253 | 254 以上 | × | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 1–253 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 1–253 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 1–253 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
 | go | 1–103 | 104–253 | ○ | 全部 | 全部 | 全部 | ○ | thread-cwd-direct | — | — | 見積もり |
 | go | 1–103 | 104–253 | × | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| go | 1–103 | 104–253 | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| go | 1–253 | 104 以上 | × | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go | 1–253 | 104 以上 | × | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go | 1–253 | 104 以上 | × | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 1–103 | 104–253 | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| go | 1–253 | 104 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 1–253 | 104 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 1–253 | 104 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
 | 全部 | 104–255 | 254 以上 | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 104–255 | 254 以上 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| rs<br>py | 104–253 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 104–253 | 254 以上 | ○ | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 104–253 | 254 以上 | ○ | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 全部 | 104–255 | 254 以上 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| rs<br>py | 104–253 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 104–253 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 104–253 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
 | go | 104–253 | 104–253 | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| go | 104–253 | 104–253 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| go | 104–253 | 104 以上 | ○ | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go | 104–253 | 104 以上 | ○ | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go | 104–253 | 104 以上 | ○ | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | × | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | × | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| go | 254–255 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| go | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| go | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| go | 254–255 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| go | 254–255 | 254 以上 | × | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| go | 254–255 | 254 以上 | × | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| go | 104–253 | 104–253 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| go | 104–253 | 104 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 104–253 | 104 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 104–253 | 104 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| go | 254–255 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| go | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| go | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| go | 254–255 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| go | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| go | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### 既定の connect / iOS 等の他の Apple の OS
 
@@ -989,39 +917,39 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 | 全部 | 1–103 | 1–103 | 全部 | 全部 | 全部 | 全部 | ○ | relative | — | — | 見積もり |
 | 全部 | 1–103 | 254 以上 | ○ | 全部 | 全部 | 全部 | ○ | thread-cwd-direct | — | — | 見積もり |
 | 全部 | 1–103 | 254 以上 | × | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 1–103 | 254 以上 | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 全部 | 1–103 | 254 以上 | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
 | rs<br>py | 1–253 | 104–253 | 全部 | 全部 | 全部 | 全部 | ○ | widened | — | — | 見積もり |
-| rs<br>py | 1–253 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 1–253 | 254 以上 | × | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 1–253 | 254 以上 | × | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 1–253 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 1–253 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 1–253 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
 | go | 1–103 | 104–253 | ○ | 全部 | 全部 | 全部 | ○ | thread-cwd-direct | — | — | 見積もり |
 | go | 1–103 | 104–253 | × | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| go | 1–103 | 104–253 | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| go | 1–253 | 104 以上 | × | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go | 1–253 | 104 以上 | × | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go | 1–253 | 104 以上 | × | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 1–103 | 104–253 | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| go | 1–253 | 104 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 1–253 | 104 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 1–253 | 104 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
 | 全部 | 104–255 | 254 以上 | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 104–255 | 254 以上 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| rs<br>py | 104–253 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 104–253 | 254 以上 | ○ | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 104–253 | 254 以上 | ○ | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 全部 | 104–255 | 254 以上 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| rs<br>py | 104–253 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 104–253 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 104–253 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
 | go | 104–253 | 104–253 | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| go | 104–253 | 104–253 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| go | 104–253 | 104 以上 | ○ | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go | 104–253 | 104 以上 | ○ | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go | 104–253 | 104 以上 | ○ | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | × | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | × | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| go | 254–255 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| go | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| go | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| go | 254–255 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| go | 254–255 | 254 以上 | × | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| go | 254–255 | 254 以上 | × | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| go | 104–253 | 104–253 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| go | 104–253 | 104 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 104–253 | 104 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 104–253 | 104 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| go | 254–255 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| go | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| go | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| go | 254–255 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| go | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| go | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### 既定の connect / FreeBSD
 
@@ -1031,10 +959,10 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 |---|---|---|---|---|---|---|---|---|
 | 1–103 | 全部 | 全部 | 全部 | ○ | at-direct | — | — | 見積もり |
 | 104–255 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり<br>FreeBSD の connect で link-file を使えるかは未確認 (SPEC の「未確定」) |
-| 104–255 | /var/tmp (8、1777) | 書けない | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり<br>FreeBSD の connect で link-file を使えるかは未確認 (SPEC の「未確定」) |
-| 104–255 | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | at-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| 104–255 | 未設定・書けない | 書けない | 書ける | × | — | at-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 104–255 | 未設定・書けない | 書けない | 書けない | × | — | at-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| 104–255 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり<br>FreeBSD の connect で link-file を使えるかは未確認 (SPEC の「未確定」) |
+| 104–255 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | at-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| 104–255 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | at-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 104–255 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | at-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### 既定の connect / NetBSD
 
@@ -1043,14 +971,14 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 | ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | $TMPDIR | /tmp | ソケットのディレクトリに書ける | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|
 | 全部 | 104 以上 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 104 以上 | /var/tmp (8、1777) | 書けない | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 全部 | 104 以上 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
 | 1–103 | 1–103 | 全部 | 全部 | 全部 | ○ | relative | — | — | 見積もり |
-| 1–103 | 104 以上 | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 1–103 | 104 以上 | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 1–103 | 104 以上 | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 104–255 | 104 以上 | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| 104–255 | 104 以上 | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 104–255 | 104 以上 | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| 1–103 | 104 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–103 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–103 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 104–255 | 104 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| 104–255 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 104–255 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### 既定の connect / OpenBSD
 
@@ -1059,14 +987,14 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 | ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | $TMPDIR | /tmp | ソケットのディレクトリに書ける | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|
 | 全部 | 104 以上 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 104 以上 | /var/tmp (8、1777) | 書けない | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 全部 | 104 以上 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
 | 1–103 | 1–103 | 全部 | 全部 | 全部 | ○ | relative | — | — | 見積もり |
-| 1–103 | 104 以上 | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 1–103 | 104 以上 | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 1–103 | 104 以上 | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 104–255 | 104 以上 | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| 104–255 | 104 以上 | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 104–255 | 104 以上 | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| 1–103 | 104 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–103 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–103 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 104–255 | 104 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| 104–255 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 104–255 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### 既定の connect / illumos
 
@@ -1075,14 +1003,14 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 | ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | $TMPDIR | /tmp | ソケットのディレクトリに書ける | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|
 | 全部 | 108 以上 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 108 以上 | /var/tmp (8、1777) | 書けない | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 全部 | 108 以上 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
 | 1–107 | 1–107 | 全部 | 全部 | 全部 | ○ | relative | — | — | 見積もり |
-| 1–107 | 108 以上 | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 1–107 | 108 以上 | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 1–107 | 108 以上 | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 108–255 | 108 以上 | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
-| 108–255 | 108 以上 | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 108–255 | 108 以上 | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| 1–107 | 108 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–107 | 108 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–107 | 108 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 108–255 | 108 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
+| 108–255 | 108 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 108–255 | 108 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### 既定の connect / その他の Unix
 
@@ -1091,14 +1019,14 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 | ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | $TMPDIR | /tmp | ソケットのディレクトリに書ける | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|
 | 全部 | 104 以上 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 104 以上 | /var/tmp (8、1777) | 書けない | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 全部 | 104 以上 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
 | 1–103 | 1–103 | 全部 | 全部 | 全部 | ○ | relative | — | — | 見積もり |
-| 1–103 | 104 以上 | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 1–103 | 104 以上 | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 1–103 | 104 以上 | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 104–255 | 104 以上 | 深い所 (113、0700 の下) | 書けない | 全部 | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| 104–255 | 104 以上 | 未設定・書けない | 書けない | 書ける | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 104–255 | 104 以上 | 未設定・書けない | 書けない | 書けない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| 1–103 | 104 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–103 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–103 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 104–255 | 104 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| 104–255 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 104–255 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 ### resolve_for_connect
 
@@ -1112,18 +1040,18 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 |---|---|---|---|---|---|---|---|---|---|---|
 | ○ | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下)<br>深い所 (113、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
 | ○ | 全部 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: proc) | — | — | 見積もり |
-| ○ | 全部 | /var/tmp (8、1777)<br>深い所 (113、0700 の下) | 書けない | 全部 | 指定しない | ○ | link-file (B: proc) | — | — | 見積もり |
-| ○ | /run/user/<uid> (14、0700) | 未設定・書けない | 書けない | 全部 | 指定しない | ○ | link-file (B: proc) | — | — | 見積もり |
-| ○ | 無い・書けない | 未設定・書けない | 書けない | 書ける | 指定しない | ○ | link-file (B: sockdir) | — | — | 見積もり |
-| ○ | 無い・書けない | 未設定・書けない | 書けない | 書けない | 指定しない | × | — | link-file (procB): B を作れる置き場が無い<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| ○ | 全部 | /var/tmp (8、1777)<br>深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: proc) | — | — | 見積もり |
+| ○ | /run/user/<uid> (14、0700) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: proc) | — | — | 見積もり |
+| ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | ○ | link-file (B: sockdir) | — | — | 見積もり |
+| ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | link-file (procB): B を作れる置き場が無い<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 | × | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
 | × | 全部 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | link-file (procB): /proc を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 127 > 107) | — | 見積もり |
 | × | 全部 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
-| × | /run/user/<uid> (14、0700) | 全部 | 書けない | 全部 | 指定しない | ○ | link-file (B: runtime) | — | — | 見積もり |
-| × | 無い・書けない | /var/tmp (8、1777) | 書けない | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| × | 無い・書けない | 深い所 (113、0700 の下) | 書けない | 全部 | 指定しない | × | — | link-file (procB): /proc を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 107) | — | 見積もり |
-| × | 無い・書けない | 未設定・書けない | 書けない | 書ける | 指定しない | × | — | link-file (procB): /proc を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| × | 無い・書けない | 未設定・書けない | 書けない | 書けない | 指定しない | × | — | link-file (procB): /proc を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| × | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: runtime) | — | — | 見積もり |
+| × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | link-file (procB): /proc を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 139 > 107) | — | 見積もり |
+| × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | link-file (procB): /proc を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | link-file (procB): /proc を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### resolve_for_connect / macOS
 
@@ -1134,10 +1062,10 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 既定 (/private/var/folders/…/T、56、0700) | 書けない | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| 深い所 (113、0700 の下) | 書けない | 全部 | 指定しない | × | — | link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
-| 未設定・書けない | 書けない | 書ける | 指定しない | × | — | link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 未設定・書けない | 書けない | 書けない | 指定しない | × | — | link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
+| 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### resolve_for_connect / iOS 等の他の Apple の OS
 
@@ -1148,10 +1076,10 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 既定 (/private/var/folders/…/T、56、0700) | 書けない | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| 深い所 (113、0700 の下) | 書けない | 全部 | 指定しない | × | — | link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
-| 未設定・書けない | 書けない | 書ける | 指定しない | × | — | link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 未設定・書けない | 書けない | 書けない | 指定しない | × | — | link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
+| 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### resolve_for_connect / FreeBSD
 
@@ -1162,10 +1090,10 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり<br>FreeBSD の connect で link-file を使えるかは未確認 (SPEC の「未確定」) |
 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり<br>FreeBSD の connect で link-file を使えるかは未確認 (SPEC の「未確定」) |
-| /var/tmp (8、1777) | 書けない | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり<br>FreeBSD の connect で link-file を使えるかは未確認 (SPEC の「未確定」) |
-| 深い所 (113、0700 の下) | 書けない | 全部 | 指定しない | × | — | link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
-| 未設定・書けない | 書けない | 書ける | 指定しない | × | — | link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 未設定・書けない | 書けない | 書けない | 指定しない | × | — | link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり<br>FreeBSD の connect で link-file を使えるかは未確認 (SPEC の「未確定」) |
+| 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
+| 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### resolve_for_connect / NetBSD
 
@@ -1176,10 +1104,10 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
-| /var/tmp (8、1777) | 書けない | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| 深い所 (113、0700 の下) | 書けない | 全部 | 指定しない | × | — | link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
-| 未設定・書けない | 書けない | 書ける | 指定しない | × | — | link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 未設定・書けない | 書けない | 書けない | 指定しない | × | — | link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
+| 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### resolve_for_connect / OpenBSD
 
@@ -1190,10 +1118,10 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
-| /var/tmp (8、1777) | 書けない | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| 深い所 (113、0700 の下) | 書けない | 全部 | 指定しない | × | — | link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
-| 未設定・書けない | 書けない | 書ける | 指定しない | × | — | link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 未設定・書けない | 書けない | 書けない | 指定しない | × | — | link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
+| 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### resolve_for_connect / illumos
 
@@ -1204,10 +1132,10 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | link-file (B の実パス): B の綴りが長い (綴り 127 > 107) | — | 見積もり |
 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
-| /var/tmp (8、1777) | 書けない | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| 深い所 (113、0700 の下) | 書けない | 全部 | 指定しない | × | — | link-file (B の実パス): B の綴りが長い (綴り 139 > 107) | — | 見積もり |
-| 未設定・書けない | 書けない | 書ける | 指定しない | × | — | link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 未設定・書けない | 書けない | 書けない | 指定しない | × | — | link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | link-file (B の実パス): B の綴りが長い (綴り 139 > 107) | — | 見積もり |
+| 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### resolve_for_connect / その他の Unix
 
@@ -1218,8 +1146,8 @@ connect・connect_nonblocking と、Options.base を指定しない connect_ex �
 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | link-file (B の実パス): B の綴りが長い (綴り 127 > 103) | — | 見積もり |
 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
-| /var/tmp (8、1777) | 書けない | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| 深い所 (113、0700 の下) | 書けない | 全部 | 指定しない | × | — | link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
-| 未設定・書けない | 書けない | 書ける | 指定しない | × | — | link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 未設定・書けない | 書けない | 書けない | 指定しない | × | — | link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | link-file (B の実パス): B の綴りが長い (綴り 139 > 103) | — | 見積もり |
+| 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 

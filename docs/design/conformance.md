@@ -115,7 +115,7 @@ CLI の出力に加えて、CLI が終わった後に:
 - `usable_cross_uid` と `base` は書いた時だけ CLI の入力に渡す (`base` は placeholder を置き換えて)。省略時は入力に入れない (CLI の既定)
 - `setup` はスクリプトが CLI を起こす前にすること。`"動詞 パス"` の文字列で、動詞は `mkdir` (途中も作る)・`touch`・`listen` (待ち受けのソケット)・`stale-socket` (bind してすぐ閉じた、誰も listen していないソケット)。シェルには渡さない
 - `expect` は全言語・全環境で変わらない値だけを書く
-- `expect` に書かなくても、全場面で次を期待する: `residue` が空、bind が通ったら元のパスにソケットがある、connect が通ったら `x` が届く、失敗と connect では `spelling` が `null`、connect では `base` が `null` で `left` が空 (D を作らず、B の直下の E は connect の後に消す)。経路を試す前の失敗 (ディレクトリが無い、途中がファイル、引数の誤り) は `route` が `null` で `skipped` が空
+- `expect` に書かなくても、全場面で次を期待する: `residue` が空、bind が通ったら元のパスにソケットがある、connect が通ったら `x` が届く、失敗と connect では `spelling` が `null`、connect では `base` が `null` で `left` が空 (D を作らず、B の直下の E は connect の後に消す)、失敗した bind では `left` に E が無い (実際に bind して失敗した経路は作った E を消してからエラーを返す。初めての bind でできた D は残ってよいので、`left` を空とは期待しない)。経路を試す前の失敗 (ディレクトリが無い、途中がファイル、引数の誤り) は `route` が `null` で `skipped` が空
 - 値が 1 つに決まらないが満たすべき決まりも全場面で確かめる: 通った bind の `spelling` が `Linked` なら `left` に E が 1 つ (CLI は `cleanup` を呼ばないので綴りの E が残る)、`Original`・`CwdRelative`・`Dangling` なら `left` に E が無い。`usable_cross_uid` を渡した bind の `spelling` が `Linked` なら、その `usable_cross_uid` が true (満たさない綴りに落とさない)
 - 環境で変わる値 (`route`・`base`・`spelling` 等) は言語どうしの比較だけで見る
 
