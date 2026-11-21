@@ -84,39 +84,31 @@ It would put hidden state in the process, the caller could not see when it is cl
 
 ### What does the default `bind` leave behind?
 
-For a long path, it leaves the process's D and an E pointing to the socket's directory or file in the base B (when bound through the thread cwd etc., E is removed at once and only D stays). The default `bind` returns no way to clean up, so E stays until the process exits and is removed with D by the OS's temporary-directory cleaning (10 days for Linux's `/tmp`, until reboot for macOS's `/tmp`). To clean up, use `remove()` / `cleanup()` of `_ex`, or resolve. The D of dead processes are removed by calling `sweep()` (`sweep_base(path)` for those in the B of `Options.base`).
+Only for a long path, a small directory and a symlink in `/tmp/sockat-<uid>`. They take almost no space and go with the OS's temporary-directory cleaning. To clean up right away, use `remove()` of `bind_ex`.
 
-### What is inside `/tmp/sockat-<uid>`? May I remove it?
+### May I remove what is in `/tmp/sockat-<uid>`?
 
-It is the base B. The directories with 10-character names are the D of each process, and the symlinks in them are E (pointing to a socket's directory or file). A symlink directly in B is an E the default connect makes only for a moment. Removing them by hand is not dangerous: removing a live process's D only makes its spelling (what `getsockname` returns, etc.) unreachable, and the socket at the original path keeps working. To remove only those of dead processes, call `sweep()`.
+Yes. Sockets of running processes keep working at their original paths. To remove only what is no longer used, call `sweep()`.
 
 ### Does sockat not clean up what is left automatically?
 
-It does not. B is not listed on each resolve, at the start of a process, or at exit (exit handler). For per-user sockets and temporary things in `/tmp` (ssh-agent, tmux, etc.), the usual practice is that the maker does not remove others' leftovers and leaves them to the OS's cleaning, and D and E take almost no space. Call `sweep()` when you want them cleaned ([DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md), alternatives AH and AI, Japanese).
+No. Like ssh-agent and tmux, it leaves that to the OS's cleaning. Call `sweep()` when you want it cleaned.
 
-### D piles up in `/tmp/sockat-<uid>` when tests are run over and over
+### Things pile up in `/tmp/sockat-<uid>` when tests are run over and over
 
-One D stays per test process that binds a long path, and one E per bind (measured: tens to hundreds of D and hundreds to thousands of E per test run, taking almost no space; [findings](../docs/findings/2026-11-21-consumer-measurements-0-5.md), Japanese). macOS's `/tmp` is not cleaned until reboot, so call `sweep()` once at the end of the test recipe or verification script. `sweep()` does not remove the D of other live processes, so it may be called while other tests run in parallel. To keep tests contained, pass a per-test B with `Options.base`.
+Call `sweep()` once at the end of the tests. It does not remove what is in use, even while other tests run in parallel.
 
-### Does `sweep()` leave alone what other processes are using?
+### What about a daemon that binds long paths many times?
 
-Yes. A live process keeps a flock (shared lock) on its D, and `sweep()` removes only a D on which it can take an exclusive lock (a D whose owner is dead). It does not touch an E directly in B (the default connect's) or a D containing something that is not a symlink.
-
-### What about a long-lived daemon that binds long paths many times?
-
-The default `bind` adds one E per bind, and it stays until the process exits (`sweep()` does not touch a live D either). If it binds again and again, like a daemon making a socket per session, clean up with `remove()` / `cleanup()` of `bind_ex`. Left alone, it uses one inode per bind (taking almost no space).
+Each bind adds a symlink that stays until the process exits. A daemon that makes a socket per session, for example, cleans up with `remove()` of `bind_ex`.
 
 ### Does the default `connect` leave anything?
 
-No. It makes no D, and even when it falls to the route that writes to the base (link-file), it removes the E it made directly in B right after the connect. In most environments it reaches through routes that do not write to the base (`/proc`, a relative path, a widened sockaddr, `connectat`, the thread cwd).
-
-### What is left across an exec?
-
-The fd holding D's flock is close-on-exec, so it closes at exec, and D and E can be removed by `sweep()` or the OS's cleaning as if their owner were dead. The inherited listener keeps working; only the spelling becomes unreachable. A procB spelling becomes unreachable at the exec. There is no cleanup mechanism that spans an exec.
+No.
 
 ### When do I call `remove()`?
 
-Before closing the listener. `remove()` removes the file only when the current path still has the bound file's `(st_dev, st_ino)` (it does not close the listener). While the listener is open the kernel holds the file and its number is not reused, but something removed and recreated after it is closed can get the same number on ext4 or BSD UFS / FFS and cannot be told apart ([findings](../docs/findings/2026-11-19-inode-reuse-after-close.md), Japanese).
+Before closing the listener. After it is closed, a different file recreated at the same path may not be told apart and may be removed ([details](../docs/findings/2026-11-19-inode-reuse-after-close.md), Japanese). `remove()` does not close the listener.
 
 ### Is it dangerous that others can recreate a spelling after the base is cleaned up?
 

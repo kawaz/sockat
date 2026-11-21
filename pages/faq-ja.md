@@ -84,39 +84,31 @@ connect は自分で綴りを解決するので、相手の uid は届くかに�
 
 ### 既定の `bind` は何を残す?
 
-長いパスでは、置き場 B の中にプロセスの D と、ソケットのディレクトリかファイルを指す E を残す (スレッドの cwd 等で bind した時は E をすぐ消し、D だけ)。既定の `bind` は片付けの口を返さないので、E はプロセスが終わるまで残り、D と一緒に OS の一時ディレクトリの掃除で消える (Linux の `/tmp` は 10 日、macOS の `/tmp` は再起動まで)。片付けたい時は `_ex` の `remove()` / `cleanup()` か resolve を使う。死んだプロセスの D は `sweep()` を呼べば消える (`Options.base` の B の中は `sweep_base(path)`)。
+パスが長い時だけ、`/tmp/sockat-<uid>` の中に小さなディレクトリと symlink を残す。容量はほぼ 0 で、OS の一時ディレクトリの掃除で消える。すぐ片付けたい時は `bind_ex` の `remove()` を使う。
 
-### `/tmp/sockat-<uid>` の中身は何? 消してよい?
+### `/tmp/sockat-<uid>` の中身は消してよい?
 
-置き場 B。中の 10 文字の名前のディレクトリが各プロセスの D、その中の symlink が E (ソケットのディレクトリかファイルを指す)。B の直下の symlink は既定の connect が一瞬だけ作る E。手で消しても危険はない: 生きているプロセスの D を消すと、その綴り (`getsockname` が返す物等) が辿れなくなるだけで、元のパスのソケットは働き続ける。死んだプロセスの物だけを消したい時は `sweep()` を呼ぶ。
+よい。使用中のプロセスのソケットも、元のパスでは働き続ける。使われていない物だけを消したい時は `sweep()` を呼ぶ。
 
 ### sockat は残った物を自動で片付けない?
 
-片付けない。resolve のたびにも、プロセスの初めにも、終了時 (exit ハンドラ) にも B の中を一覧しない。`/tmp` に置く利用者ごとの socket や一時物 (ssh-agent、tmux 等) は作った側が他人の残骸を消さず OS の掃除に任せるのが通例で、D と E は容量がほぼ 0 のため。片付けたい時に `sweep()` を呼ぶ ([DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md) の案 AH・AI)。
+片付けない。ssh-agent や tmux と同じく OS の掃除に任せる。片付けたい時に `sweep()` を呼ぶ。
 
-### 試験を繰り返すと `/tmp/sockat-<uid>` に D が溜まる
+### 試験を繰り返すと `/tmp/sockat-<uid>` に溜まる
 
-長いパスで bind する試験のプロセスごとに D が 1 つ、bind ごとに E が 1 つ残る (実測では試験 1 回で D が数十〜数百、E が数百〜数千。容量はほぼ 0。[findings](../docs/findings/2026-11-21-consumer-measurements-0-5.md))。macOS の `/tmp` は再起動まで消えないので、試験のレシピや検証スクリプトの最後で `sweep()` を 1 回呼ぶ。`sweep()` は生きている他のプロセスの D を消さないので、別の試験が並行して走っていても呼んでよい。試験を閉じ込めたい時は `Options.base` で試験ごとの B を渡す。
+試験の最後で `sweep()` を 1 回呼ぶ。他の試験が並行して走っていても、使用中の物は消さない。
 
-### `sweep()` は他のプロセスが使っている物を消さない?
+### 長いパスに何度も bind する daemon は?
 
-消さない。生きているプロセスは自分の D に flock (共有ロック) を掛け続けていて、`sweep()` は排他ロックを取れた D (持ち主が死んだ D) だけを消す。B の直下の E (既定の connect の物) と、symlink でない物が入った D には触らない。
-
-### 長いパスに何度も bind する長命の daemon は?
-
-既定の `bind` の E は bind ごとに 1 つ増え、プロセスが終わるまで消えない (`sweep()` も生きている D には触らない)。セッションごとにソケットを作る daemon のように bind を繰り返すなら、`bind_ex` の `remove()` / `cleanup()` で片付ける。放っておくと bind の数だけ inode を使う (容量はほぼ 0)。
+bind ごとに symlink が 1 つ増え、プロセスが終わるまで残る。セッションごとにソケットを作るような daemon は、`bind_ex` の `remove()` で片付ける。
 
 ### 既定の `connect` は何か残す?
 
-残さない。D を作らず、置き場に書く経路 (link-file) まで落ちた時も、B の直下に作った E を connect の後すぐ消す。多くの環境では置き場に書かない経路 (`/proc`、相対パス、広げた sockaddr、`connectat`、スレッドの cwd) で届く。
-
-### exec をまたぐと何が残る?
-
-D の flock の fd は close-on-exec なので exec で閉じ、D と E は持ち主の死んだ物として `sweep()` や OS の掃除で消されうる。引き継いだ listener は働き続け、綴りが辿れなくなるだけ。procB の綴りは exec の時点で辿れなくなる。exec をまたぐ掃除の仕組みは作らない。
+残さない。
 
 ### `remove()` はいつ呼ぶ?
 
-listener を閉じる前に呼ぶ。`remove()` は bind したファイルの `(st_dev, st_ino)` と今のパスを比べて同じ時だけ消す (listener は閉じない)。listener が開いている間はカーネルがファイルを掴んでいて番号が使い回されないが、閉じた後に消して作り直された物は ext4 や BSD の UFS / FFS で同じ番号になり、見分けられない ([findings](../docs/findings/2026-11-19-inode-reuse-after-close.md))。
+listener を閉じる前に呼ぶ。閉じた後だと、同じパスに作り直された別のファイルを見分けられずに消すことがある ([詳しく](../docs/findings/2026-11-19-inode-reuse-after-close.md))。`remove()` は listener を閉じない。
 
 ### 置き場を片付けた後の綴りを他人が作り直せるのは危なくない?
 
