@@ -16,14 +16,15 @@ origin: 他プロジェクトからの依頼 (claude-ccmsg)
 
 ## 決まったこと
 
-- リポは kawaz/sockat-ts、package 名は `sockat` (scope なし。crates.io・PyPI と揃える。`@kawaz/sockat` は作らない) (kawaz 2026-11-21)
+- リポは kawaz/sockat-ts、package 名は `@kawaz/sockat` (scope なしの `sockat` は registry の似た名前の検査 (socks・sockjs) で断られた) (kawaz 2026-11-21)
+- 名前を押さえる 0.0.0 (コードなし) を手で公開し、tag v0.0.0 を付けた。次の版から Release (trusted publishing、environment `npm`) で出す
 
 ## 決めること
 
 - 対象の runtime (Bun / Node / 両方。Deno は需要が弱い)
 - native の部品 (flock、openat、bindat / connectat、スレッドの cwd) を Bun の FFI / Node の addon で持つか、JS だけで作れる経路に絞るか
 - 標準の型 (`net.Server` / `net.Socket`、`Bun.listen` / `Bun.connect`) への載せ方
-- 公開 (trusted publishing の初回の手順。名前を押さえる 0.0.0 を先に出すか)
+- 公開: trusted publisher の設定 (registry の package の設定画面で repo `kawaz/sockat-ts`・workflow `release.yml`・environment `npm`)
 
 ## 残り
 
