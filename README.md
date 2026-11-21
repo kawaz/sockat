@@ -31,7 +31,7 @@ DGRAM is the same (`sockat::datagram::bind` etc.).
 | Rust | [kawaz/sockat-rs](https://github.com/kawaz/sockat-rs) | [`sockat`](https://crates.io/crates/sockat) on crates.io | published (0.5.1) |
 | Python | [kawaz/sockat-py](https://github.com/kawaz/sockat-py) | [`sockat`](https://pypi.org/project/sockat/) on PyPI | published (0.3.0) |
 | Go | [kawaz/sockat-go](https://github.com/kawaz/sockat-go) | [`github.com/kawaz/sockat-go`](https://pkg.go.dev/github.com/kawaz/sockat-go) | published (v0.4.0; no widened sockaddr on macOS) |
-| JavaScript / TypeScript | [kawaz/sockat-ts](https://github.com/kawaz/sockat-ts) | [`@kawaz/sockat`](https://www.npmjs.com/package/@kawaz/sockat) on npm | published (0.1.0; Node 22+ and Bun; no native code, so no thread-cwd, `bindat` / `connectat` or widened-sockaddr routes) |
+| JavaScript / TypeScript | [kawaz/sockat-ts](https://github.com/kawaz/sockat-ts) | [`@kawaz/sockat`](https://www.npmjs.com/package/@kawaz/sockat) on npm | published (0.1.1; Node 22+ and Bun; no native code, so no thread-cwd, `bindat` / `connectat` or widened-sockaddr routes) |
 | Ruby | kawaz/sockat-rb | RubyGems | planned |
 
 ## How it works and the details
