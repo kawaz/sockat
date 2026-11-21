@@ -984,8 +984,8 @@ Conditions with no effect: Language
 | File name (bytes) | $TMPDIR | /tmp | Socket's directory writable | Reached | Route | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|
 | 1–103 | any | any | any | ○ | at-direct | — | — | estimate |
-| 104–255 | any | writable (1777) | any | ○ | link-file (B: tmp) | — | — | estimate<br>whether connect can use link-file on FreeBSD is not checked yet ("Open" in the SPEC) |
-| 104–255 | /var/tmp (8, 1777) | not writable (still used for the estimate before making B) | any | ○ | link-file (B: tmpdir) | — | — | estimate<br>whether connect can use link-file on FreeBSD is not checked yet ("Open" in the SPEC) |
+| 104–255 | any | writable (1777) | any | ○ | link-file (B: tmp) | — | — | estimate |
+| 104–255 | /var/tmp (8, 1777) | not writable (still used for the estimate before making B) | any | ○ | link-file (B: tmpdir) | — | — | estimate |
 | 104–255 | deep (113, under 0700) | not writable (still used for the estimate before making B) | any | × | — | at-direct: file name > 103<br>link-file (B's realpath): B's spelling too long (spelling 136 > 103) | — | estimate |
 | 104–255 | unset or not writable | not writable (still used for the estimate before making B) | writable | × | — | at-direct: file name > 103<br>link-file (B's realpath): B is in the socket's directory, so the realpath spelling is longer than the original path | — | estimate |
 | 104–255 | unset or not writable | not writable (still used for the estimate before making B) | not writable | × | — | at-direct: file name > 103<br>link-file (B's realpath): no base where B can be made | — | estimate |
@@ -1113,10 +1113,10 @@ Conditions with no effect: Language, File name (bytes)
 
 | $TMPDIR | /tmp | Socket's directory writable | Options.base | Reached | Route | Why not reached | With fork-cwd | Basis |
 |---|---|---|---|---|---|---|---|---|
-| any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | link-file (B: given) | — | — | estimate<br>whether connect can use link-file on FreeBSD is not checked yet ("Open" in the SPEC) |
+| any | any | any | /tmp/app-<uid>/sockat (20, under 0700) | ○ | link-file (B: given) | — | — | estimate |
 | any | any | any | deep (113, under 0700) | × | — | link-file (B's realpath): B's spelling too long (spelling 127 > 103) | — | estimate |
-| any | writable (1777) | any | not given | ○ | link-file (B: tmp) | — | — | estimate<br>whether connect can use link-file on FreeBSD is not checked yet ("Open" in the SPEC) |
-| /var/tmp (8, 1777) | not writable (still used for the estimate before making B) | any | not given | ○ | link-file (B: tmpdir) | — | — | estimate<br>whether connect can use link-file on FreeBSD is not checked yet ("Open" in the SPEC) |
+| any | writable (1777) | any | not given | ○ | link-file (B: tmp) | — | — | estimate |
+| /var/tmp (8, 1777) | not writable (still used for the estimate before making B) | any | not given | ○ | link-file (B: tmpdir) | — | — | estimate |
 | deep (113, under 0700) | not writable (still used for the estimate before making B) | any | not given | × | — | link-file (B's realpath): B's spelling too long (spelling 139 > 103) | — | estimate |
 | unset or not writable | not writable (still used for the estimate before making B) | writable | not given | × | — | link-file (B's realpath): B is in the socket's directory, so the realpath spelling is longer than the original path | — | estimate |
 | unset or not writable | not writable (still used for the estimate before making B) | not writable | not given | × | — | link-file (B's realpath): no base where B can be made | — | estimate |

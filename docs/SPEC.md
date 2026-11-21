@@ -448,7 +448,6 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 ## Open questions
 
 - Reach: a procB spelling takes about 35 bytes for `/proc/<pid>/fd/<fd>/` + D + `/E/`, and the file name reached on Linux is about 70. Between that and thread-cwd, thread-cwd is used
-- Whether FreeBSD's connect can use link-file (not checked)
 - `send_to` sends to resolve's spelling, so it does not use relative (a send cannot be taken back). What to do with a `send_to` at a length resolve cannot handle (send with thread-cwd, or `ENAMETOOLONG`)
 - A reply to a DGRAM sender bound to a long path reaches while the spelling lives (procB for the same uid, the real path of B in `/tmp` for another uid too). How `Spelling` expresses the cases where it does not reach (after `cleanup`, procB with another uid)
 - The return type of Rust's SEQPACKET

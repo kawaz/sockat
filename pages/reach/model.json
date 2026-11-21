@@ -133,13 +133,11 @@
     "thread-cwd-direct": {"route": "thread-cwd-direct", "os_attr": "thread_cwd", "requires": ["thread_cwd"],
       "spelling": "<F>", "limit": "sockaddr"},
     "link-file@real/B-E": {"route": "link-file", "b": "real", "requires": ["Breal"],
-      "spelling": "<B>/<Er>", "limit": "sockaddr",
-      "unconfirmed": {"os": ["freebsd"], "note": {"ja": "FreeBSD の connect で link-file を使えるかは未確認 (SPEC の「未確定」)", "en": "whether connect can use link-file on FreeBSD is not checked yet (\"Open\" in the SPEC)"}}},
+      "spelling": "<B>/<Er>", "limit": "sockaddr"},
     "link-file@procB/connect": {"route": "link-file", "b": "proc", "os_attr": "proc", "requires": ["proc", "B"],
       "spelling": "/proc/<pid>/fd/<fd>/<D>/<E>", "limit": "sockaddr"},
     "link-file@real/connect": {"route": "link-file", "b": "real", "requires": ["Breal"],
-      "spelling": "<B>/<D>/<E>", "limit": "sockaddr",
-      "unconfirmed": {"os": ["freebsd"], "note": {"ja": "FreeBSD の connect で link-file を使えるかは未確認 (SPEC の「未確定」)", "en": "whether connect can use link-file on FreeBSD is not checked yet (\"Open\" in the SPEC)"}}}
+      "spelling": "<B>/<D>/<E>", "limit": "sockaddr"}
   },
   "orders": {
     "bind": ["link-dir@procB", "link-dir@real", "link-file@real", "thread-cwd", "at"],

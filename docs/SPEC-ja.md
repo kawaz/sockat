@@ -448,7 +448,6 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 ## 未確定
 
 - 届く長さ: procB の綴りは `/proc/<pid>/fd/<fd>/` + D + `/E/` でおよそ 35 バイト食い、Linux で届くファイル名はおよそ 70。thread-cwd との間は thread-cwd に回す
-- FreeBSD の connect で link-file を使えるか (未確認)
 - `send_to` は resolve の綴りに送るので relative (送った後に取り消せない) を使わない。resolve で済まない長さの `send_to` をどうするか (thread-cwd で送る、`ENAMETOOLONG` にする)
 - 長いパスに bind した DGRAM の送り手への返信は、綴りが生きている間は届く (procB は同じ uid、`/tmp` の B の実パスは別の uid も)。届かない場面 (`cleanup` の後、procB で別の uid) を `Spelling` でどう表すか
 - Rust の SEQPACKET の返す型
