@@ -32,7 +32,9 @@
   "langs": [
     {"id": "rs", "label": {"ja": "Rust (sockat-rs)", "en": "Rust (sockat-rs)"}, "lacks": []},
     {"id": "py", "label": {"ja": "Python (sockat-py)", "en": "Python (sockat-py)"}, "lacks": []},
-    {"id": "go", "label": {"ja": "Go (sockat-go)", "en": "Go (sockat-go)"}, "lacks": ["widened"], "lacks_note": {"widened": "標準の型に取り込むと、相手が広げた形で bind している時に RemoteAddr() が nil になる (sockat-go の README、SPEC の「各実装に求めること」)"}}
+    {"id": "go", "label": {"ja": "Go (sockat-go)", "en": "Go (sockat-go)"}, "lacks": ["widened"], "lacks_note": {"widened": "標準の型に取り込むと、相手が広げた形で bind している時に RemoteAddr() が nil になる (sockat-go の README、SPEC の「各実装に求めること」)"}},
+    {"id": "ts-node", "label": {"ja": "TypeScript・Node (sockat-ts)", "en": "TypeScript on Node (sockat-ts)"}, "lacks": ["widened", "thread-cwd", "at", "thread-cwd-direct", "at-direct"]},
+    {"id": "ts-bun", "label": {"ja": "TypeScript・Bun (sockat-ts。Linux は /proc が見えないと Bun 自体が起動しない)", "en": "TypeScript on Bun (sockat-ts; on Linux Bun itself does not start without /proc)"}, "lacks": ["widened", "thread-cwd", "at", "thread-cwd-direct", "at-direct"]}
   ],
   "lacks_basis": "conformance/langs.json の lacks と同じ。新しい経路 (link-dir・link-file・thread-cwd-direct) を作れない言語は無い前提 (各言語の作り直しの前なので見積もり)",
   "floor": {
@@ -158,12 +160,12 @@
     ]
   },
   "evidence": {
-    "note": "今の実装 (sockat-rs 0.4 系・sockat-py・sockat-go) を適合試験 (just conformance --no-build --verbose、2026-11-20、全場面で言語の差なし) に流した結果。DR-0017 で変わらない connect の経路 (unchanged) の行だけに当てる。条件を書いていない次元は、その行で効かない (全部) 時だけ当てる",
+    "note": "今の実装 (sockat-rs 0.4 系・sockat-py・sockat-go・sockat-ts の Node と Bun。Linux で /proc が無い場面は Bun が起動せず対象外) を適合試験 (just conformance --no-build --verbose、2026-11-20、全場面で言語の差なし) に流した結果。DR-0017 で変わらない connect の経路 (unchanged) の行だけに当てる。条件を書いていない次元は、その行で効かない (全部) 時だけ当てる",
     "cases": [
-      {"case": "linux-long-connect", "op": "connect", "os": "linux", "when": {"thread_cwd": true, "proc": true}, "filename": 6, "observed": {"rs": "proc-direct", "py": "proc-direct", "go": "proc-direct"}},
-      {"case": "no-proc-connect-near-cwd", "op": "connect", "os": "linux", "when": {"thread_cwd": true, "proc": false}, "filename": 6, "relpath": 6, "observed": {"rs": "relative", "py": "relative", "go": "relative"}},
-      {"case": "long-connect", "op": "connect", "os": "macos", "when": {"thread_cwd": true}, "filename": 6, "relpath": "fits-sockaddr", "observed": {"rs": "relative", "py": "relative", "go": "relative"}},
-      {"case": "long-filename-connect", "op": "connect", "os": "macos", "when": {"thread_cwd": true}, "filename": 100, "relpath": "over-sockaddr-within-widened", "observed": {"rs": "widened", "py": "widened", "go": "symlink-file"}}
+      {"case": "linux-long-connect", "op": "connect", "os": "linux", "when": {"thread_cwd": true, "proc": true}, "filename": 6, "observed": {"rs": "proc-direct", "py": "proc-direct", "go": "proc-direct", "ts-node": "proc-direct", "ts-bun": "proc-direct"}},
+      {"case": "no-proc-connect-near-cwd", "op": "connect", "os": "linux", "when": {"thread_cwd": true, "proc": false}, "filename": 6, "relpath": 6, "observed": {"rs": "relative", "py": "relative", "go": "relative", "ts-node": "relative"}},
+      {"case": "long-connect", "op": "connect", "os": "macos", "when": {"thread_cwd": true}, "filename": 6, "relpath": "fits-sockaddr", "observed": {"rs": "relative", "py": "relative", "go": "relative", "ts-node": "relative", "ts-bun": "relative"}},
+      {"case": "long-filename-connect", "op": "connect", "os": "macos", "when": {"thread_cwd": true}, "filename": 100, "relpath": "over-sockaddr-within-widened", "observed": {"rs": "widened", "py": "widened", "go": "symlink-file", "ts-node": "link-file", "ts-bun": "link-file"}}
     ]
   }
 }
