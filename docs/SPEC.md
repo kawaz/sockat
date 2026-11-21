@@ -14,7 +14,7 @@ How sockat behaves, independent of the language (the promise to users and to tho
 | Term | Meaning |
 |---|---|
 | standard | the language's standard library bind / connect for Unix domain sockets |
-| standard length | the longest path the language's standard accepts. A path up to it is handed to the standard unchanged. Usually `sun_path` − 1, `sun_path` − 2 for Java ([DR-0004](decisions/DR-0004-standard-length-per-language.md), Japanese) |
+| standard length | the longest path the language's standard accepts unchanged in a sockaddr that is not widened. A path up to it is handed to the standard unchanged. Usually `sun_path` − 1, `sun_path` − 2 for Java. Even if the standard lets a longer path through by truncating it, widening the sockaddr or a detour of its own, that is not used (Node on macOS, Bun) ([DR-0004](decisions/DR-0004-standard-length-per-language.md), Japanese) |
 | sockaddr length | the length of `sun_path` − 1 byte (leaving room for the NUL). The longest spelling a sockaddr that is not widened carries |
 | original path | the path the user passed |
 | directory / file name | what precedes the last component of the original path, and the last component. The socket's directory is the former |
@@ -407,6 +407,7 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 - An `Options.base` error does not fall back to the automatic bases
 - OS errors are returned in a form from which the errno can be read in that language's way
 - An error the OS returns is returned unchanged, so the errno can differ by OS. Tests do not hard-code the errno; they compare with the errno the standard returns for the same operation on a short path on the same OS
+- When the standard itself turns an OS error into another errno (Node's listen returns `EACCES` for a missing directory, etc.), a path up to the standard length gets the standard's errno and a longer path gets the errno of this table. Tests compare that errno with this table
 - Which type represents "invalid argument" and "general error" is up to each implementation
 
 ## What each implementation must do
