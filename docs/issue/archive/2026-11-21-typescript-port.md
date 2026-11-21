@@ -1,9 +1,11 @@
 ---
 title: TypeScript 版 (sockat-ts) を作る
-status: open
+status: resolved
 category: task
 created: 2026-11-21
 origin: 他プロジェクトからの依頼 (claude-ccmsg)
+close_reason: implemented
+close_ref: "https://github.com/kawaz/sockat-ts/releases/tag/v0.1.0"
 ---
 
 # TypeScript 版 (sockat-ts) を作る
@@ -35,5 +37,5 @@ origin: 他プロジェクトからの依頼 (claude-ccmsg)
 
 ## 関連
 
-- [他言語の調査](../research/2026-11-18-ports-to-other-languages.md) の JavaScript / TypeScript の節
-- [DR-0001](../decisions/DR-0001-hub-and-per-language-repos.md)、[DR-0017](../decisions/DR-0017-resolve-through-persistent-base.md)、[SPEC](../SPEC-ja.md)
+- [他言語の調査](../../research/2026-11-18-ports-to-other-languages.md) の JavaScript / TypeScript の節
+- [DR-0001](../../decisions/DR-0001-hub-and-per-language-repos.md)、[DR-0017](../../decisions/DR-0017-resolve-through-persistent-base.md)、[SPEC](../../SPEC-ja.md)
