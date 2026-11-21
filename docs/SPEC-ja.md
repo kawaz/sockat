@@ -275,6 +275,8 @@ OS の一時ディレクトリの掃除 ([research](research/2026-11-20-tmp-clea
 標準に渡す長さ以下のパスは、標準にそのまま渡す。何も足さず、環境変数も読まない。それを超えたら経路に回す ([DR-0004](decisions/DR-0004-standard-length-per-language.md))。
 
 - 先頭以外に NUL を含むパスは、長さによらず標準に渡さず引数の誤りにする ([DR-0006](decisions/DR-0006-nul-is-invalid-at-any-length.md))
+- 空のパスは引数の誤り
+- 標準がパスとして読まない綴り (Node の node:net は数値に読める文字列を TCP のポートとみなす) は、同じファイルを指す `./` を前に付けた形で標準に渡す。経路の相対パスの綴りも同じ。`Spelling` は `CwdRelative` のまま
 - Linux / Android で先頭が NUL のパス (abstract namespace) は対象外で、長さによらず標準にそのまま渡す。言語固有の abstract の書き方 (Go の `@` 等) も同じ。`_ex` と resolve の `Spelling` は `Original`
 - abstract namespace の無い OS では、先頭が NUL のパスも長さによらず引数の誤り
 - 標準にブロックしない connect が無い言語では、ブロックしない connect に限り、標準と同じアドレスで自前のソケットを connect する
@@ -291,6 +293,7 @@ OS の一時ディレクトリの掃除 ([research](research/2026-11-20-tmp-clea
 
 - 最後がファイル名でないパス (`dir/`、`dir/.`、`dir/..`、`..`) は、何も作らずに引数の誤り
 - ソケットのディレクトリを先に引く。無ければ `ENOENT`、ディレクトリでなければ `ENOTDIR` (長さの判定や B・D・E を作るより前)
+- パスを字句で畳まない (`..` や `.` を文字列の上で消さない)。`a/sym/..` はカーネルでは symlink の先の親を指すので、ディレクトリは OS に引かせる (open・realpath(3))
 - どの経路も、呼び出し元のプロセスの cwd も呼び出し元のスレッドの cwd も変えない
 - fork はしない (bind・connect とも)。fork でしか届かなかった場面と fork の手法は [fork-cwd](../pages/fork-cwd-ja.md)
 

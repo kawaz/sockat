@@ -275,6 +275,8 @@ The OS's temporary-directory cleaning ([research](research/2026-11-20-tmp-cleane
 A path up to the standard length is handed to the standard unchanged. Nothing is added and no environment variable is read. A longer path goes to the routes ([DR-0004](decisions/DR-0004-standard-length-per-language.md), Japanese).
 
 - A path containing NUL anywhere but at the start is never handed to the standard, whatever its length; it is an invalid-argument error ([DR-0006](decisions/DR-0006-nul-is-invalid-at-any-length.md), Japanese)
+- An empty path is an invalid-argument error
+- A spelling the standard does not read as a path (Node's node:net takes a string that reads as a number to be a TCP port) is handed to the standard with `./` in front, which names the same file. The same goes for the relative spelling of a route. `Spelling` stays `CwdRelative`
 - On Linux / Android a path starting with NUL (abstract namespace) is out of scope and is handed to the standard unchanged, whatever its length. A language's own abstract notation (Go's `@` etc.) likewise. The `Spelling` of `_ex` and resolve is `Original`
 - On OSes without an abstract namespace, a path starting with NUL is an invalid argument too, whatever its length
 - In a language whose standard has no non-blocking connect, a non-blocking connect alone uses the implementation's own socket, connected to the same address as the standard would
@@ -291,6 +293,7 @@ A path over the standard length is tried on the routes in the order below and bo
 
 - A path whose last component is not a file name (`dir/`, `dir/.`, `dir/..`, `..`) is an invalid-argument error, and nothing is created
 - The socket's directory is looked up first. When it is missing, `ENOENT`; when it is not a directory, `ENOTDIR` (before the length is judged or B / D / E is created)
+- The path is never folded lexically (`..` and `.` are not removed on the string). The kernel takes `a/sym/..` to be the parent of the symlink's target, so the directory is looked up by the OS (open, realpath(3))
 - No route changes the calling process's cwd or the calling thread's cwd
 - No fork (neither for bind nor for connect). The cases only a fork reached, and the fork technique, are in [fork-cwd](../pages/fork-cwd.md)
 
