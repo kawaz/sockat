@@ -170,12 +170,28 @@ def check_linux_conditions(c):
         fail_usage(f"{where}: seccomp の default は proc・readonly と組めない (SYS_ADMIN で profile が緩むため。kill-unshare を使う)")
 
 
+# langs.json の needs に書ける、起こすのに要る物。名前は cases.json の linux の欄と同じ。
+NEEDS_KEYS = {"proc"}
+
+
+def not_applicable(case, langs):
+    """この Linux の場面で起こせない言語 → 理由。case の linux で proc が false の時、needs に proc がある言語。"""
+    if case["linux"].get("proc", True):
+        return {}
+    return {l: spec["needs"]["proc"] for l, spec in langs.items() if "proc" in spec.get("needs", {})}
+
+
 def load_langs():
     langs = json.loads((CONFORMANCE / "langs.json").read_text(encoding="utf-8"))
     for name, spec in langs.items():
         lacks = spec.get("lacks") if isinstance(spec, dict) else None
         if not isinstance(lacks, list) or not all(isinstance(r, str) for r in lacks):
             fail_usage(f"langs.json: 言語 {name!r} の lacks は経路の名前の並び")
+        needs = spec.get("needs", {})
+        if not isinstance(needs, dict) or not all(isinstance(v, str) for v in needs.values()):
+            fail_usage(f"langs.json: 言語 {name!r} の needs は {{条件の名前: 理由の文}} のオブジェクト")
+        if set(needs) - NEEDS_KEYS:
+            fail_usage(f"langs.json: 言語 {name!r} の needs に知らないキー {sorted(set(needs) - NEEDS_KEYS)} (受け付けるのは {sorted(NEEDS_KEYS)})")
         lx = spec.get("linux")
         if lx is not None:
             if not isinstance(lx, dict) or set(lx) - {"cmd", "build"}:
@@ -735,6 +751,8 @@ def judge(case, outcomes, lacks):
     for lang, o in outcomes.items():
         if o["status"] == "unimplemented":
             cells[lang] = "未実装"
+        elif o["status"] == "not-applicable":
+            cells[lang] = "対象外"
         elif o["status"] == "broken":
             cells[lang] = "壊れた"
         elif o["status"] == "setup-error":
@@ -1003,6 +1021,7 @@ def main():
     failed = False
     messages = []
     splits = []
+    not_applicable_cases = {}
     verbose = []
     try:
         for case in cases:
@@ -1011,7 +1030,12 @@ def main():
                 continue
             cmds = commands[where]
             if where == "linux":
-                outcomes = run_linux_case(case, cmds, langs)
+                na = not_applicable(case, langs)
+                outcomes = run_linux_case(case, {l: c for l, c in cmds.items() if l not in na}, langs)
+                for l, reason in na.items():
+                    outcomes[l] = {"status": "not-applicable", "message": reason}
+                    not_applicable_cases.setdefault(l, (reason, []))[1].append(case["name"])
+                outcomes = {l: outcomes[l] for l in cmds}
             else:
                 outcomes = {}
                 for lang, cmd in cmds.items():
@@ -1048,6 +1072,10 @@ def main():
     if unimplemented:
         print("\n未実装 (差の判定から外した):")
         print("\n".join(unimplemented))
+    if not_applicable_cases:
+        print("\n対象外 (起こせない環境。差の判定から外した):")
+        for lang, (reason, names) in not_applicable_cases.items():
+            print(f"  {lang}: {reason} ({len(names)} 場面)")
     if splits:
         print("\n作れない経路で組を分けて比べた場面:")
         for name, groups in splits:
