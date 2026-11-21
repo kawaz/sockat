@@ -134,6 +134,7 @@ On success `_ex` and resolve return the following.
 | `skipped` | the routes tried and found unusable, in the order tried. Each element is `{ name: the route name, reason: why it was unusable }`. For a long path `standard` is included |
 
 - `skipped` has one element per route name. Trying link-dir with procB and with the real path is still one element, with the `reason` of the last try. Not using procB because of `usable_cross_uid` is not skipping a route, so nothing is added
+- When the B with the default name in bases 1 to 3 already exists and fails the checks (occupied), the `reason` of the routes that use B includes a reason that tells it was occupied ([Building B](SPEC-routes.md#building-b))
 - `skipped` contains only the routes in that call's row of the order tables (for bind the row is decided by the OS, for connect by the OS and whether `/proc` is usable). The connect row of Linux without `/proc` usable has no proc-direct, so it is not included.  A route whose means the OS lacks (thread-cwd on NetBSD, OpenBSD and illumos, thread-cwd-direct on an OS that cannot move a thread's cwd) is not in that OS's row and is not included
 
 - Every route tried before `route` was unusable (when a route actually binds / connects and fails, the error is returned there and the next is not tried; only when a bind's link-file is told apart at run time does it go on). So there is no "was it usable" bool
@@ -239,13 +240,14 @@ At resolve time nothing is bound, so `ForBind` cannot remember the socket file's
 
 | | B | D | E |
 |---|---|---|---|
-| Unit | one per user, reused across processes. A process uses one B in bases 1 to 3 (`/tmp`, `$XDG_RUNTIME_DIR`, `$TMPDIR`) (one more only with `usable_cross_uid`). A B in the socket's directory is one per directory. A B in `Options.base` is one per given path | one per (process, B). Created only by a bind that keeps its spelling (including thread-cwd / at) and by `resolve_for_connect` | one per resolve. One per call for thread-cwd / at and for the default connect's link-file |
+| Unit | one per user, reused across processes. A process uses one B in bases 1 to 3 (`/tmp`, `$XDG_RUNTIME_DIR`, `$TMPDIR`) (one more only with `usable_cross_uid`). A B in the socket's directory is one per directory. A B in `Options.base` is one per given path | one per (process, B). Created only by a bind that keeps its spelling (including thread-cwd / at) and by `resolve_for_connect` | one per resolve. The default bind's link-dir reuses one per (D, realpath of the socket's directory). One per call for thread-cwd / at and for the default connect's link-file |
 | While alive | not removed | the process keeps an fd holding a flock (shared lock) | resolve's E is not removed |
 | Cleanup | not by sockat (B in `Options.base` is managed by the app) | not by sockat. A dead process's D is removed by the OS's temporary-directory cleaning. Only when `sweep()` is called are the D whose lock has been released removed | resolve's E by `cleanup`. A per-call E is unlinked within the call |
 
 - The default `bind` returns no `SocketFile`, so its E stays until the process exits and is removed with D by the OS's temporary-directory cleaning. There is no mechanism for cleaning up after a process that execs. Users who care about cleanup use `_ex` or resolve
+- The default `bind` reuses the link-dir E for binds to the same directory, so the E grow only with the number of socket directories. A link-file E is one per bind
 - The default `connect` leaves no D or E in the process (it creates no D, and unlinks the E right under B right after the connect). When it creates B for the first time, that B and its fd are used as the process's B from then on
-- A B in the socket's directory (`.sockat.<random>`) and a B fallen back to after the checks failed (`sockat-<uid>.<random>`) are not covered by `sweep`, and may not be removed by the OS's cleaning either. A B in the socket's directory stays in the user's directory
+- A B in the socket's directory (`.sockat.<random>`) is not covered by `sweep`, may not be removed by the OS's cleaning either, and stays in the user's directory
 
 The OS's temporary-directory cleaning ([research](research/2026-11-20-tmp-cleaners-and-persistent-base.md), Japanese):
 
@@ -267,7 +269,7 @@ The OS's temporary-directory cleaning ([research](research/2026-11-20-tmp-cleane
 - `sweep_base(path)` (the name follows each language's convention) removes the dead D in the B passed as `Options.base`. The app that manages that B calls it. When B or its parent is missing, it does nothing and succeeds. The path is checked as for `Options.base` (a wrong form is an invalid argument; a symlink, someone else's, or a B or directory on the way writable by others is `EPERM`; not a directory is `ENOTDIR`)
 - `sweep()` silently skips the bases and B that fail the checks
 - It covers only the directories right under B whose name has the form of a D (10 characters of the 62 alphanumerics). B (including the B of `Options.base`) is sockat's own, and the user puts nothing else there
-- A B with a random name (fallen back to after the checks failed) and a B in the socket's directory are not covered
+- A B in the socket's directory is not covered
 - It does not touch the E right under B (the default connect's). A D containing something other than a symlink is left
 - It is never called automatically (B is not listed on each resolve, at the start of a process, or at exit). Where tests run over and over, the user calls it
 
@@ -431,8 +433,9 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 |---|---|
 | The short-path boundary | a path exactly the standard length goes to the standard unchanged, and one byte longer goes to the routes (checking the boundary with the standard itself) |
 | Where the spelling lands | unlinking / stat-ing the spelling does not hit an unrelated file (a same-named file in the cwd, a same-named file in another directory whose fd number was made to be reused) |
-| Checking B | a base that fails the checks on the way to B is not used. `Options.base` that fails is an error |
-| Concurrency | many concurrent binds / connects do not conflict in creating B / D |
+| Checking B | a base that fails the checks on the way to B is not used. When the B with the default name in bases 1 to 3 already exists and fails the checks (occupied), nothing is created in that base and the next base is tried, and the `reason` when the routes that use B are unusable tells it was occupied. `Options.base` that fails is an error |
+| Concurrency | many concurrent binds / connects do not conflict in creating B / D or in reusing the default bind's E |
+| The default bind's E | repeated default binds to the same directory leave one link-dir E. After the reused E has been removed, a bind creates E again and goes through |
 | `sweep` | it does not remove the D of other live processes |
 | `cleanup` | no E remains after `cleanup` |
 | The default connect | nothing remains right under B after the connect, and it does not wait |
@@ -441,7 +444,7 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 | thread-cwd / at | when forced, neither the process's cwd nor the calling thread's cwd changes and no E remains after the call. The socket is created at the original path and can send and receive |
 | link-file on bind | on an OS whose bind does not follow the symlink it goes into `skipped` and nothing remains. When something is at the original path, that error (`EADDRINUSE`) is returned and the next is not tried |
 | The connect routes | forcing proc-direct, relative, widened, at-direct, thread-cwd-direct and link-file one by one reaches the socket |
-| No retry on failure | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` are returned and nothing is created on later routes. When a bind by link-dir or link-file fails, no E is left |
+| No retry on failure | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` are returned and nothing is created on later routes. When a bind by link-dir or link-file fails, no E made in that call is left (the E the default bind reuses stays) |
 | relative and the cwd | a cwd change during relative gives a general error |
 | macOS | a 253-byte path reaches via widened for the connect variants. bind does not use widened |
 | Non-blocking connect | it fails without waiting when the backlog is full |

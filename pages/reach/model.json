@@ -44,7 +44,6 @@
     "E": {"value": 2, "note": {"ja": "resolve の E の名前の文字数。1 プロセスの resolve の E が 1296 個まで", "en": "characters of resolve's E name. Up to 1296 E in one process's resolve"}},
     "E_max": {"value": 13, "note": {"ja": "E の名前の文字数の上限 (カウンタが u64 の上限)。macOS の link-file が収まるかの確認だけに使う", "en": "upper bound of E's name length (the counter at u64's maximum). Used only to check that macOS's link-file fits"}},
     "Bprefix": {"value": 7, "note": {"ja": "B の名前の `sockat-` の長さ", "en": "length of `sockat-` in B's name"}},
-    "Bsuffix": {"value": 11, "note": {"ja": "B が `sockat-<uid>.<乱数 10 文字>` に落ちた時に増える長さ", "en": "extra length when B falls back to `sockat-<uid>.<10 random characters>`"}},
     "xdg_prefix": {"value": 10, "note": {"ja": "`$XDG_RUNTIME_DIR` の `/run/user/` の長さ (uid の前)", "en": "length of `/run/user/` in `$XDG_RUNTIME_DIR` (before the uid)"}}
   },
   "b_order": ["tmp", "xdg", "tmpdir", "sockdir"],

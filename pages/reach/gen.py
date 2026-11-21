@@ -198,9 +198,9 @@ TEXT = {
         "en": "Premise: B has the default name `sockat-<uid>` and is in `/tmp`. On Linux the figures come from the route spellings (`<B>/<D>/<E>/<F>` etc. in the routes table) with the worst digits.",
     },
     "md.floor.head": {"ja": "| OS | 操作 | 条件 | 下限 |", "en": "| OS | Operation | Condition | Lower bound |"},
-    "md.floor.fallback": {
-        "ja": "- Linux の bind でスレッドの cwd を使えない時、実パスの B を通る綴りの下限は、B が `sockat-<uid>.<乱数 10 文字>` に落ちた時 {suffix} バイト短い {fallback} バイト、`$XDG_RUNTIME_DIR` の B の時 {xdg} バイト (E 2 文字)。`/proc` を使えれば procB の綴りも試すので、届く長さはどちらか長い方 (procB は上の最悪の桁で {procb})。procB を使わない時 (`/proc` が無い、`usable_cross_uid`) はこの値が下限",
-        "en": "- For a Linux bind without the thread cwd, the floor of a spelling through the real-path B is {fallback} bytes ({suffix} bytes shorter) when B falls back to `sockat-<uid>.<10 random characters>`, and {xdg} bytes with the `$XDG_RUNTIME_DIR` B (2-character E). Where `/proc` is usable the procB spelling is tried too, so the reach is the longer of the two (procB is {procb} with the worst digits above). Without procB (no `/proc`, `usable_cross_uid`) this value is the floor",
+    "md.floor.xdg": {
+        "ja": "- Linux の bind でスレッドの cwd を使えない時、B が `$XDG_RUNTIME_DIR` にある時 (`/tmp` に作れない時。他人が `/tmp/sockat-<uid>` を先に作った時も) の実パスの綴りの下限は {xdg} バイト (E 2 文字)。`/proc` を使えれば procB の綴りも試すので、届く長さはどちらか長い方 (procB は上の最悪の桁で {procb})。`/proc` が無い時はこの値が下限",
+        "en": "- For a Linux bind without the thread cwd, when B is in `$XDG_RUNTIME_DIR` (it cannot be created in `/tmp`, including when someone else created `/tmp/sockat-<uid>` first), the floor of the real-path spelling is {xdg} bytes (2-character E). Where `/proc` is usable the procB spelling is tried too, so the reach is the longer of the two (procB is {procb} with the worst digits above). Without `/proc` this value is the floor",
     },
     "floor.any": {"ja": "ファイル名によらず届く", "en": "any file name"},
     "floor.name_max": {"ja": "{n} (NAME_MAX)", "en": "{n} (NAME_MAX)"},
@@ -1001,8 +1001,8 @@ def floor_values(model):
     lin, mac = model.os_by_id["linux"], model.os_by_id["macos"]
     p = {"pid": fl["pid"], "fd": fl["fd"], "D": model.params["D"], "E": fl["E"], "Er": model.params["Er"]}
 
-    def b_real(os, extra=0):
-        return len(os["tmp_realpath"]) + 1 + fl["Bprefix"] + fl["uid"] + extra
+    def b_real(os):
+        return len(os["tmp_realpath"]) + 1 + fl["Bprefix"] + fl["uid"]
 
     def fmax(os, rid, pp=p, b=0):
         """経路の綴りが sockaddr に収まる最長のファイル名 F。F の無い綴りは収まれば None、収まらなければ 0。"""
@@ -1030,9 +1030,7 @@ def floor_values(model):
         "macos_connect_tmp": model.params["name_max"],
         "macos_bind_nobase": fmax(mac, "thread-cwd"),
         "macos_connect_nobase": fmax(mac, "thread-cwd-direct"),
-        "fallback_suffix": fl["Bsuffix"],
         "procb": fmax(lin, "link-dir@procB"),
-        "fallback": fmax(lin, "link-dir@real", b=b_real(lin, fl["Bsuffix"])),
         "xdg": fmax(lin, "link-dir@real", b=xdg_b),
     }
 
@@ -1162,7 +1160,7 @@ def render_md(model, tables, summary, os_meta, tr):
         cond_key = key if key.startswith("linux") or "nobase" in key else "macos_tmp"
         w(f"| {tr.t('floor.os.' + os_id)} | {tr.t('floor.op.' + op_id)} | {tr.t('floor.cond.' + cond_key)} | {floor_cell(fv[key], model, tr)} |")
     w("")
-    w(tr.t("md.floor.fallback", suffix=fv["fallback_suffix"], fallback=fv["fallback"], xdg=fv["xdg"], procb=fv["procb"]))
+    w(tr.t("md.floor.xdg", xdg=fv["xdg"], procb=fv["procb"]))
     w("")
     w(tr.t("md.tables.h"))
     w("")

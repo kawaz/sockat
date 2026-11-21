@@ -20,7 +20,7 @@ The same steps for the automatic bases and for `Options.base`.
 2. Check every directory from the root to the parent: each is owned by root or by oneself, and is either not writable by others or has the sticky bit (the owner of a sticky directory can still swap what is inside, so the owner condition is kept. the same idea as OpenSSH's StrictModes; if an ancestor is writable by others, the parent can be swapped out). Only once, the first time in the process
 3. Open the parent with `O_DIRECTORY | O_NOFOLLOW`, hold it by fd, and create B with `mkdirat(parent fd, name, 0700)`
 4. Right after creating it, set the mode with `fchmodat(parent fd, name, 0711)` (restoring what the umask took away; the parent has been checked and others cannot swap it), then open it with `O_DIRECTORY | O_NOFOLLOW` and check with `fstat` that it is a real directory owned by oneself. When the mode cannot be set or it cannot be opened, remove the empty directory one just created and go on to the next base (`Options.base` is an error)
-5. On `EEXIST`, check what already exists in the same way (a real directory, owned by oneself, not writable by others). Use it even if its mode is not 0711, and do not change the mode. If it fails, an automatic base falls back to `sockat-<uid>.<10 random characters>`, and `Options.base` is an error
+5. On `EEXIST`, check what already exists in the same way (a real directory, owned by oneself, not writable by others). Use it even if its mode is not 0711, and do not change the mode. If it fails (occupied), an automatic base is treated as unusable and the next base is tried, and `Options.base` is an error
 
 - "Not writable by others" includes the group (`mode & 022 == 0`)
 - "Oneself" is the effective uid (`geteuid`). The `<uid>` in the name is the effective uid too
@@ -44,7 +44,7 @@ Where B's real directory is created and how B is spelled ([Spelling forms](#spel
 - A process using one B applies to bases 1 to 3. A B in base 4 (the socket's directory) is one per socket directory
 - When it is known beforehand that the spelling will not fit (estimable from the length of the base's real path), B is not created. It does not move on to the next base either; the routes that use B are skipped as unusable (the process's B is the first base where it could be created, and does not change with the path's length)
 - When a held B or D has been removed (`st_nlink` of the `fstat` of its fd is 0, or the name's `lstat` and the fd differ in `(st_dev, st_ino)`), it is dropped and created again on the next call (an old systemd-tmpfiles, macOS's `$TMPDIR` cleaning, removed by hand). A removed directory's `st_nlink` becomes 0 on Linux but stays 2 on macOS (APFS), so the check by name is not skipped
-- Order of choosing B: skip the failures known without creating anything (the base is missing, the check of the directories on the way fails, no other x when `usable_cross_uid` is asked), and estimate the spelling's length at the first base left. If it does not fit, stop there and do not move on to the next base. If creation fails after the estimate passed (`mkdirat` fails etc.), go on to the next base
+- Order of choosing B: skip the failures known without creating anything (the base is missing, the check of the directories on the way fails, no other x when `usable_cross_uid` is asked), and estimate the spelling's length at the first base left. If it does not fit, stop there and do not move on to the next base. If creation fails after the estimate passed (`mkdirat` fails, an existing B fails the checks (occupied), etc.), go on to the next base
 - The ordinary B and the B for `usable_cross_uid` are held separately (a later ordinary bind does not switch to the `usable_cross_uid` B). That D could not be created is remembered per B for the rest of that call, and D is not tried again in the same B within the same call
 - The safety check of `Options.base` (the directories on the way, owner, not writable by others) is done on every call. The other-x judgement for `usable_cross_uid` is remembered from when B was created (first held). But when it remembered that B itself lacks other x, it is re-checked with `fstat` of B's fd on each call with `usable_cross_uid` (when 2 processes create B for the first time at once, one can open it between the other's `mkdirat` (0700) and `fchmodat` (0711))
 - A B once held (bases 1 to 3) is used for the rest of the process. A base where creation failed is not remembered and is tried again on the next call. When D cannot be created, the routes that use D are unusable for that call, and no other B is looked for
@@ -86,7 +86,7 @@ sockat decides by itself. From the top, the first that fits.
 | | D | E |
 |---|---|---|
 | Where | inside B | resolve's E and thread-cwd / at's E inside D. The default connect's link-file E right under B |
-| Unit | one per (process, B). Created only by a bind that keeps its spelling (including thread-cwd / at) and by `resolve_for_connect` | one per resolve. One per call for thread-cwd / at and for the default connect's link-file |
+| Unit | one per (process, B). Created only by a bind that keeps its spelling (including thread-cwd / at) and by `resolve_for_connect` | one per resolve. The default bind's link-dir reuses one per (D, realpath of the socket's directory) ([link-dir](#link-dir)). One per call for thread-cwd / at and for the default connect's link-file |
 | Name | 10 random characters | resolve's E is a counter within the process (base 36; it can be short because D is unique per (process, B)). thread-cwd / at's E and the E right under B are 10 random characters |
 | mode | 0711 (so that another uid can follow the spelling of B in `/tmp`) | none (a symlink's mode does not affect the right to follow it) |
 | While alive | the process keeps an fd holding a flock (shared lock) | resolve's E is not removed |
@@ -120,7 +120,10 @@ The sections follow the order of the table in [the SPEC's Route names](SPEC.md#r
 
 ### link-dir
 
-- How: create in D an E pointing to the realpath of the socket's directory, and bind by `B/D/E/<file name>`. E is kept until `cleanup`. When the bind fails ([How a failing route is treated](#how-a-failing-route-is-treated)), E is removed right there before the error is returned
+- How: create in D an E pointing to the realpath of the socket's directory, and bind by `B/D/E/<file name>`. E is kept until `cleanup`. When the bind fails ([How a failing route is treated](#how-a-failing-route-is-treated)), the E made in that call is removed right there before the error is returned
+- The E of the default bind (the one that returns no `SocketFile`): one per (D, realpath of the socket's directory) is reused, and binds to the same directory put their file names under the same E. The default bind does not clean up E, so references are not counted. `_ex` and resolve create an E per call (the unit of cleanup does not change)
+  - When the reused E has been removed (the `lstat` of its name relative to D's fd finds nothing, or differs from the `(st_dev, st_ino)` taken when it was created), it is dropped and created again (the same as B and D in [Where B is created](#where-b-is-created)). When D is created again, its E are created again too
+  - When a bind fails, an E made by an earlier call is not removed (other binds' spellings go through it)
 - Used when: 2 (procB) and 3 (real path) of the bind order. The spelling `resolve_for_bind` chooses first. Trying it with procB and with the real path is one element in `skipped` (with the last reason)
 - Unusable when: the spelling does not fit in a sockaddr, B / D / E cannot be created; for procB, `/proc` is not usable or `usable_cross_uid` is given
 - File name reached: sockaddr length − (B's spelling + D + E + 3 separators). About 70 for procB on Linux ([the SPEC's Open questions](SPEC.md#open-questions))
@@ -244,7 +247,7 @@ Used by [relative](#relative).
 ## How a failing route is treated
 
 - When a route actually binds / connects and fails (`ENOENT`, `EADDRINUSE`, `ECONNREFUSED`, etc.), that error is returned and the next route is not tried
-- Then the E made in that call is removed before returning (link-dir, link-file, thread-cwd, at; and the default connect's link-file). D and B are kept
+- Then the E made in that call is removed before returning (link-dir, link-file, thread-cwd, at; and the default connect's link-file). The E the default bind reuses from an earlier call, D and B are kept
 - When removing the E fails, it stays silent and changes neither the result of the call nor the original error (a successful connect is not turned into a failure; the original error is not replaced by the removal's). The `cleanup()` the user calls is different and returns the failure as an error ([SPEC `remove` and `cleanup`](SPEC.md#remove-and-cleanup))
 - It goes on to the next only when the route itself is unusable (each route's "unusable when")
   - the spelling does not fit

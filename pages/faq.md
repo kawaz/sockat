@@ -100,7 +100,7 @@ Call `sweep()` once at the end of the tests. It does not remove what is in use, 
 
 ### What about a daemon that binds long paths many times?
 
-Each bind adds a symlink that stays until the process exits. A daemon that makes a socket per session, for example, cleans up with `remove()` of `bind_ex`.
+The default `bind` reuses the symlink for binds to the same directory, so symlinks grow only with the number of socket directories, and stay until the process exits (one per bind when the file name is very long and the bind goes through a symlink to the socket's file). A daemon that makes a socket in a different directory per session, for example, cleans up with `remove()` of `bind_ex`.
 
 ### Does the default `connect` leave anything?
 

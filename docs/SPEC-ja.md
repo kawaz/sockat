@@ -134,6 +134,7 @@ Rust の名前で示す。
 | `skipped` | 試して使えなかった経路の並び (試した順)。各要素は `{ name: 経路の名前, reason: 使えなかった理由 }`。長いパスでは `standard` も入る |
 
 - `skipped` は経路の名前ごとに 1 件。link-dir を procB と実パスで試しても 1 件で、`reason` は最後に試した物。`usable_cross_uid` で procB を使わないのは経路を飛ばすことではないので、何も足さない
+- 置き場 1〜3 の既定の名前の B が既にあって確かめに外れた (占拠) 時は、B を使う経路の `reason` に占拠と分かる理由を入れる ([B の作り方](SPEC-routes-ja.md#b-の作り方))
 - `skipped` に入るのは、その呼び出しの順の表 (bind は OS で、connect は OS と `/proc` を使えるかで決まる行) に並ぶ経路だけ。`/proc` を使えない Linux の connect の行に proc-direct は無いので入れない。その OS に手段の無い経路 (NetBSD・OpenBSD・illumos の thread-cwd、スレッドの cwd を移せない OS の thread-cwd-direct) は、その OS の行に無いので入れない
 
 - `route` より前に試した経路はすべて使えなかったもの (実際に bind / connect して失敗したら、そこでエラーを返して次を試さない。bind の link-file を実行時に見分ける時だけは次へ進む)。そのため「使えたか」の真偽値は持たない
@@ -239,13 +240,14 @@ resolve の時点では bind していないので、`ForBind` はソケット�
 
 | | B | D | E |
 |---|---|---|---|
-| 作る単位 | 利用者ごと。プロセスをまたいで使い回す。1 つのプロセスが使う置き場 1〜3 (`/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR`) の B は 1 つ (`usable_cross_uid` の時だけ、もう 1 つ使いうる)。ソケットのディレクトリの B はディレクトリごと。`Options.base` の B は指定ごと | (プロセス, B) ごとに 1 つ。作るのは、綴りを残す bind (thread-cwd・at を含む) と `resolve_for_connect` だけ | resolve ごと。thread-cwd・at と既定の connect の link-file は呼び出しごと |
+| 作る単位 | 利用者ごと。プロセスをまたいで使い回す。1 つのプロセスが使う置き場 1〜3 (`/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR`) の B は 1 つ (`usable_cross_uid` の時だけ、もう 1 つ使いうる)。ソケットのディレクトリの B はディレクトリごと。`Options.base` の B は指定ごと | (プロセス, B) ごとに 1 つ。作るのは、綴りを残す bind (thread-cwd・at を含む) と `resolve_for_connect` だけ | resolve ごと。既定の bind の link-dir は (D, ソケットのディレクトリの realpath) ごとに 1 つを使い回す。thread-cwd・at と既定の connect の link-file は呼び出しごと |
 | 生きている間 | 消さない | プロセスが flock (共有ロック) を掛けた fd を持ち続ける | resolve の E は消さない |
 | 片付け | sockat はしない (`Options.base` の B はアプリが管理) | sockat はしない。死んだプロセスの D は OS の一時ディレクトリの掃除で消える。`sweep()` を呼んだ時だけ、ロックの外れた D を消す | resolve の E は `cleanup`。呼び出しごとの E は呼び出しの中で unlink |
 
 - 既定の `bind` は `SocketFile` を返さないので、その E はプロセスが終わるまで残り、D と一緒に OS の一時ディレクトリの掃除で消える。exec をまたぐプロセスの掃除の仕組みは作らない。片付けを気にする利用者は `_ex` か resolve を使う
+- 既定の `bind` の link-dir の E は同じディレクトリへの bind で使い回すので、増えるのはソケットのディレクトリの数だけ。link-file の E は bind ごと
 - 既定の `connect` はプロセスの中に D と E を残さない (D を作らず、B の直下の E を connect の後すぐ unlink する)。B を初めて作った時は、その B と fd をプロセスの B として以後も使う
-- ソケットのディレクトリの B (`.sockat.<乱数>`) と、確かめに外れて落とした B (`sockat-<uid>.<乱数>`) は `sweep` の対象外で、OS の掃除でも消えないことがある。ソケットのディレクトリの B は利用者のディレクトリに残る
+- ソケットのディレクトリの B (`.sockat.<乱数>`) は `sweep` の対象外で、OS の掃除でも消えないことがあり、利用者のディレクトリに残る
 
 OS の一時ディレクトリの掃除 ([research](research/2026-11-20-tmp-cleaners-and-persistent-base.md)):
 
@@ -267,7 +269,7 @@ OS の一時ディレクトリの掃除 ([research](research/2026-11-20-tmp-clea
 - `sweep_base(path)` (名前は各言語の慣習) は、`Options.base` に渡した B の中の死んだ D を消す。その B を管理するアプリが呼ぶ。B か親が無ければ何もせず成功。path の確かめは `Options.base` と同じ (形の誤りは引数の誤り、symlink・他人の物・他人が書ける B や途中は `EPERM`、ディレクトリでなければ `ENOTDIR`)
 - `sweep()` は、確かめに外れた置き場・B を黙って飛ばす
 - 対象にするのは、B の直下の、名前が D の形 (英数字 62 種の 10 文字) のディレクトリだけ。B (`Options.base` の B も) は sockat 専用で、利用者は他の物を置かない
-- 乱数の名前の B (確かめに外れて落とした B) とソケットのディレクトリの B は対象にしない
+- ソケットのディレクトリの B は対象にしない
 - B の直下の E (既定の connect の物) には触らない。symlink でない物がある D は残す
 - 自動では呼ばない (resolve のたびにも、プロセスの初めにも、終了時にも B の中を一覧しない)。試験を繰り返す環境では利用者が呼ぶ
 
@@ -431,8 +433,9 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 |---|---|
 | 短いパスの境界 | 標準に渡す長さちょうどは標準にそのまま渡り、1 バイト長いと経路に回る (標準自身で境界を確かめる) |
 | 綴りが当たる所 | 綴りを unlink / stat しても無関係なファイル (cwd の同名ファイル、fd の番号を使い回させた別のディレクトリの同名ファイル) に当たらない |
-| B の確認 | B までの途中の確認で外れた置き場を使わない。`Options.base` が外れたらエラー |
-| 並行 | 並行する多数の bind / connect で B・D の作成が競合しない |
+| B の確認 | B までの途中の確認で外れた置き場を使わない。置き場 1〜3 の既定の名前の B が既にあって確かめに外れたら (占拠)、その置き場に何も作らず次の置き場へ進み、B を使う経路が使えなかった時の `reason` で占拠と分かる。`Options.base` が外れたらエラー |
+| 並行 | 並行する多数の bind / connect で B・D の作成と既定の bind の E の使い回しが競合しない |
+| 既定の bind の E | 同じディレクトリへ既定の bind を繰り返しても link-dir の E は 1 つ。使い回す E が消された後の bind は E を作り直して通る |
 | `sweep` | 生きている他のプロセスの D を消さない |
 | `cleanup` | `cleanup` の後に E が残らない |
 | 既定の connect | connect の後に B の直下に何も残らず、待ちも入らない |
@@ -441,7 +444,7 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 | thread-cwd・at | 強制して、プロセスの cwd も呼び出し元のスレッドの cwd も変わらず、呼び出しの後に E が残らない。ソケットが元のパスにでき送受信できる |
 | link-file の bind | bind が symlink を辿らない OS で `skipped` に入り、何も残らない。元のパスに物がある時はそのエラー (`EADDRINUSE`) を返し、次を試さない |
 | connect の経路 | proc-direct・relative・widened・at-direct・thread-cwd-direct・link-file を 1 つずつ強制して、ソケットに届く |
-| 失敗をやり直さない | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` を返し、後の経路に何も作らない。link-dir・link-file で bind に失敗した時は E が残らない |
+| 失敗をやり直さない | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` を返し、後の経路に何も作らない。link-dir・link-file で bind に失敗した時は、その呼び出しで作った E が残らない (既定の bind が使い回す E は残る) |
 | relative と cwd | relative の途中で cwd が変わったら一般のエラー |
 | macOS | connect 系で 253 バイトのパスが widened で通る。bind は widened を使わない |
 | ブロックしない connect | backlog が満杯で待たずに失敗する |

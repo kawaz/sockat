@@ -185,7 +185,7 @@ Premise: B has the default name `sockat-<uid>` and is in `/tmp`. On Linux the fi
 | macOS | bind | B cannot be made in `/tmp` and `$TMPDIR` is deep (thread-cwd) | 92 |
 | macOS | connect | B cannot be made in `/tmp` and `$TMPDIR` is deep (thread-cwd-direct) | 103 |
 
-- For a Linux bind without the thread cwd, the floor of a spelling through the real-path B is 59 bytes (11 bytes shorter) when B falls back to `sockat-<uid>.<10 random characters>`, and 65 bytes with the `$XDG_RUNTIME_DIR` B (2-character E). Where `/proc` is usable the procB spelling is tried too, so the reach is the longer of the two (procB is 68 with the worst digits above). Without procB (no `/proc`, `usable_cross_uid`) this value is the floor
+- For a Linux bind without the thread cwd, when B is in `$XDG_RUNTIME_DIR` (it cannot be created in `/tmp`, including when someone else created `/tmp/sockat-<uid>` first), the floor of the real-path spelling is 65 bytes (2-character E). Where `/proc` is usable the procB spelling is tried too, so the reach is the longer of the two (procB is 68 with the worst digits above). Without `/proc` this value is the floor
 
 ## Tables
 
