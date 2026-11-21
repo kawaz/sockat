@@ -178,7 +178,7 @@ B の選び方 ([SPEC-routes の「B の作り方」](../../docs/SPEC-routes-ja.
 | macOS | bind | `/tmp` に B を作れず `$TMPDIR` が深い (thread-cwd) | 92 |
 | macOS | connect | `/tmp` に B を作れず `$TMPDIR` が深い (thread-cwd-direct) | 103 |
 
-- B が `sockat-<uid>.<乱数 10 文字>` に落ちた時は実パスの B の式で 11 バイト短くなり、59 バイト。`$XDG_RUNTIME_DIR` の時は 65 バイト (どちらも E 2 文字、Linux の bind でスレッドの cwd を使えない時の実パスの B の式)
+- Linux の bind でスレッドの cwd を使えない時、実パスの B を通る綴りの下限は、B が `sockat-<uid>.<乱数 10 文字>` に落ちた時 11 バイト短い 59 バイト、`$XDG_RUNTIME_DIR` の B の時 65 バイト (E 2 文字)。`/proc` を使えれば procB の綴りも試すので、届く長さはどちらか長い方 (procB は上の最悪の桁で 68)。procB を使わない時 (`/proc` が無い、`usable_cross_uid`) はこの値が下限
 
 ## 表
 

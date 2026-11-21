@@ -199,8 +199,8 @@ TEXT = {
     },
     "md.floor.head": {"ja": "| OS | 操作 | 条件 | 下限 |", "en": "| OS | Operation | Condition | Lower bound |"},
     "md.floor.fallback": {
-        "ja": "- B が `sockat-<uid>.<乱数 10 文字>` に落ちた時は実パスの B の式で {suffix} バイト短くなり、{fallback} バイト。`$XDG_RUNTIME_DIR` の時は {xdg} バイト (どちらも E 2 文字、Linux の bind でスレッドの cwd を使えない時の実パスの B の式)",
-        "en": "- When B falls back to `sockat-<uid>.<10 random characters>`, the real-path B formula is {suffix} bytes shorter, giving {fallback} bytes. With `$XDG_RUNTIME_DIR` it is {xdg} bytes (both with a 2-character E; the real-path B formula for Linux bind without the thread cwd)",
+        "ja": "- Linux の bind でスレッドの cwd を使えない時、実パスの B を通る綴りの下限は、B が `sockat-<uid>.<乱数 10 文字>` に落ちた時 {suffix} バイト短い {fallback} バイト、`$XDG_RUNTIME_DIR` の B の時 {xdg} バイト (E 2 文字)。`/proc` を使えれば procB の綴りも試すので、届く長さはどちらか長い方 (procB は上の最悪の桁で {procb})。procB を使わない時 (`/proc` が無い、`usable_cross_uid`) はこの値が下限",
+        "en": "- For a Linux bind without the thread cwd, the floor of a spelling through the real-path B is {fallback} bytes ({suffix} bytes shorter) when B falls back to `sockat-<uid>.<10 random characters>`, and {xdg} bytes with the `$XDG_RUNTIME_DIR` B (2-character E). Where `/proc` is usable the procB spelling is tried too, so the reach is the longer of the two (procB is {procb} with the worst digits above). Without procB (no `/proc`, `usable_cross_uid`) this value is the floor",
     },
     "floor.any": {"ja": "ファイル名によらず届く", "en": "any file name"},
     "floor.name_max": {"ja": "{n} (NAME_MAX)", "en": "{n} (NAME_MAX)"},
@@ -1031,6 +1031,7 @@ def floor_values(model):
         "macos_bind_nobase": fmax(mac, "thread-cwd"),
         "macos_connect_nobase": fmax(mac, "thread-cwd-direct"),
         "fallback_suffix": fl["Bsuffix"],
+        "procb": fmax(lin, "link-dir@procB"),
         "fallback": fmax(lin, "link-dir@real", b=b_real(lin, fl["Bsuffix"])),
         "xdg": fmax(lin, "link-dir@real", b=xdg_b),
     }
@@ -1161,7 +1162,7 @@ def render_md(model, tables, summary, os_meta, tr):
         cond_key = key if key.startswith("linux") or "nobase" in key else "macos_tmp"
         w(f"| {tr.t('floor.os.' + os_id)} | {tr.t('floor.op.' + op_id)} | {tr.t('floor.cond.' + cond_key)} | {floor_cell(fv[key], model, tr)} |")
     w("")
-    w(tr.t("md.floor.fallback", suffix=fv["fallback_suffix"], fallback=fv["fallback"], xdg=fv["xdg"]))
+    w(tr.t("md.floor.fallback", suffix=fv["fallback_suffix"], fallback=fv["fallback"], xdg=fv["xdg"], procb=fv["procb"]))
     w("")
     w(tr.t("md.tables.h"))
     w("")
