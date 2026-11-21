@@ -40,7 +40,7 @@ DGRAM も同じ (`sockat::datagram::bind` 等)。
 - [docs/SPEC-routes-ja.md](./docs/SPEC-routes-ja.md) — 経路の作り方 (置き場 B の作り方、各経路の手順。実装者向け)
 - [docs/decisions/](./docs/decisions/INDEX.md) — 仕様と構成の判断 (DR)。今の設計の正本は [DR-0017](./docs/decisions/DR-0017-resolve-through-persistent-base.md)
 - [docs/design/conformance.md](./docs/design/conformance.md) — 言語によらない適合試験
-- [pages/](./pages/) — 届く範囲の表、Q&A
+- [pages/](./pages/) — 届く範囲の表、Q&A、[言語ごとの注意](./pages/langs-ja.md)
 
 ## ライセンス
 

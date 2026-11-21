@@ -40,7 +40,7 @@ DGRAM is the same (`sockat::datagram::bind` etc.).
 - [docs/SPEC-routes.md](./docs/SPEC-routes.md) — how the routes are built (building the base B, the steps of each route; for implementers)
 - [docs/decisions/](./docs/decisions/INDEX.md) — decisions on the specification and the layout (DR, Japanese). The current design is [DR-0017](./docs/decisions/DR-0017-resolve-through-persistent-base.md)
 - [docs/design/conformance.md](./docs/design/conformance.md) — the language-independent conformance tests (Japanese)
-- [pages/](./pages/) — the reach table, Q&A
+- [pages/](./pages/) — the reach table, Q&A, [per-language caveats](./pages/langs.md)
 
 ## License
 

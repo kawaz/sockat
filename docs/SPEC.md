@@ -373,7 +373,7 @@ Routes needing neither a write nor a thread come first; routes that start a thre
 
 ## Patterns not to use
 
-Patterns that, when using sockat, remove an unrelated file or fail to remove the file. This section is the source for warnings to users; other sections and each language's docs point here. Each language's README / manual gives, under the same heading, the concrete form in that language (e.g. Go's `os.Remove(l.Addr().String())`) and recommended code that avoids it (run as a test).
+Patterns that, when using sockat, remove an unrelated file or fail to remove the file. This section is the source for warnings to users; other sections and each language's docs point here. Each language's README / manual links to this section and gives only the concrete form in that language (e.g. Go's `os.Remove(l.Addr().String())`) and recommended code that avoids it (run as a test).
 
 | Pattern | Why not | Instead |
 |---|---|---|
@@ -423,7 +423,7 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 - Routes are not exposed in the public API. Tests force each route by calling it directly from inside the package
 - The parts that read the environment (the base candidates, where `/proc` is, whether Apple OSes accept a widened sockaddr, whether the thread cwd can be used) can be replaced from tests
 - The README and manual link to this specification. Before adding behavior that disagrees with it, fix this specification first
-- What the user-facing docs state: that state grows outside the app's own place, that a spelling is not used after cleanup, a peer with `PrivateTmp`, and that a live D can be removed in environments with systemd older than v242 and in macOS's `$TMPDIR`, that closing the listener of a link-file spelling leaves the socket file (each item is in "[What differs from the standard for a long path](#what-differs-from-the-standard-for-a-long-path)" and "[Patterns not to use](#patterns-not-to-use)"), and that a B in the socket's directory and a B fallen back to after the checks failed can stay, removed neither by `sweep` nor by the OS's cleaning ([What stays in the base](#what-stays-in-the-base)), what the things in `/tmp/sockat-<uid>` etc. are and that removing a live D only makes the spelling unreachable, and that where tests are repeated (CI, repeated verification) calling `sweep()` keeps dead D from piling up, and that a long-lived process binding long paths many times (a daemon making a socket per session, etc.) piles up the default bind's E until it exits, so it cleans up with `remove()` / `cleanup()` of `bind_ex`
+- The user-facing docs (each language's README / manual) do not copy what is common to all languages; they link to the sections of this specification and pages: "[What differs from the standard for a long path](#what-differs-from-the-standard-for-a-long-path)", "[Patterns not to use](#patterns-not-to-use)", "[What stays in the base](#what-stays-in-the-base)", "[`sweep`](#sweep)". A language's docs hold only the names and types in that language, the concrete forms and recommended code in that language, and the caveats specific to that language (bugs and limits of its standard library or runtime). Each specific caveat gets one line in the hub's [per-language caveats](../pages/langs.md)
 
 ## What implementations test
 

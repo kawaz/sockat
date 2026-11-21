@@ -23,12 +23,13 @@ sockat は、`sun_path` の上限を超えるパスでも Unix domain socket を
 | `docs/design/conformance.md` | 適合試験の決まり (各言語の試験用 CLI の入出力、表の書き方) |
 | `conformance/` | 適合試験の表と、それを流して突き合わせるスクリプト |
 | `tools/` | 利用の統計の取得 (`just stats`) |
-| `pages/` | 利用者向けに公開するサイトの元 (届く範囲の表 `reach/`、fork-cwd の手法、Q&A `faq`)。md は全部日本語 `<name>-ja.md` と英語 `<name>.md` の対 (`just push` が対の欠けを止める)。開発用の文書は docs/ |
+| `pages/` | 利用者向けに公開するサイトの元 (届く範囲の表 `reach/`、fork-cwd の手法、Q&A `faq`、言語ごとの注意 `langs`)。md は全部日本語 `<name>-ja.md` と英語 `<name>.md` の対 (`just push` が対の欠けを止める)。開発用の文書は docs/ |
 
 ## 守ること
 
 - **仕様の正本はここ。** 各言語の実装の振る舞いを変える前に、先に SPEC を直す
 - SPEC には言語によらないことだけを書く。言語固有の話 (型、ランタイム連携、メモリ安全の扱い) は各言語のリポに置き、リンクで済ませる
+- 各言語のリポの README / マニュアルには言語によらない説明を写さず、ハブの SPEC・pages へリンクする。言語固有の注意は各リポに書き、ハブの `pages/langs-ja.md` に 1 行で載せる
 - SPEC の主張は各言語の実装 (sockat-rs・sockat-py・sockat-go) とその DR と食い違わせない。食い違いに気づいたら、どちらを直すかを決めてから直す
 - 言語版を公開したら README の実装の表を直す (日本語版と英語版の両方)
 
