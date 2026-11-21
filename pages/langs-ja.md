@@ -2,13 +2,20 @@
 
 > [English](./langs.md) | 日本語
 
-各言語の実装に固有の注意 (標準ライブラリや runtime の不具合・制約) の一覧。詳しくは各リポにある。言語によらない注意は [SPEC](../docs/SPEC-ja.md) の「長いパスで標準と違う点」「使ってはいけない書き方」「置き場に残る物」。
+各言語の実装に固有の注意 (標準ライブラリや runtime の不具合・制約) の一覧。詳しくは各リポにある。言語によらない注意は [SPEC](../docs/SPEC-ja.md) の「長いパスで標準と違う点」「使ってはいけない書き方」「置き場に残る物」「sweep」。
 
 | 言語 | 注意 | 詳しく |
 |---|---|---|
 | Rust | OpenBSD で Rust 1.99 以前の std の `local_addr`・`peer_addr`・`recv_from` はパスの最後の 1 バイトを落とす (1.100 で直った)。`recv_from` のアドレスへの DGRAM の返信には 1.100 以上が要る | [sockat-rs](https://github.com/kawaz/sockat-rs) |
 | Go | macOS の広げた sockaddr の経路が無い | [sockat-go](https://github.com/kawaz/sockat-go) |
 | Go | 標準の `UnixListener.Close` は綴りで unlink する。`ListenEx` の listener は閉じても消さない (`SetUnlinkOnClose(false)`) | [sockat-go](https://github.com/kawaz/sockat-go) |
-| TypeScript | native 抜きなので、スレッドの cwd・`bindat` / `connectat`・広げた sockaddr の経路が無い | [sockat-ts](https://github.com/kawaz/sockat-ts) |
-| TypeScript | Linux で `/proc` が見えないと Bun 自体が起動しない (Node は動く) | [sockat-ts](https://github.com/kawaz/sockat-ts) |
-| TypeScript | `bindEx` の listener は、閉じると標準と同じく綴りで unlink する (Node も Bun も止める口が無い) | [sockat-ts](https://github.com/kawaz/sockat-ts) |
+| Python | 長いパスで返すソケット (と `datagram.unbound()`) は `socket.socket` の subclass で、`getsockname()` / `getpeername()` が元のパスを返す。`type(x) is socket.socket` は偽、`socket.fromfd` で作り直すとカーネルの綴りに戻る | [sockat-py](https://github.com/kawaz/sockat-py/blob/main/docs/MANUAL-ja.md#python-に固有の注意) |
+| Python | asyncio の `start_unix_server(sock=)` は、3.13 以上なら閉じる時に元のパスのソケットファイルを消す (3.11 / 3.12 は消さない) | [sockat-py](https://github.com/kawaz/sockat-py/blob/main/docs/MANUAL-ja.md#asyncio) |
+| Python | `_ex` は `sockat.ex` に置く (`socket.socket.connect_ex` と紛れるため)。`import sockat` では読み込まない | [sockat-py](https://github.com/kawaz/sockat-py/blob/main/docs/MANUAL-ja.md#python-に固有の注意) |
+| Python | `os.path.abspath`・`normpath`・`relpath` は `..` を字句で畳む。相対パスを絶対にする時は `os.path.join(os.getcwd(), path)` | [sockat-py](https://github.com/kawaz/sockat-py/blob/main/docs/MANUAL-ja.md#python-に固有の注意) |
+| TypeScript | native 抜きなので、スレッドの cwd・`bindat` / `connectat`・広げた sockaddr の経路が無い。`usableCrossUid` を満たせない時は `ENAMETOOLONG` | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/README-ja.md#長いパスへの届き方) |
+| TypeScript | Linux で `flock(1)` (util-linux / busybox) が無いと、長いパスの bind と resolve は `ENAMETOOLONG` (既定の connect は届く)。illumos はロックの手段が無く同じ | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/README-ja.md#長いパスへの届き方) |
+| TypeScript | Linux で `/proc` が見えないと Bun 自体が起動しない (Node は動く) | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/README-ja.md#どこから届かなくなるか) |
+| TypeScript | `bindEx` の listener は、閉じると標準と同じく綴りで unlink する (Node も Bun も止める口が無い)。覚えられなかった短いパスでは元のパスを unlink する | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/README-ja.md#spec-から外れる点) |
+| TypeScript | DGRAM・SEQPACKET が無い (Node と Bun の標準に無い) | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/README-ja.md#spec-から外れる点) |
+| TypeScript | node:net は数値に読める文字列を TCP のポートと読むので、`./` を付けて渡す (`Spelling` は `CwdRelative` のまま) | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/README-ja.md#使い方) |
