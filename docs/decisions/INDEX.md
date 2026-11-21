@@ -19,4 +19,4 @@ Status は各 DR ファイルの `Status:` 行が正本。ここに載るのは�
 | [DR-0003](DR-0003-single-connect-when-standard-never-blocks.md) | ✅ 実装済 | 標準の connect が元から待たない言語 (Go 等) は connect を 1 つだけ出し、`_nonblocking` を分けない |
 | [DR-0004](DR-0004-standard-length-per-language.md) | ✅ 実装済 | 標準に渡す長さはその言語の標準が受け付ける長さ。経路の綴りの条件は sockaddr に入る長さ (`sun_path` − 1) |
 | [DR-0006](DR-0006-nul-is-invalid-at-any-length.md) | ✅ 実装済 | 先頭以外に NUL を含むパスは長さによらず引数の誤り。先頭が NUL (abstract) は対象外 |
-| [DR-0017](DR-0017-resolve-through-persistent-base.md) | ⬜ 未実装 | 長いパスを、置き場 B (利用者ごと)・D (プロセスごと)・E (resolve ごと) の消さない symlink を通る短い綴りに resolve して bind / connect する。既定の bind も綴りを残す。収まらなければ thread-cwd / at。fork と最終手段は無く、bind の綴りの性質は `Spelling` |
+| [DR-0017](DR-0017-resolve-through-persistent-base.md) | ✅ 実装済 | 長いパスを、置き場 B (利用者ごと)・D (プロセスごと)・E (resolve ごと) の消さない symlink を通る短い綴りに resolve して bind / connect する。既定の bind も綴りを残す。収まらなければ thread-cwd / at。fork と最終手段は無く、bind の綴りの性質は `Spelling` |
