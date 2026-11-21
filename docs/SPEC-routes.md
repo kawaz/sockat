@@ -101,7 +101,7 @@ Creating D:
 4. Check that the `(st_dev, st_ino)` from `lstat` by name is the same as the fd's. If not (another process's `sweep()` removed it between 1 and 3), close the fd and start again from 1
 
 - `sweep()` and `sweep_base(path)` take the owner of a D in B to be dead when `flock(LOCK_EX | LOCK_NB)` on that D succeeds, and remove it (which B are covered is in [the SPEC's `sweep`](SPEC.md#sweep)). They do not touch the E right under B (the default connect's), and leave a D containing something other than a symlink. They cover only the directories right under B named in the form of a D (10 characters of the 62 alphanumerics); B is sockat's own, and the user puts nothing else there
-- Random names use 62 alphanumeric characters from the OS's secure random source. The names are made the same way in the 3 languages
+- Random names use 62 alphanumeric characters from the OS's secure random source. What the languages share is the form of the names (the characters and the length; sweep tells a D by its form). How bytes are mapped to characters is up to each implementation (rejection sampling without bias is recommended; the small bias of `% 62` is allowed)
 - D's name is not a counter, so that the spelling does not become the same when another process with the same PID and the same fd number appears after the process exits
 - While D lives it is protected by flock, and B and D are 0711, so the spelling does not later hit an unrelated file (procB cannot be followed after the process exits; a real-path spelling points to the same place until D is removed)
 - systemd-tmpfiles (v242 or later) does not clean a directory holding a lock, nor anything under it
