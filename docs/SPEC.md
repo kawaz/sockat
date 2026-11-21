@@ -389,7 +389,7 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 | the directory is missing / nothing to connect to | `ENOENT` |
 | something other than a directory where the directory should be | `ENOTDIR` |
 | a file already exists where bind would create one | `EADDRINUSE` |
-| a socket file nobody listens on / nobody holds | `ECONNREFUSED` (a DGRAM connect gets `EDESTADDRREQ` on illumos; measured in sockat-go's CI 2026-11-22) |
+| a socket file nobody listens on / nobody holds | `ECONNREFUSED` (a DGRAM connect gets `EDESTADDRREQ` on illumos; measured in sockat-go's CI 2026-11-21) |
 | the backlog is full | Linux gives `EAGAIN` for a non-blocking connect (a blocking connect waits); macOS gives `ECONNREFUSED` |
 | no route can be used (the spelling does not fit, the means is missing) | `ENAMETOOLONG` |
 | `resolve_for_bind` at a length only thread-cwd / at reaches | `ENAMETOOLONG` |

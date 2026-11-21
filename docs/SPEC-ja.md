@@ -389,7 +389,7 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 | ディレクトリが無い / connect 先が無い | `ENOENT` |
 | ディレクトリの位置にディレクトリでない物がある | `ENOTDIR` |
 | bind 先に既にファイルがある | `EADDRINUSE` |
-| 誰も listen していない / 誰も持たないソケットファイル | `ECONNREFUSED` (DGRAM の connect は illumos で `EDESTADDRREQ`。sockat-go の CI で実測 2026-11-22) |
+| 誰も listen していない / 誰も持たないソケットファイル | `ECONNREFUSED` (DGRAM の connect は illumos で `EDESTADDRREQ`。sockat-go の CI で実測 2026-11-21) |
 | backlog が満杯 | Linux はブロックしない connect で `EAGAIN` (ブロックする connect は待つ)、macOS は `ECONNREFUSED` |
 | どの経路も使えない (綴りが収まらない、手段が無い) | `ENAMETOOLONG` |
 | `resolve_for_bind` で、thread-cwd・at でしか届かない長さ | `ENAMETOOLONG` |
