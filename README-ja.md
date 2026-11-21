@@ -31,7 +31,7 @@ DGRAM も同じ (`sockat::datagram::bind` 等)。
 | Rust | [kawaz/sockat-rs](https://github.com/kawaz/sockat-rs) | crates.io の [`sockat`](https://crates.io/crates/sockat) | 公開済み (0.5.1) |
 | Python | [kawaz/sockat-py](https://github.com/kawaz/sockat-py) | PyPI の [`sockat`](https://pypi.org/project/sockat/) | 公開済み (0.3.2) |
 | Go | [kawaz/sockat-go](https://github.com/kawaz/sockat-go) | [`github.com/kawaz/sockat-go`](https://pkg.go.dev/github.com/kawaz/sockat-go) | 公開済み (v0.4.3。macOS の広げた sockaddr なし) |
-| JavaScript / TypeScript | [kawaz/sockat-ts](https://github.com/kawaz/sockat-ts) | npm の [`@kawaz/sockat`](https://www.npmjs.com/package/@kawaz/sockat) | 公開済み (0.1.3。Node 22 以上と Bun。native 抜きで、スレッドの cwd・`bindat` / `connectat`・広げた sockaddr の経路なし) |
+| JavaScript / TypeScript | [kawaz/sockat-ts](https://github.com/kawaz/sockat-ts) | npm の [`@kawaz/sockat`](https://www.npmjs.com/package/@kawaz/sockat) | 公開済み (0.1.4。Node 22 以上と Bun。native 抜きで、スレッドの cwd・`bindat` / `connectat`・広げた sockaddr の経路なし) |
 | Ruby | kawaz/sockat-rb | RubyGems | 予定 |
 
 ## 仕組みと詳しい振る舞い
