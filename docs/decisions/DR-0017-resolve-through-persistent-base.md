@@ -1,6 +1,6 @@
 # DR-0017: 長いパスは、置き場 B の中の消さない symlink を通る短い綴りに resolve して bind / connect する。既定の bind も綴りを残し、fork はしない
 
-- Status: Active (実装済み: sockat-rs 0.5.1 (次の版は未定)、sockat-py 0.3.2、sockat-go v0.4.1、@kawaz/sockat 0.1.2)
+- Status: Active (実装済み: sockat-rs 0.5.1 (次の版は未定)、sockat-py 0.3.2、sockat-go v0.4.1、@kawaz/sockat 0.1.3)
 - Date: 2026-11-21
 
 ## Context
