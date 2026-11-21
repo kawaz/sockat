@@ -379,7 +379,7 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 |---|---|---|
 | unlinking / stat-ing the socket file by the spelling the kernel returns (`getsockname`, the listener's address, etc.) without looking at `Spelling` | with a link-file spelling only E is removed and the file stays. A `Dangling` spelling reaches nothing | keep the original path and use it. `remove()` |
 | using an old spelling after `cleanup` or after the process exits | after B in `/tmp` is cleaned up, someone else can recreate the same name. A procB spelling cannot be followed after the process exits | use a spelling only within `until` |
-| binding with a relative path and removing it by that relative path after changing the cwd | it hits a file elsewhere (`CwdRelative`) | make the path absolute before binding. `remove()` |
+| binding with a relative path and removing it by that relative path after changing the cwd | it hits a file elsewhere (`CwdRelative`) | make the path absolute before binding by putting the cwd in front (do not use a function that folds `..` lexically; `a/sym/..` would become another directory). `remove()` |
 | relying on closing the listener to remove the socket file | for a long path it depends on the spelling and may not be removed ("[What differs from the standard for a long path](#what-differs-from-the-standard-for-a-long-path)"). The listener of `bind_ex` never removes it on close | `remove()`, or remove by the original path |
 | relying on `remove()` to close the listener too | `remove()` only removes the file | close the listener yourself |
 | calling `remove()` after closing the listener | another file recreated after the close may not be told apart ([`remove`](#remove)) | call it before closing the listener |

@@ -7,8 +7,11 @@
 | 言語 | 注意 | 詳しく |
 |---|---|---|
 | Rust | OpenBSD で Rust 1.99 以前の std の `local_addr`・`peer_addr`・`recv_from` はパスの最後の 1 バイトを落とす (1.100 で直った)。`recv_from` のアドレスへの DGRAM の返信には 1.100 以上が要る | [sockat-rs](https://github.com/kawaz/sockat-rs/blob/main/docs/MANUAL-ja.md#rust-に固有の注意) |
-| Go | macOS の広げた sockaddr の経路が無い | [sockat-go](https://github.com/kawaz/sockat-go) |
-| Go | 標準の `UnixListener.Close` は綴りで unlink する。`ListenEx` の listener は閉じても消さない (`SetUnlinkOnClose(false)`) | [sockat-go](https://github.com/kawaz/sockat-go) |
+| Go | macOS の広げた sockaddr の経路が無い (取り込んだ接続の `RemoteAddr` が nil になるため) | [sockat-go](https://github.com/kawaz/sockat-go/blob/main/README-ja.md#spec-から外れる経路) |
+| Go | 標準の `UnixListener.Close` は綴りで unlink する。既定の `Listen` が link-file の綴りの時は E だけが消えてソケットのファイルが残る (link-dir は実体が消える)。`ListenEx` の listener は閉じても消さない (`SetUnlinkOnClose(false)`) | [sockat-go](https://github.com/kawaz/sockat-go/blob/main/README-ja.md#go-に固有の注意) |
+| Go | `ForBind.Path` を自分で `net.ListenUnix` に渡した listener は、`SetUnlinkOnClose(false)` にして `SocketFile.Remove` で消す | [sockat-go](https://github.com/kawaz/sockat-go/blob/main/README-ja.md#go-に固有の注意) |
+| Go | illumos の標準は先頭の `@` を abstract に書き換えるので、`./` を付けて渡す (`Spelling` は `CwdRelative`) | [sockat-go](https://github.com/kawaz/sockat-go/blob/main/README-ja.md#go-に固有の注意) |
+| Go | 標準はパスを NUL で黙って切り詰めるので、NUL を含むパスは長さによらず `EINVAL` | [sockat-go](https://github.com/kawaz/sockat-go/blob/main/README-ja.md#go-に固有の注意) |
 | Python | 長いパスで返すソケット (と `datagram.unbound()`) は `socket.socket` の subclass で、`getsockname()` / `getpeername()` が元のパスを返す。`type(x) is socket.socket` は偽、`socket.fromfd` で作り直すとカーネルの綴りに戻る | [sockat-py](https://github.com/kawaz/sockat-py/blob/main/docs/MANUAL-ja.md#python-に固有の注意) |
 | Python | asyncio の `start_unix_server(sock=)` は、3.13 以上なら閉じる時に元のパスのソケットファイルを消す (3.11 / 3.12 は消さない) | [sockat-py](https://github.com/kawaz/sockat-py/blob/main/docs/MANUAL-ja.md#asyncio) |
 | Python | `_ex` は `sockat.ex` に置く (`socket.socket.connect_ex` と紛れるため)。`import sockat` では読み込まない | [sockat-py](https://github.com/kawaz/sockat-py/blob/main/docs/MANUAL-ja.md#python-に固有の注意) |
