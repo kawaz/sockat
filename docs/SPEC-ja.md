@@ -14,15 +14,15 @@
 | 用語 | 意味 |
 |---|---|
 | 標準 | その言語の標準ライブラリの Unix domain socket の bind / connect |
-| 標準に渡す長さ | その言語の標準が、パスを変えずに広げない sockaddr に入れて受け付ける最長。これ以下は標準にそのまま渡す。多くは `sun_path` − 1、Java は `sun_path` − 2。標準がそれより長いパスを切り詰め・広げた sockaddr・自前の迂回で通しても、それは使わない (Node の macOS・Bun) ([DR-0004](decisions/DR-0004-standard-length-per-language.md)) |
-| sockaddr に入る長さ | `sun_path` の長さ − 1 バイト (NUL の分を除く)。広げていない sockaddr に入る綴りの最長 |
+| 標準に渡す長さ (standard length) | その言語の標準が、パスを変えずに広げない sockaddr に入れて受け付ける最長。これ以下は標準にそのまま渡す。多くは `sun_path` − 1、Java は `sun_path` − 2。標準がそれより長いパスを切り詰め・広げた sockaddr・自前の迂回で通しても、それは使わない (Node の macOS・Bun) ([DR-0004](decisions/DR-0004-standard-length-per-language.md)) |
+| sockaddr に入る長さ (sockaddr length) | `sizeof(sun_path) - 1` (NUL の分を除く)。広げていない sockaddr に入る綴りの最長 |
 | 元のパス | 利用者が渡したパス |
 | ディレクトリ / ファイル名 | 元のパスの最後の要素の前と、最後の要素。ソケットのディレクトリは前者 |
-| 綴り | カーネルに渡すパスの文字列。bind の綴りはカーネルが覚え、`getsockname` / `getpeername` で返す |
-| 経路 | 元のパスと同じ所を指す別の綴りを作り、それで bind / connect するやり方。名前は「[経路の名前](#経路の名前)」 |
-| 試す | 経路が使えるかを確かめ、使えればその綴りで bind / connect すること。使えなければ次の経路へ進む |
-| 使えない / 失敗 | 使えない: 経路自体が使えない (綴りが収まらない、手段が無い、B・D・E を作れない)。失敗: 実際に bind / connect して OS がエラーを返した ([経路の失敗の扱い](SPEC-routes-ja.md#経路の失敗の扱い)) |
-| 置き場 | B を作る場所。`/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR`・ソケットのディレクトリのどれか ([実体の置き場](SPEC-routes-ja.md#実体の置き場))。利用者が `Options.base` で B そのものを指定した時は使わない |
+| 綴り (spelling) | カーネルに渡すパスの文字列。bind の綴りはカーネルが覚え、`getsockname` / `getpeername` で返す |
+| 経路 (route) | 元のパスと同じ所を指す別の綴りを作り、それで bind / connect するやり方。名前は「[経路の名前](#経路の名前)」 |
+| 試す (try) | 経路が使えるかを確かめ、使えればその綴りで bind / connect すること。使えなければ次の経路へ進む |
+| 使えない / 失敗 (unusable / failure) | 使えない: 経路自体が使えない (綴りが収まらない、手段が無い、B・D・E を作れない)。失敗: 実際に bind / connect して OS がエラーを返した ([経路の失敗の扱い](SPEC-routes-ja.md#経路の失敗の扱い)) |
+| 置き場 (base) | B を作る場所。`/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR`・ソケットのディレクトリのどれか ([実体の置き場](SPEC-routes-ja.md#実体の置き場))。利用者が `Options.base` で B そのものを指定した時は使わない |
 | B | 置き場の中に作る実在のディレクトリ。利用者ごとで、プロセスをまたいで使い回す |
 | D | B の中に (プロセス, B) ごとに 1 つ作るディレクトリ。名前は乱数 10 文字 |
 | E | symlink。ソケットのディレクトリを指す物 (link-dir と thread-cwd・at) と、ソケットのファイルを指す物 (link-file) がある |
@@ -30,6 +30,7 @@
 | 実パスの綴り | B をその実パスで綴る形 |
 | resolve | 長いパスを、B・D・E を通る短い綴りに言い換えて返すこと ([resolve](#resolve)) |
 | 綴りの性質 | bind の綴りを後で使えるか。`Spelling` で返す ([綴りの性質 `Spelling`](#綴りの性質-spelling))。`Dangling` は片付け済みの E を含み、どこにも届かない綴り |
+| 確かめに外れる (fails the checks) | 置き場・B・`Options.base` の持ち主と権限の検査 (実ディレクトリか、持ち主が自分か root か、他人が書けないか) に通らない |
 | connect 系 | `connect`・`connect_nonblocking` と、それぞれの `_ex` |
 | `/proc` を使える | `/proc/self/fd/<fd>` と `/proc/<pid>/fd/<fd>` を引ける (B の fd での確かめ方は [綴りの形](SPEC-routes-ja.md#綴りの形)) |
 

@@ -4,11 +4,25 @@
 
 `sun_path` の上限 (NUL 込みで macOS と BSD は 104 バイト、Linux は 108 バイト) を超えるパスでも、Unix domain socket を bind / connect できるライブラリ。言語ごとに実装があり、このリポは言語によらない仕様の正本と、各実装への入口。
 
-## 何を解決するか
+## 使い方
 
-- 標準ライブラリの bind / connect は `sun_path` に収まらないパスを断る。深い一時ディレクトリ (macOS の `$TMPDIR` だけで 50 バイト前後) に置くとすぐ当たる
-- 上限が効くのは `bind(2)` / `connect(2)` に渡す引数の長さだけなので、sockat は同じ場所を指す短い綴りでカーネルに渡す
-- 標準ライブラリが受け付けるパス (多くは `sun_path` − 1 バイトまで) は、そのまま標準ライブラリに渡す
+標準の bind / connect を sockat に書き換えるだけ。戻り値は標準と同じ型で、短いパスは標準にそのまま渡すので振る舞いは変わらない。Rust で示す (各言語も同じ形。言語ごとの例は各リポの README)。
+
+```rust
+// let listener = std::os::unix::net::UnixListener::bind(&path)?;
+let listener = sockat::bind(&path)?;
+
+// let stream = std::os::unix::net::UnixStream::connect(&path)?;
+let stream = sockat::connect(&path)?;
+```
+
+DGRAM も同じ (`sockat::datagram::bind` 等)。
+
+## 知っておくこと
+
+- 長いパスで bind すると、`/tmp/sockat-<uid>/` に小さなディレクトリと symlink が残る (OS の一時ディレクトリの掃除で消える)。試験を何度も回す環境では `sweep()` を 1 回呼べば片付く
+- 長いパスでは、listener のアドレス (`local_addr` / `getsockname`) が渡したパスと違う短い綴りになる。ソケットのファイルを消す時は、アドレスでなく元のパスで消す
+- 後始末や、どの経路を通ったかが要る時は `_ex` 付きの関数を使う
 
 ## 言語ごとの実装
 
@@ -20,33 +34,13 @@
 | JavaScript / TypeScript | [kawaz/sockat-ts](https://github.com/kawaz/sockat-ts) | npm の [`@kawaz/sockat`](https://www.npmjs.com/package/@kawaz/sockat) | 公開済み (0.1.0。Node 22 以上と Bun。native 抜きで、スレッドの cwd・`bindat` / `connectat`・広げた sockaddr の経路なし) |
 | Ruby | kawaz/sockat-rb | RubyGems | 予定 |
 
-使い方は各リポの README にある。
-
-## 共通の振る舞い
-
-[DR-0017](./docs/decisions/DR-0017-resolve-through-persistent-base.md) の設計。各言語の実装はこの設計へ作り直し中で、公開済みの版の振る舞いは各リポの README にある。
-
-- 戻り値は、その言語の標準の bind / connect が返すのと同じソケットの型
-- 長いパスでも、ソケットファイルは渡したパスにできる
-- 長いパスは、利用者ごとの置き場 B (`/tmp` を先に、`$XDG_RUNTIME_DIR`、`$TMPDIR`、ソケットのディレクトリの順) の中に、プロセスごとのディレクトリ D と symlink E を作り、それを通る短い綴りに言い換えて (resolve) bind / connect する
-- bind の綴りは消さずに残す。綴りが生きている間は、`getsockname` の綴りで消す上のライブラリや DGRAM の返信が元のパスと同じに働く。そのため長いパスの bind は、アプリの置き場の外 (`/tmp/sockat-<uid>` 等) に D と E を残す (OS の一時ディレクトリの掃除か `sweep()` で消える。生きているプロセスの D を手で消しても、綴りが辿れなくなるだけで、元のパスのソケットは働く。試験を何度も回す環境では `sweep()` を 1 回呼べば死んだ D が消える。[置き場に残る物](./docs/SPEC-ja.md#置き場に残る物))
-- 綴りが収まらない長さの bind は、使い捨てのスレッドの cwd (FreeBSD は `bindat`) で届かせる。bind が最後の要素の symlink を辿る OS (macOS 等) では、ソケットのファイルを指す symlink を通し、ファイル名の長さの上限が無い
-- connect は、書き込みもスレッドも要らない経路 (/proc、相対パス、広げた sockaddr、`connectat`) を先に、次に使い捨てのスレッド、最後に置き場の symlink を試す。既定の connect はプロセスの中に状態を残さない
-- 綴りを自分で標準ライブラリに渡したい時は resolve (`resolve_for_bind` / `resolve_for_connect`) を使う
-- sockat は fork しない
-- どの経路も呼び出し元のプロセスとスレッドの cwd を変えない
-- 経路が実際に bind / connect して失敗したら、そのエラーを返し、次の経路でやり直さない
-- 長いパスでは、カーネルが返すアドレス (`getsockname` / `getpeername`) は元のパスでなく bind の綴り。後で使えるかは `_ex` が返す綴りの性質 (`Spelling`) で分かる。標準の型のまま差し替えられる言語は元のパスを返す
-- `_ex` の `remove()` は、自分が作ったソケットのファイルだけを消す (listener は閉じない)。B と D は sockat が片付けず、OS の一時ディレクトリの掃除に任せる (`sweep()` を呼べば死んだプロセスの D を消す)
-- Windows は対象外
-
-## ドキュメント
+## 仕組みと詳しい振る舞い
 
 - [docs/SPEC-ja.md](./docs/SPEC-ja.md) — 言語によらない仕様 (公開する操作、resolve、綴りの性質、片付け、経路の試す順、使ってはいけない書き方、エラー、各実装に求めること)
 - [docs/SPEC-routes-ja.md](./docs/SPEC-routes-ja.md) — 経路の作り方 (置き場 B の作り方、各経路の手順。実装者向け)
-- [docs/decisions/](./docs/decisions/INDEX.md) — 仕様と構成の判断 (DR)
-- [docs/decisions/DR-0017](./docs/decisions/DR-0017-resolve-through-persistent-base.md) — 長いパスの経路と API の判断と却下した案
-- [docs/design/conformance.md](./docs/design/conformance.md) — 言語によらない適合試験 (各言語の試験用 CLI の入出力、場面の表)
+- [docs/decisions/](./docs/decisions/INDEX.md) — 仕様と構成の判断 (DR)。今の設計の正本は [DR-0017](./docs/decisions/DR-0017-resolve-through-persistent-base.md)
+- [docs/design/conformance.md](./docs/design/conformance.md) — 言語によらない適合試験
+- [pages/](./pages/) — 届く範囲の表、Q&A
 
 ## ライセンス
 

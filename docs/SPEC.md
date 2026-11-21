@@ -30,6 +30,7 @@ How sockat behaves, independent of the language (the promise to users and to tho
 | real-path spelling | spelling B by its real path |
 | resolve | turning a long path into a short spelling through B / D / E and returning it ([resolve](#resolve)) |
 | spelling properties | whether a bind's spelling can be used later. Returned as `Spelling` ([Spelling properties: `Spelling`](#spelling-properties-spelling)). `Dangling` is a spelling that contains an E already removed, and reaches nothing |
+| fails the checks | does not pass the owner and permission checks of a base, B or `Options.base` (a real directory, owned by oneself or root, not writable by others) |
 | the connect variants | `connect`, `connect_nonblocking`, and the `_ex` of each |
 | `/proc` usable | `/proc/self/fd/<fd>` and `/proc/<pid>/fd/<fd>` can be looked up (how it is checked with B's fd is in [Spelling forms](SPEC-routes.md#spelling-forms)) |
 
