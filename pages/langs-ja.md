@@ -7,6 +7,7 @@
 | 言語 | 注意 | 詳しく |
 |---|---|---|
 | Rust | OpenBSD で Rust 1.99 以前の std の `local_addr`・`peer_addr`・`recv_from` はパスの最後の 1 バイトを落とす (1.100 で直った)。`recv_from` のアドレスへの DGRAM の返信には 1.100 以上が要る | [sockat-rs](https://github.com/kawaz/sockat-rs/blob/main/docs/MANUAL-ja.md#rust-に固有の注意) |
+| Rust | Rust の std はパスで渡した abstract の名前 (`"\0name"`) を拒むので、`bind_ex` もその std のエラーを返す (abstract は `SocketAddr::from_abstract_name` で std に渡す。`resolve_for_bind` は `Original` を返す) | [sockat-rs](https://github.com/kawaz/sockat-rs/blob/main/docs/MANUAL-ja.md#rust-に固有の注意) |
 | Go | macOS の広げた sockaddr の経路が無い (取り込んだ接続の `RemoteAddr` が nil になるため) | [sockat-go](https://github.com/kawaz/sockat-go/blob/main/README-ja.md#spec-から外れる経路) |
 | Go | 標準の `UnixListener.Close` は綴りで unlink する。既定の `Listen` が link-file の綴りの時は E だけが消えてソケットのファイルが残る (link-dir は実体が消える)。`ListenEx` の listener は閉じても消さない (`SetUnlinkOnClose(false)`) | [sockat-go](https://github.com/kawaz/sockat-go/blob/main/README-ja.md#go-に固有の注意) |
 | Go | `ForBind.Path` を自分で `net.ListenUnix` に渡した listener は、`SetUnlinkOnClose(false)` にして `SocketFile.Remove` で消す | [sockat-go](https://github.com/kawaz/sockat-go/blob/main/README-ja.md#go-に固有の注意) |
