@@ -154,6 +154,32 @@ B の選び方 ([SPEC-routes の「B の作り方」](../../docs/SPEC-routes-ja.
 | resolve_for_connect | illumos | 全部 | 1–255 | — | 1–255 | — |
 | resolve_for_connect | その他の Unix | 全部 | 1–255 | — | 1–255 | — |
 
+## 環境によらず届く長さ (下限)
+
+上の表は典型の桁 (uid 4 桁・pid 7 桁・fd 2 桁・E 2 文字) で見積もっている。ここは各桁を最悪にした時のファイル名の長さ (バイト)。この長さ以下なら環境によらず届く。試験や案内で長さを決め打ちするならこの下限を使う (典型の桁の表の値はこれより長い)
+
+| 値 | 最悪の桁 | 中身 |
+|---|---|---|
+| `pid` | 7 | procB の pid の桁。Linux の pid_max の上限 4194304 (最大の pid は 4194303) |
+| `fd` | 7 | B の fd の桁。Linux の fs.nr_open の既定 1048576 (最大の fd は 1048575) |
+| `uid` | 10 | B の名前の uid の桁。uid_t は 32 ビットで最大の有効な uid は 4294967294 |
+| `E` | 2 | resolve の E の名前の文字数。1 プロセスの resolve の E が 1296 個まで |
+
+前提: B が既定の名前 `sockat-<uid>` で `/tmp` にある。Linux は経路の式 (`<B>/<D>/<E>/<F>` など、経路の表の綴り) に最悪の桁を入れて出す。
+
+| OS | 操作 | 条件 | 下限 |
+|---|---|---|---|
+| Linux | bind | スレッドの cwd を使えない (docker の既定 seccomp 等) | 70 |
+| Linux | bind | スレッドの cwd を使える | 96 |
+| Linux | connect | B を `/tmp` に作れる (link-file) | ファイル名によらず届く |
+| Linux | connect | B を作れず proc-direct だけ | 85 |
+| macOS | bind | B が `/tmp` にある (link-file) | 255 (NAME_MAX) |
+| macOS | connect | B が `/tmp` にある (link-file) | 255 (NAME_MAX) |
+| macOS | bind | `/tmp` に B を作れず `$TMPDIR` が深い (thread-cwd) | 92 |
+| macOS | connect | `/tmp` に B を作れず `$TMPDIR` が深い (thread-cwd-direct) | 103 |
+
+- B が `sockat-<uid>.<乱数 10 文字>` に落ちた時は実パスの B の式で 11 バイト短くなり、59 バイト。`$XDG_RUNTIME_DIR` の時は 65 バイト (どちらも E 2 文字、Linux の bind でスレッドの cwd を使えない時の実パスの B の式)
+
 ## 表
 
 ### 既定の bind

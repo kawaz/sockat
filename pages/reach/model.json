@@ -35,6 +35,16 @@
     {"id": "go", "label": {"ja": "Go (sockat-go)", "en": "Go (sockat-go)"}, "lacks": ["widened"], "lacks_note": {"widened": "標準の型に取り込むと、相手が広げた形で bind している時に RemoteAddr() が nil になる (sockat-go の README、SPEC の「各実装に求めること」)"}}
   ],
   "lacks_basis": "conformance/langs.json の lacks と同じ。新しい経路 (link-dir・link-file・thread-cwd-direct) を作れない言語は無い前提 (各言語の作り直しの前なので見積もり)",
+  "floor": {
+    "pid": {"value": 7, "note": {"ja": "procB の pid の桁。Linux の pid_max の上限 4194304 (最大の pid は 4194303)", "en": "digits of procB's pid. Linux's pid_max upper bound 4194304 (the largest pid is 4194303)"}},
+    "fd": {"value": 7, "note": {"ja": "B の fd の桁。Linux の fs.nr_open の既定 1048576 (最大の fd は 1048575)", "en": "digits of B's fd. Linux's fs.nr_open default 1048576 (the largest fd is 1048575)"}},
+    "uid": {"value": 10, "note": {"ja": "B の名前の uid の桁。uid_t は 32 ビットで最大の有効な uid は 4294967294", "en": "digits of the uid in B's name. uid_t is 32 bits and the largest valid uid is 4294967294"}},
+    "E": {"value": 2, "note": {"ja": "resolve の E の名前の文字数。1 プロセスの resolve の E が 1296 個まで", "en": "characters of resolve's E name. Up to 1296 E in one process's resolve"}},
+    "E_max": {"value": 13, "note": {"ja": "E の名前の文字数の上限 (カウンタが u64 の上限)。macOS の link-file が収まるかの確認だけに使う", "en": "upper bound of E's name length (the counter at u64's maximum). Used only to check that macOS's link-file fits"}},
+    "Bprefix": {"value": 7, "note": {"ja": "B の名前の `sockat-` の長さ", "en": "length of `sockat-` in B's name"}},
+    "Bsuffix": {"value": 11, "note": {"ja": "B が `sockat-<uid>.<乱数 10 文字>` に落ちた時に増える長さ", "en": "extra length when B falls back to `sockat-<uid>.<10 random characters>`"}},
+    "xdg_prefix": {"value": 10, "note": {"ja": "`$XDG_RUNTIME_DIR` の `/run/user/` の長さ (uid の前)", "en": "length of `/run/user/` in `$XDG_RUNTIME_DIR` (before the uid)"}}
+  },
   "b_order": ["tmp", "xdg", "tmpdir", "sockdir"],
   "places": {
     "tmp": {"label": {"ja": "/tmp", "en": "/tmp"}, "b_name": "Bname", "diag": "tmp", "profiles": [

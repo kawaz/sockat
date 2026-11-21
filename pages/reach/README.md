@@ -154,6 +154,32 @@ Every combination of conditions in the tables, summarized per file name band. "D
 | resolve_for_connect | illumos | all | 1–255 | — | 1–255 | — |
 | resolve_for_connect | other Unix | all | 1–255 | — | 1–255 | — |
 
+## File name length reached in every environment (lower bound)
+
+The tables above are estimated with typical digits (4-digit uid, 7-digit pid, 2-digit fd, 2-character E). This section uses the worst digits. A file name up to this length (bytes) reaches in every environment. If a test or a guide fixes a length, use this lower bound (the tables' values with typical digits are longer)
+
+| Value | Worst digits | Meaning |
+|---|---|---|
+| `pid` | 7 | digits of procB's pid. Linux's pid_max upper bound 4194304 (the largest pid is 4194303) |
+| `fd` | 7 | digits of B's fd. Linux's fs.nr_open default 1048576 (the largest fd is 1048575) |
+| `uid` | 10 | digits of the uid in B's name. uid_t is 32 bits and the largest valid uid is 4294967294 |
+| `E` | 2 | characters of resolve's E name. Up to 1296 E in one process's resolve |
+
+Premise: B has the default name `sockat-<uid>` and is in `/tmp`. On Linux the figures come from the route spellings (`<B>/<D>/<E>/<F>` etc. in the routes table) with the worst digits.
+
+| OS | Operation | Condition | Lower bound |
+|---|---|---|---|
+| Linux | bind | thread cwd not usable (docker's default seccomp etc.) | 70 |
+| Linux | bind | thread cwd usable | 96 |
+| Linux | connect | B can be made in `/tmp` (link-file) | any file name |
+| Linux | connect | B cannot be made, proc-direct only | 85 |
+| macOS | bind | B is in `/tmp` (link-file) | 255 (NAME_MAX) |
+| macOS | connect | B is in `/tmp` (link-file) | 255 (NAME_MAX) |
+| macOS | bind | B cannot be made in `/tmp` and `$TMPDIR` is deep (thread-cwd) | 92 |
+| macOS | connect | B cannot be made in `/tmp` and `$TMPDIR` is deep (thread-cwd-direct) | 103 |
+
+- When B falls back to `sockat-<uid>.<10 random characters>`, the real-path B formula is 11 bytes shorter, giving 59 bytes. With `$XDG_RUNTIME_DIR` it is 65 bytes (both with a 2-character E; the real-path B formula for Linux bind without the thread cwd)
+
 ## Tables
 
 ### default bind

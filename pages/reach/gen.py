@@ -187,6 +187,34 @@ TEXT = {
         "ja": "| 操作 | OS | 言語 | 普段の環境で届く | どの条件でも届く | 条件しだい | どの条件でも届かない |",
         "en": "| Operation | OS | Language | Reached in a typical environment | Always reached | Depends | Never reached |",
     },
+    "md.floor.h": {"ja": "## 環境によらず届く長さ (下限)", "en": "## File name length reached in every environment (lower bound)"},
+    "md.floor.lead": {
+        "ja": "上の表は典型の桁 (uid 4 桁・pid 7 桁・fd 2 桁・E 2 文字) で見積もっている。ここは各桁を最悪にした時のファイル名の長さ (バイト)。この長さ以下なら環境によらず届く。試験や案内で長さを決め打ちするならこの下限を使う (典型の桁の表の値はこれより長い)",
+        "en": "The tables above are estimated with typical digits (4-digit uid, 7-digit pid, 2-digit fd, 2-character E). This section uses the worst digits. A file name up to this length (bytes) reaches in every environment. If a test or a guide fixes a length, use this lower bound (the tables' values with typical digits are longer)",
+    },
+    "md.floor.params.head": {"ja": "| 値 | 最悪の桁 | 中身 |", "en": "| Value | Worst digits | Meaning |"},
+    "md.floor.premise": {
+        "ja": "前提: B が既定の名前 `sockat-<uid>` で `/tmp` にある。Linux は経路の式 (`<B>/<D>/<E>/<F>` など、経路の表の綴り) に最悪の桁を入れて出す。",
+        "en": "Premise: B has the default name `sockat-<uid>` and is in `/tmp`. On Linux the figures come from the route spellings (`<B>/<D>/<E>/<F>` etc. in the routes table) with the worst digits.",
+    },
+    "md.floor.head": {"ja": "| OS | 操作 | 条件 | 下限 |", "en": "| OS | Operation | Condition | Lower bound |"},
+    "md.floor.fallback": {
+        "ja": "- B が `sockat-<uid>.<乱数 10 文字>` に落ちた時は実パスの B の式で {suffix} バイト短くなり、{fallback} バイト。`$XDG_RUNTIME_DIR` の時は {xdg} バイト (どちらも E 2 文字、Linux の bind でスレッドの cwd を使えない時の実パスの B の式)",
+        "en": "- When B falls back to `sockat-<uid>.<10 random characters>`, the real-path B formula is {suffix} bytes shorter, giving {fallback} bytes. With `$XDG_RUNTIME_DIR` it is {xdg} bytes (both with a 2-character E; the real-path B formula for Linux bind without the thread cwd)",
+    },
+    "floor.any": {"ja": "ファイル名によらず届く", "en": "any file name"},
+    "floor.name_max": {"ja": "{n} (NAME_MAX)", "en": "{n} (NAME_MAX)"},
+    "floor.os.linux": {"ja": "Linux", "en": "Linux"},
+    "floor.os.macos": {"ja": "macOS", "en": "macOS"},
+    "floor.op.bind": {"ja": "bind", "en": "bind"},
+    "floor.op.connect": {"ja": "connect", "en": "connect"},
+    "floor.cond.linux_bind_nocwd": {"ja": "スレッドの cwd を使えない (docker の既定 seccomp 等)", "en": "thread cwd not usable (docker's default seccomp etc.)"},
+    "floor.cond.linux_bind_cwd": {"ja": "スレッドの cwd を使える", "en": "thread cwd usable"},
+    "floor.cond.linux_connect_tmp": {"ja": "B を `/tmp` に作れる (link-file)", "en": "B can be made in `/tmp` (link-file)"},
+    "floor.cond.linux_connect_proc": {"ja": "B を作れず proc-direct だけ", "en": "B cannot be made, proc-direct only"},
+    "floor.cond.macos_tmp": {"ja": "B が `/tmp` にある (link-file)", "en": "B is in `/tmp` (link-file)"},
+    "floor.cond.macos_bind_nobase": {"ja": "`/tmp` に B を作れず `$TMPDIR` が深い (thread-cwd)", "en": "B cannot be made in `/tmp` and `$TMPDIR` is deep (thread-cwd)"},
+    "floor.cond.macos_connect_nobase": {"ja": "`/tmp` に B を作れず `$TMPDIR` が深い (thread-cwd-direct)", "en": "B cannot be made in `/tmp` and `$TMPDIR` is deep (thread-cwd-direct)"},
     "md.tables.h": {"ja": "## 表", "en": "## Tables"},
     "md.silent": {"ja": "効かない条件: {conds}", "en": "Conditions with no effect: {conds}"},
     "col.reached": {"ja": "届く", "en": "Reached"},
@@ -965,6 +993,57 @@ def esc(s):
     return s.replace("|", "\\|")
 
 
+# ---------- 環境によらず届く長さ (下限) ----------
+
+def floor_values(model):
+    """各桁を最悪にした時の、経路ごとの届くファイル名の長さ。None は長さによらず届く。"""
+    fl = {k: v["value"] for k, v in model.raw["floor"].items()}
+    lin, mac = model.os_by_id["linux"], model.os_by_id["macos"]
+    p = {"pid": fl["pid"], "fd": fl["fd"], "D": model.params["D"], "E": fl["E"], "Er": model.params["Er"]}
+
+    def b_real(os, extra=0):
+        return len(os["tmp_realpath"]) + 1 + fl["Bprefix"] + fl["uid"] + extra
+
+    def fmax(os, rid, pp=p, b=0):
+        """経路の綴りが sockaddr に収まる最長のファイル名 F。F の無い綴りは収まれば None、収まらなければ 0。"""
+        r = model.routes[rid]
+        const, variables = spelling_parts(r["spelling"])
+        room = model.limit(r["limit"], os) - const - sum(pp[v] for v in variables if v in pp) - (b if "B" in variables else 0)
+        if "F" in variables:
+            return room
+        return None if room >= 0 else 0
+
+    xdg_b = fl["xdg_prefix"] + fl["uid"] + 1 + model.params["Bname_runtime"]
+    mac_e_max = dict(p, E=fl["E_max"])
+    assert fmax(lin, "link-file@real/B-E", b=b_real(lin)) is None
+    assert fmax(mac, "link-file@real", mac_e_max, b_real(mac)) is None
+    assert fmax(mac, "link-file@real/connect", mac_e_max, b_real(mac)) is None
+    assert fmax(mac, "link-file@real/B-E", b=b_real(mac)) is None
+    real = fmax(lin, "link-dir@real", b=b_real(lin))
+    return {
+        "params": fl,
+        "linux_bind_nocwd": max(fmax(lin, "link-dir@procB"), real),
+        "linux_bind_cwd": fmax(lin, "thread-cwd"),
+        "linux_connect_tmp": None,
+        "linux_connect_proc": fmax(lin, "proc-direct"),
+        "macos_bind_tmp": model.params["name_max"],
+        "macos_connect_tmp": model.params["name_max"],
+        "macos_bind_nobase": fmax(mac, "thread-cwd"),
+        "macos_connect_nobase": fmax(mac, "thread-cwd-direct"),
+        "fallback_suffix": fl["Bsuffix"],
+        "fallback": fmax(lin, "link-dir@real", b=b_real(lin, fl["Bsuffix"])),
+        "xdg": fmax(lin, "link-dir@real", b=xdg_b),
+    }
+
+
+def floor_cell(v, model, tr):
+    if v is None:
+        return tr.t("floor.any")
+    if v == model.params["name_max"]:
+        return tr.t("floor.name_max", n=v)
+    return str(v)
+
+
 def render_md(model, tables, summary, os_meta, tr):
     p = model.raw["params"]
     sep = tr.t("sep.list")
@@ -1060,6 +1139,29 @@ def render_md(model, tables, summary, os_meta, tr):
                 langs = tr.t("all") if e["langs"] == all_langs else "<br>".join(e["langs"])
                 cell = lambda bs: "<br>".join(band_label(parse_band(b), tr) for b in bs) or "—"
                 w(f"| {op_label[op['id']]} | {tr.loc(os['label'])} | {langs} | {cell(e['typical'])} | {cell(e['always'])} | {cell(e['some'])} | {cell(e['never'])} |")
+    w("")
+    fv = floor_values(model)
+    w(tr.t("md.floor.h"))
+    w("")
+    w(tr.t("md.floor.lead"))
+    w("")
+    w(tr.t("md.floor.params.head"))
+    w("|---|---|---|")
+    for k in ("pid", "fd", "uid", "E"):
+        w(f"| `{k}` | {fv['params'][k]} | {esc(tr.loc(model.raw['floor'][k]['note']))} |")
+    w("")
+    w(tr.t("md.floor.premise"))
+    w("")
+    w(tr.t("md.floor.head"))
+    w("|---|---|---|---|")
+    for os_id, op_id, key in (("linux", "bind", "linux_bind_nocwd"), ("linux", "bind", "linux_bind_cwd"),
+                              ("linux", "connect", "linux_connect_tmp"), ("linux", "connect", "linux_connect_proc"),
+                              ("macos", "bind", "macos_bind_tmp"), ("macos", "connect", "macos_connect_tmp"),
+                              ("macos", "bind", "macos_bind_nobase"), ("macos", "connect", "macos_connect_nobase")):
+        cond_key = key if key.startswith("linux") or "nobase" in key else "macos_tmp"
+        w(f"| {tr.t('floor.os.' + os_id)} | {tr.t('floor.op.' + op_id)} | {tr.t('floor.cond.' + cond_key)} | {floor_cell(fv[key], model, tr)} |")
+    w("")
+    w(tr.t("md.floor.fallback", suffix=fv["fallback_suffix"], fallback=fv["fallback"], xdg=fv["xdg"]))
     w("")
     w(tr.t("md.tables.h"))
     w("")
