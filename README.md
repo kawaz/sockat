@@ -21,7 +21,7 @@ DGRAM is the same (`sockat::datagram::bind` etc.).
 ## Good to know
 
 - A bind at a long path leaves a small directory and a symlink in `/tmp/sockat-<uid>/` (the OS's temporary-directory cleaning removes them). Where tests run over and over, one call of `sweep()` cleans them up
-- For a long path, the listener's address (`local_addr` / `getsockname`) is a short spelling different from the path given. Remove the socket file by the original path, not by the address
+- For a long path, the listener's address (`local_addr` / `getsockname`) is a short spelling different from the path given (Python and TypeScript return the original path when the socket's own address is asked). Remove the socket file by the original path, not by the address
 - When you need cleanup or which route was taken, use the functions with `_ex`
 
 ## Implementations

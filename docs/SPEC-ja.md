@@ -7,14 +7,14 @@
 - 経路の作り方 (置き場 B の作り方、各経路の手順): [SPEC-routes-ja.md](SPEC-routes-ja.md)
 - どの条件でどこまで届くか: [届く範囲の表](../pages/reach/README-ja.md)
 - 判断と却下した案: [docs/decisions](decisions/INDEX.md) (今の設計の正本は [DR-0017](decisions/DR-0017-resolve-through-persistent-base.md))
-- 言語固有の話 (型、ランタイム連携、メモリ安全の扱い): 各言語のリポ ([sockat-rs](https://github.com/kawaz/sockat-rs)、[sockat-py](https://github.com/kawaz/sockat-py)、[sockat-go](https://github.com/kawaz/sockat-go)) の README とマニュアル
+- 言語固有の話 (型、ランタイム連携、メモリ安全の扱い): 各言語のリポ ([sockat-rs](https://github.com/kawaz/sockat-rs)、[sockat-py](https://github.com/kawaz/sockat-py)、[sockat-go](https://github.com/kawaz/sockat-go)、[sockat-ts](https://github.com/kawaz/sockat-ts)) の README とマニュアル
 
 ## 用語
 
 | 用語 | 意味 |
 |---|---|
 | 標準 | その言語の標準ライブラリの Unix domain socket の bind / connect |
-| 標準に渡す長さ (standard length) | その言語の標準が、パスを変えずに広げない sockaddr に入れて受け付ける最長。これ以下は標準にそのまま渡す。多くは `sun_path` − 1、Java は `sun_path` − 2。標準がそれより長いパスを切り詰め・広げた sockaddr・自前の迂回で通しても、それは使わない (Node の macOS・Bun) ([DR-0004](decisions/DR-0004-standard-length-per-language.md)) |
+| 標準に渡す長さ (standard length) | その言語の標準が、パスを変えずに広げない sockaddr に入れて受け付ける最長で、sockaddr に入る長さ (`sun_path` − 1) を超えない。これ以下は標準にそのまま渡す。多くは `sun_path` − 1、Java は `sun_path` − 2。標準がそれより長いパスを切り詰め・広げた sockaddr・自前の迂回で通しても、それは使わない (Node の macOS・Bun)。NUL の入らない `sun_path` ちょうどのパスも、標準が受け付けても使わない (Linux の Node の 108 等) ([DR-0004](decisions/DR-0004-standard-length-per-language.md)) |
 | sockaddr に入る長さ (sockaddr length) | `sizeof(sun_path) - 1` (NUL の分を除く)。広げていない sockaddr に入る綴りの最長 |
 | 元のパス | 利用者が渡したパス |
 | ディレクトリ / ファイル名 | 元のパスの最後の要素の前と、最後の要素。ソケットのディレクトリは前者 |
@@ -32,7 +32,7 @@
 | 綴りの性質 | bind の綴りを後で使えるか。`Spelling` で返す ([綴りの性質 `Spelling`](#綴りの性質-spelling))。`Dangling` は片付け済みの E を含み、どこにも届かない綴り |
 | 確かめに外れる (fails the checks) | 置き場・B・`Options.base` の持ち主と権限の検査 (実ディレクトリか、持ち主が自分か root か、他人が書けないか) に通らない |
 | connect 系 | `connect`・`connect_nonblocking` と、それぞれの `_ex` |
-| `/proc` を使える | `/proc/self/fd/<fd>` と `/proc/<pid>/fd/<fd>` を引ける (B の fd での確かめ方は [綴りの形](SPEC-routes-ja.md#綴りの形)) |
+| `/proc` を使える | 使う所ごとに確かめ方が違う (PID 名前空間と `/proc` の mount の食い違いに備える)。<br>connect の行 ([connect の順](#connect-の順) の proc-direct の行か relative の行か) を選ぶ: `/` を開いた fd で `/proc/self/fd/<fd>` を stat した `(st_dev, st_ino)` が、その fd の `fstat` と同じ時。proc-direct はこれと別に、その connect のソケットのディレクトリの fd でも同じく確かめ、違えば使えない ([proc-direct](SPEC-routes-ja.md#proc-direct))<br>procB を使う (綴りの長さの見積もりを含む): `/proc/<pid>/fd/<B の fd>` を stat した `(st_dev, st_ino)` が、B の fd の `fstat` と同じ時 ([綴りの形](SPEC-routes-ja.md#綴りの形)) |
 
 OS は次の括りで呼ぶ。
 
@@ -73,10 +73,10 @@ Rust の名前で示す。
 | DGRAM | `datagram::bind(path)` | 標準の `UnixDatagram` |
 | DGRAM | `datagram::unbound()` | 標準の `UnixDatagram` |
 | DGRAM | `datagram::connect(&sock, path)` | 無し |
-| DGRAM | `datagram::send_to(&sock, buf, path)` | 送ったバイト数 |
+| DGRAM | `datagram::send_to(&sock, buf, path)` | 送ったバイト数 (経路は「[未確定](#未確定)」) |
 | DGRAM | `datagram::bind_ex(path, Options)` | `Bound<UnixDatagram>` |
 | DGRAM | `datagram::connect_ex(&sock, path, Options)` | `Report` |
-| DGRAM | `datagram::send_to_ex(&sock, buf, path, Options)` | 送ったバイト数と `Report` |
+| DGRAM | `datagram::send_to_ex(&sock, buf, path, Options)` | 送ったバイト数と `Report` (経路は「[未確定](#未確定)」) |
 | SEQPACKET | `seqpacket::bind(path)`・`connect(path)`・`connect_nonblocking(path)` と各 `_ex` | 未確定 |
 | resolve | `resolve_for_bind(path, Options)` | `ForBind` |
 | resolve | `resolve_for_connect(path, Options)` | `ForConnect` |
@@ -134,7 +134,7 @@ Rust の名前で示す。
 | `skipped` | 試して使えなかった経路の並び (試した順)。各要素は `{ name: 経路の名前, reason: 使えなかった理由 }`。長いパスでは `standard` も入る |
 
 - `skipped` は経路の名前ごとに 1 件。link-dir を procB と実パスで試しても 1 件で、`reason` は最後に試した物。`usable_cross_uid` で procB を使わないのは経路を飛ばすことではないので、何も足さない
-- 置き場 1〜3 の既定の名前の B が既にあって確かめに外れた (占拠) 時は、B を使う経路の `reason` に占拠と分かる理由を入れる ([B の作り方](SPEC-routes-ja.md#b-の作り方))
+- その呼び出しで、置き場 1〜3 の既定の名前の B が既にあって確かめに外れた (占拠) 置き場を飛ばした時は、B を使う経路が使えなかった理由 (綴りが収まらない等) の `reason` に占拠を書き添える ([B の作り方](SPEC-routes-ja.md#b-の作り方))。前の呼び出しで次の置き場の B を持った後の呼び出しでは出ない
 - `skipped` に入るのは、その呼び出しの順の表 (bind は OS で、connect は OS と `/proc` を使えるかで決まる行) に並ぶ経路だけ。`/proc` を使えない Linux の connect の行に proc-direct は無いので入れない。その OS に手段の無い経路 (NetBSD・OpenBSD・illumos の thread-cwd、スレッドの cwd を移せない OS の thread-cwd-direct) は、その OS の行に無いので入れない
 
 - `route` より前に試した経路はすべて使えなかったもの (実際に bind / connect して失敗したら、そこでエラーを返して次を試さない。bind の link-file を実行時に見分ける時だけは次へ進む)。そのため「使えたか」の真偽値は持たない
@@ -219,6 +219,7 @@ pub enum Spelling {
 - 失敗した時も `cleanup` まで行い、ファイルを消す側のエラーを返す
 - 置き換えを見分けるのは `(st_dev, st_ino)` だけで、約束するのは listener を開いている間の置き換えまで。閉じた後に消して作り直された物は、番号をすぐ使い回すファイルシステム (ext4、BSD の UFS / FFS) で見分けられない。各言語の説明で、`remove` は listener を閉じる前に呼ぶよう勧める ([findings](findings/2026-11-19-inode-reuse-after-close.md))
 - 確かめてから消すまでと、bind してから覚えるまでの間に、ソケットのディレクトリに書ける者がファイルをすり替えるのは防げない (inode を指定して消す手段が POSIX に無い)
+- abstract の名前 (Linux / Android の先頭が NUL のパス) の bind では、`SocketFile` はファイルを持たず、`remove()` はファイルを消さない (`cleanup` の働きだけ)。`ForBind` の `socket_file()` も同じ形を返す
 
 | 言語 | 形 |
 |---|---|
@@ -230,8 +231,7 @@ pub enum Spelling {
 
 resolve の時点では bind していないので、`ForBind` はソケットのファイルの `(st_dev, st_ino)` を覚えられず、`remove()` を持たない。利用者が自分で bind した後に `socket_file()` (名前は各言語の慣習。Rust は `socket_file(&self) -> io::Result<SocketFile>`) を呼ぶと、`SocketFile` を返す。呼ばなければ消す口は無い。
 
-- 呼んだ時点で綴りを辿り、ソケットのファイルの realpath と `(st_dev, st_ino)` を覚える。辿れなければ (bind する前、ファイルが無い) エラー。辿った先がソケットでなければ (bind する前に元のパスにあった無関係なファイル等) エラー
-- 元のパスの最後の要素が symlink なら (macOS・NetBSD では標準の bind が辿る)、辿った先の実パスと `(st_dev, st_ino)` を覚える。辿った先がソケットでなければエラー。`remove` が利用者の symlink を消さないため
+- 呼んだ時点で綴りを、元のパスの最後の要素の symlink (macOS・NetBSD では標準の bind が辿る) も含めて辿り切り、行き着いたソケットのファイルの realpath と `(st_dev, st_ino)` を覚える (`remove` が利用者の symlink を消さないため)。辿れなければ (bind する前、ファイルが無い) エラー。行き着いた先がソケットでなければ (bind する前に元のパスにあった無関係なファイル等) エラー
 - 返す `SocketFile` は `Bound` の物と同じ働き ([`remove`](#remove))。`cleanup()` は `ForBind` の `cleanup()` と同じ E を 1 回だけ片付ける
 - 呼ぶのは bind の後・listener を閉じる前。bind から呼ぶまでの間の置き換えは見分けられない
 - 綴りが `CwdRelative` の時は、resolve の時と呼んだ時でプロセスの cwd の `(st_dev, st_ino)` を比べ、違えばエラー
@@ -248,6 +248,7 @@ resolve の時点では bind していないので、`ForBind` はソケット�
 - 既定の `bind` の link-dir の E は同じディレクトリへの bind で使い回すので、増えるのはソケットのディレクトリの数だけ。link-file の E は bind ごと
 - 既定の `connect` はプロセスの中に D と E を残さない (D を作らず、B の直下の E を connect の後すぐ unlink する)。B を初めて作った時は、その B と fd をプロセスの B として以後も使う
 - ソケットのディレクトリの B (`.sockat.<乱数>`) は `sweep` の対象外で、OS の掃除でも消えないことがあり、利用者のディレクトリに残る
+- 置き場 1〜3 が使えない環境でソケットのディレクトリを次々に作って消す長命のプロセスは、ディレクトリごとの B・D の fd が溜まるので、固定の `Options.base` を渡す
 
 OS の一時ディレクトリの掃除 ([research](research/2026-11-20-tmp-cleaners-and-persistent-base.md)):
 
@@ -267,7 +268,8 @@ OS の一時ディレクトリの掃除 ([research](research/2026-11-20-tmp-clea
 - 呼んだ時だけ、B の中の持ち主の死んだ D (ロックの外れた D) を消す。生きている他のプロセスの D は消さない (見分け方は [D と E](SPEC-routes-ja.md#d-と-e))
 - `sweep()` の対象は、置き場 1〜3 の既定の名前の B (`sockat-<uid>`・`sockat`)。あるものだけで、B を作らない
 - `sweep_base(path)` (名前は各言語の慣習) は、`Options.base` に渡した B の中の死んだ D を消す。その B を管理するアプリが呼ぶ。B か親が無ければ何もせず成功。path の確かめは `Options.base` と同じ (形の誤りは引数の誤り、symlink・他人の物・他人が書ける B や途中は `EPERM`、ディレクトリでなければ `ENOTDIR`)
-- `sweep()` は、確かめに外れた置き場・B を黙って飛ばす
+- `sweep()` は、確かめに外れた置き場・B と、読めない B (権限が無い等) を黙って飛ばす
+- B と D の中は fd を基準に列挙し、排他ロックを取った後に名前の `(st_dev, st_ino)` がロックした fd と同じかを確かめてから消す
 - 対象にするのは、B の直下の、名前が D の形 (英数字 62 種の 10 文字) のディレクトリだけ。B (`Options.base` の B も) は sockat 専用で、利用者は他の物を置かない
 - ソケットのディレクトリの B は対象にしない
 - B の直下の E (既定の connect の物) には触らない。symlink でない物がある D は残す
@@ -362,7 +364,7 @@ OS の一時ディレクトリの掃除 ([research](research/2026-11-20-tmp-clea
 
 | 点 | 内容 |
 |---|---|
-| カーネルが返すアドレス | bind した側の `getsockname` と、そこへ connect した側の `getpeername` は元のパスでなく bind の綴りを返す。後で使えるかは `Spelling` で分かる。標準の型でアドレスを返す口を差し替えられる言語 (Python) は元のパスを返す。illumos では connect した側の `getpeername` が、bind した綴りでなく connect に渡した綴りを返す (sockat-rs の CI で実測 2026-11-19) |
+| カーネルが返すアドレス | bind した側の `getsockname` と、そこへ connect した側の `getpeername` は元のパスでなく bind の綴りを返す。後で使えるかは `Spelling` で分かる。標準の型でアドレスを返す口を差し替えられる言語 (Python・TypeScript) は元のパスを返す。illumos では connect した側の `getpeername` が、bind した綴りでなく connect に渡した綴りを返す (sockat-rs の CI で実測 2026-11-19) |
 | 運用の道具での見え方 | `ss -x`・`lsof`・`/proc/net/unix` 等に出るアドレスが bind の綴りになる。link-dir と thread-cwd・at はファイル名が綴りの最後に残る。link-file の綴りにはファイル名が出ない |
 | listener を閉じた時 | 既定の bind (Go の `Listen` 等) は標準と同じにする。閉じる時にアドレスの綴りで unlink する標準 (Go の `UnixListener.Close`) では、link-dir の綴りは途中の E を辿って元のパスのファイルを消す (標準と同じ)。link-file の綴りは unlink が最後の symlink を辿らないので E 自体が消え、ソケットのファイルは残る (標準と違う。各言語の README に書く)。`Dangling` の綴りは unlink させない (Go は `SetUnlinkOnClose(false)`)。`_ex` の bind は、どの綴りでも閉じた時に消さない。消すのは `SocketFile` の `remove()` だけ (綴りで消すと、置き換わったファイルを見分けずに消すため) |
 | ディレクトリを先に引く | link-dir と thread-cwd・at の E はソケットのディレクトリの realpath を指し、proc-direct・at-direct・thread-cwd-direct はディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない |
@@ -400,7 +402,7 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 | どの経路も使えない (綴りが収まらない、手段が無い) | `ENAMETOOLONG` |
 | `resolve_for_bind` で、thread-cwd・at でしか届かない長さ | `ENAMETOOLONG` |
 | `resolve_for_connect` で、link-file を使えない (B を作れない、綴りが収まらない) | `ENAMETOOLONG` |
-| `Options.base` が相対パス、または最後がファイル名でない (`dir/`・`..`・`/`)。パスの長さによらず、abstract の名前の判定より前に検査する (先頭以外の NUL と同じく引数の形の検査) | 引数の誤り |
+| `Options.base` が相対パス、NUL を含む、または最後がファイル名でない (`dir/`・`..`・`/`)。パスの長さによらず、abstract の名前の判定より前に検査する (先頭以外の NUL と同じく引数の形の検査) | 引数の誤り |
 | `Options.base` の場所が symlink | `EPERM` (実ディレクトリでない。確かめに外れた) |
 | `Options.base` の場所がディレクトリでも symlink でもない | `ENOTDIR` |
 | `Options.base` までの途中のディレクトリが無い | `ENOENT` |

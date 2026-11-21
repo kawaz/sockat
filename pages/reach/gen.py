@@ -81,6 +81,7 @@ TEXT = {
     "req.!cross": {"ja": "usable_cross_uid の指定で飛ばす", "en": "skipped with usable_cross_uid"},
     "req.B": {"ja": "B を作れる (D をその中に)", "en": "B can be made (D inside it)"},
     "req.Breal": {"ja": "B の実パスの綴り (usable_cross_uid の指定では途中と B 自身が other に x の B。B がソケットのディレクトリにあれば使えない)", "en": "B's realpath spelling (with usable_cross_uid, a B whose path and itself give other x; not usable when B is in the socket's directory)"},
+    "req.Breal.connect": {"ja": "B の実パスの綴り (B がソケットのディレクトリにあれば使えない)", "en": "B's realpath spelling (not usable when B is in the socket's directory)"},
     "b.proc": {"ja": "procB", "en": "procB"},
     "b.real": {"ja": "B の実パス", "en": "B's realpath"},
     "spdesc.B.traversable": {"ja": "B までの途中と B 自身が other に x なら true", "en": "true if the path to B and B itself give other x"},
@@ -133,8 +134,8 @@ TEXT = {
         "en": "- A cell whose basis is \"estimate\" is only computed from the spelling formulas and typical values in model.json",
     },
     "md.est.2": {
-        "ja": "- 「実測」のセルは、DR-0017 の前の実装を適合試験 ([conformance/cases.json](../../conformance/cases.json)) に流した結果が、計算と同じ経路だった場面の名前。当てるのは DR-0017 で変わらない connect の経路 ({routes}) の行だけで、条件が全部分かる場面だけを当てる",
-        "en": "- A \"measured\" cell names the conformance scenes ([conformance/cases.json](../../conformance/cases.json)) where the implementations before DR-0017 took the same route as computed. Applied only to rows of connect routes DR-0017 does not change ({routes}), and only for scenes whose conditions are all known",
+        "ja": "- 「実測」のセルは、各言語の実装を適合試験 ([conformance/cases.json](../../conformance/cases.json)) に流した結果が、計算と同じ経路だった場面の名前 (版と日付は model.json の evidence)。当てるのは書き込みもスレッドも要らない connect の経路 ({routes}) の行だけで、条件が全部分かる場面だけを当てる",
+        "en": "- A \"measured\" cell names the conformance scenes ([conformance/cases.json](../../conformance/cases.json)) where each language's implementation took the same route as computed (versions and date in model.json's evidence). Applied only to rows of connect routes that need no writing and no thread ({routes}), and only for scenes whose conditions are all known",
     },
     "md.est.3": {
         "ja": "- 入力のうち実測したもの: bind が symlink を辿る OS ([findings](../../docs/findings/2026-11-19-bind-through-file-symlink.md))、0700 の親の下の 0711 は別の uid が辿れないこと (DR-0017 の Context の実測)、docker の seccomp で `unshare` が断られること ([conformance.md](../../docs/design/conformance.md))",
@@ -1119,7 +1120,9 @@ def render_md(model, tables, summary, os_meta, tr):
             r = model.routes[rid]
             oses = [tr.loc(o["label"]) for o in model.oses if model.route_in_os(r, o)]
             oses_cell = tr.t("all") if len(oses) == len(model.oses) else "<br>".join(oses)
-            need = [tr.t(f"req.{t}") for t in r.get("requires", []) if t != "follows" or op["id"] in BIND_OPS]
+            # usable_cross_uid は bind 系だけが見る (SPEC の Options) ので、connect 系の B の実パスには書かない
+            need = [tr.t(f"req.{t}" if t != "Breal" or op["id"] in BIND_OPS else "req.Breal.connect")
+                    for t in r.get("requires", []) if t != "follows" or op["id"] in BIND_OPS]
             sp = route_spelling_desc(r, tr) if op["id"] in BIND_OPS else ""
             w(f"| {op_label[op['id']]} | {i} | {loc_route(route_table_label(r), tr)} | `{r['spelling']}` | {reach_formula(model, r, tr)} | {oses_cell} | {esc('<br>'.join(need)) or '—'} | {sp} |")
     w("")

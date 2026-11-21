@@ -4,7 +4,7 @@
 
 sockat を使う前に出やすい問いと答え。仕様の正本は [SPEC](../docs/SPEC-ja.md)、届く場面の一覧は [届く範囲の表](reach/README-ja.md)。
 
-答えは [DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md) の設計に対するもの。各言語の実装はこの設計へ作り直し中で、公開済みの版の振る舞いは各言語のリポの README にある。
+答えは [DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md) の設計に対するもの。言語ごとの違いは [言語ごとの注意](langs-ja.md) と各言語のリポの README にある。
 
 ## そもそも
 
@@ -84,7 +84,7 @@ connect は自分で綴りを解決するので、相手の uid は届くかに�
 
 ### 既定の `bind` は何を残す?
 
-パスが長い時だけ、`/tmp/sockat-<uid>` の中に小さなディレクトリと symlink を残す。容量はほぼ 0 で、OS の一時ディレクトリの掃除で消える。すぐ片付けたい時は `bind_ex` の `remove()` を使う。
+パスが長い時だけ、`/tmp/sockat-<uid>` の中に小さなディレクトリと symlink を残す。容量はほぼ 0 で、OS の一時ディレクトリの掃除で消える。一時の置き場がどれも使えない時は、ソケットのディレクトリに `.sockat.<乱数>` を作る (場所を固定したい時は `Options.base`)。すぐ片付けたい時は `bind_ex` の `remove()` を使う (listener を閉じた時に消すかは言語で違う。[言語ごとの注意](langs-ja.md))。
 
 ### `/tmp/sockat-<uid>` の中身は消してよい?
 
@@ -100,7 +100,7 @@ connect は自分で綴りを解決するので、相手の uid は届くかに�
 
 ### 長いパスに何度も bind する daemon は?
 
-既定の `bind` は同じディレクトリへの bind で symlink を使い回すので、増えるのはソケットのディレクトリの数だけで、プロセスが終わるまで残る (ファイル名がとても長く、ソケットのファイルを指す symlink を通した時は bind ごと)。セッションごとに違うディレクトリへソケットを作るような daemon は、`bind_ex` の `remove()` で片付ける。
+既定の `bind` は同じディレクトリへの bind で symlink を使い回すので、増えるのはソケットのディレクトリの数だけで、プロセスが終わるまで残る (ファイル名がとても長く、ソケットのファイルを指す symlink を通した時は bind ごと)。セッションごとに違うディレクトリへソケットを作るような daemon は、`bind_ex` の `remove()` で片付ける (listener を閉じた時に消すかは言語で違う。[言語ごとの注意](langs-ja.md))。
 
 ### 既定の `connect` は何か残す?
 

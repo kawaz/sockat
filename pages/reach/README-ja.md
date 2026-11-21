@@ -20,7 +20,7 @@ sockat で長いパスに届くか、どの経路で届くか、届かなけれ�
 ## 見積もりと実測
 
 - 根拠の列が「見積もり」のセルは、model.json の綴りの式と代表値から計算しただけ
-- 「実測」のセルは、DR-0017 の前の実装を適合試験 ([conformance/cases.json](../../conformance/cases.json)) に流した結果が、計算と同じ経路だった場面の名前。当てるのは DR-0017 で変わらない connect の経路 (at-direct・proc-direct・relative・widened) の行だけで、条件が全部分かる場面だけを当てる
+- 「実測」のセルは、各言語の実装を適合試験 ([conformance/cases.json](../../conformance/cases.json)) に流した結果が、計算と同じ経路だった場面の名前 (版と日付は model.json の evidence)。当てるのは書き込みもスレッドも要らない connect の経路 (at-direct・proc-direct・relative・widened) の行だけで、条件が全部分かる場面だけを当てる
 - 入力のうち実測したもの: bind が symlink を辿る OS ([findings](../../docs/findings/2026-11-19-bind-through-file-symlink.md))、0700 の親の下の 0711 は別の uid が辿れないこと (DR-0017 の Context の実測)、docker の seccomp で `unshare` が断られること ([conformance.md](../../docs/design/conformance.md))
 
 見積もりの前提:
@@ -52,7 +52,7 @@ sockat で長いパスに届くか、どの経路で届くか、届かなけれ�
 | $XDG_RUNTIME_DIR | 既定の bind<br>bind_ex<br>resolve_for_bind<br>既定の connect<br>resolve_for_connect | B の置き場の 2 番目 |
 | $TMPDIR | 既定の bind<br>bind_ex<br>resolve_for_bind<br>既定の connect<br>resolve_for_connect | B の置き場の 3 番目 |
 | ソケットのディレクトリに書ける | 既定の connect<br>resolve_for_connect | B の置き場の 4 番目。bind はソケットのファイルを作るので書ける前提 |
-| Options.base | bind_ex<br>resolve_for_bind<br>resolve_for_connect | B そのもののパス。指定すると自動の置き場を使わない。usable_cross_uid と一緒で途中と base 自身が other に x を持たなければ EPERM。途中が無い等の確かめのエラーは表に入れない |
+| Options.base | bind_ex<br>resolve_for_bind<br>既定の connect<br>resolve_for_connect | B そのもののパス。指定すると自動の置き場を使わない。connect 系では connect_ex 系だけが取り、B の置き場として使う。usable_cross_uid と一緒の bind 系で途中と base 自身が other に x を持たなければ EPERM。途中が無い等の確かめのエラーは表に入れない |
 | PrivateTmp (自分か相手が /tmp を隔離) | 既定の bind<br>bind_ex<br>resolve_for_bind | systemd の PrivateTmp 等。綴りを相手が辿れるかにだけ効く |
 | Options.usable_cross_uid (別の uid の相手) | bind_ex<br>resolve_for_bind | 指定して別の uid の相手と通信する。B の選び方 (途中と B 自身が other に x の所だけ)、procB を使わないこと、綴りを相手が辿れるかに効く |
 
@@ -101,9 +101,9 @@ B の選び方 ([SPEC-routes の「B の作り方」](../../docs/SPEC-routes-ja.
 | 既定の connect | 3 | widened | `<rel>` | よらない (相対パス ≤ 253) | macOS<br>iOS 等の他の Apple の OS | — |  |
 | 既定の connect | 4 | at-direct | `<F>` | sockaddr | FreeBSD | — |  |
 | 既定の connect | 5 | thread-cwd-direct | `<F>` | sockaddr | Linux / Android<br>macOS<br>iOS 等の他の Apple の OS | スレッドの cwd |  |
-| 既定の connect | 6 | link-file (B の実パス) | `<B>/<Er>` | よらない (B の実パス ≤ sockaddr − 11) | 全部 | B の実パスの綴り (usable_cross_uid の指定では途中と B 自身が other に x の B。B がソケットのディレクトリにあれば使えない) |  |
+| 既定の connect | 6 | link-file (B の実パス) | `<B>/<Er>` | よらない (B の実パス ≤ sockaddr − 11) | 全部 | B の実パスの綴り (B がソケットのディレクトリにあれば使えない) |  |
 | resolve_for_connect | 1 | link-file (procB) | `/proc/<pid>/fd/<fd>/<D>/<E>` | よらない | Linux / Android | /proc<br>B を作れる (D をその中に) |  |
-| resolve_for_connect | 2 | link-file (B の実パス) | `<B>/<D>/<E>` | よらない (B の実パス ≤ sockaddr − 14) | 全部 | B の実パスの綴り (usable_cross_uid の指定では途中と B 自身が other に x の B。B がソケットのディレクトリにあれば使えない) |  |
+| resolve_for_connect | 2 | link-file (B の実パス) | `<B>/<D>/<E>` | よらない (B の実パス ≤ sockaddr − 14) | 全部 | B の実パスの綴り (B がソケットのディレクトリにあれば使えない) |  |
 
 綴りの記号: `<F>` はファイル名、`<rel>` は元のパスと相対パスの短い方、`<B>` は B の実パス、それ以外は「見積もりの前提」の値。sockaddr は sockaddr に入る長さ (Linux / illumos 107、他 103)。表の経路の列の `(B: …)` はどの B を通ったかで、名前は診断の `base` の値 (`Options.base` の B は `given`)
 
@@ -949,245 +949,308 @@ bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持�
 
 ### 既定の connect
 
-connect・connect_nonblocking と、Options.base を指定しない connect_ex 系。D を作らず、link-file は B の直下の E を通す B/E で、connect の後すぐ E を消す。DGRAM の connect・send_to も同じ経路 (send_to が relative を使わないかは SPEC の「未確定」)
+connect・connect_nonblocking と connect_ex 系 (Options.base を指定した行は connect_ex 系だけ)。D を作らず、link-file は B の直下の E を通す B/E で、connect の後すぐ E を消す。DGRAM の connect・send_to も同じ経路 (send_to が relative を使わないかは SPEC の「未確定」)
 
 #### 既定の connect / Linux / Android
 
-| 言語 | ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | スレッドの cwd を使える | /proc を使える | $XDG_RUNTIME_DIR | $TMPDIR | /tmp | ソケットのディレクトリに書ける | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 全部 | 108 以上 | × | × | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 全部 | 108 以上 | × | × | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: runtime) | — | — | 見積もり |
-| 全部 | 全部 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| ts-node<br>ts-bun | 全部 | 108 以上 | ○ | × | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| ts-node<br>ts-bun | 全部 | 108 以上 | ○ | × | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: runtime) | — | — | 見積もり |
-| ts-node<br>ts-bun | 全部 | 108 以上 | ○ | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| 全部 | 1–90 | 全部 | 全部 | ○ | 全部 | 全部 | 全部 | 全部 | ○ | proc-direct | — | — | 実測: linux-long-connect |
-| 全部 | 1–107 | 1–107 | 全部 | × | 全部 | 全部 | 全部 | 全部 | ○ | relative | — | — | 実測: no-proc-connect-near-cwd (rs・py・go・ts-node) |
-| rs<br>py<br>go | 1–107 | 108 以上 | ○ | × | 全部 | 全部 | 全部 | 全部 | ○ | thread-cwd-direct | — | — | 見積もり |
-| rs<br>py<br>go | 1–107 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py<br>go | 1–107 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py<br>go | 1–107 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| ts-node<br>ts-bun | 1–107 | 108 以上 | 全部 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 107<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| ts-node<br>ts-bun | 1–107 | 108 以上 | 全部 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 107<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| ts-node<br>ts-bun | 1–107 | 108 以上 | 全部 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 全部 | 91–107 | 全部 | × | ○ | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 91–107 | 全部 | × | ○ | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: runtime) | — | — | 見積もり |
-| 全部 | 91–107 | 全部 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| rs<br>py<br>go | 91–107 | 全部 | ○ | ○ | 全部 | 全部 | 全部 | 全部 | ○ | thread-cwd-direct | — | — | 見積もり |
-| rs<br>py<br>go | 91–107 | 全部 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py<br>go | 91–107 | 全部 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py<br>go | 91–107 | 全部 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| ts-node<br>ts-bun | 91–107 | 全部 | 全部 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| ts-node<br>ts-bun | 91–107 | 全部 | 全部 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| ts-node<br>ts-bun | 91–107 | 全部 | 全部 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| ts-node<br>ts-bun | 91–107 | 全部 | ○ | ○ | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| ts-node<br>ts-bun | 91–107 | 全部 | ○ | ○ | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: runtime) | — | — | 見積もり |
-| ts-node<br>ts-bun | 91–107 | 全部 | ○ | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| 全部 | 108–255 | 108 以上 | 全部 | ○ | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 108–255 | 108 以上 | 全部 | ○ | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: runtime) | — | — | 見積もり |
-| 全部 | 108–255 | 108 以上 | 全部 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| rs<br>py<br>go | 108–255 | 108 以上 | ○ | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
-| rs<br>py<br>go | 108–255 | 108 以上 | ○ | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| rs<br>py<br>go | 108–255 | 108 以上 | ○ | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| rs<br>py<br>go | 108–255 | 108 以上 | ○ | × | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| rs<br>py<br>go | 108–255 | 108 以上 | ○ | × | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: runtime) | — | — | 見積もり |
-| rs<br>py<br>go | 108–255 | 108 以上 | ○ | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| rs<br>py<br>go | 108–255 | 108 以上 | ○ | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 107<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
-| rs<br>py<br>go | 108–255 | 108 以上 | ○ | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 107<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| rs<br>py<br>go | 108–255 | 108 以上 | ○ | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| rs<br>py<br>go | 108–255 | 108 以上 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
-| rs<br>py<br>go | 108–255 | 108 以上 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| rs<br>py<br>go | 108–255 | 108 以上 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| rs<br>py<br>go | 108–255 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
-| rs<br>py<br>go | 108–255 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| rs<br>py<br>go | 108–255 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| ts-node<br>ts-bun | 108–255 | 108 以上 | 全部 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
-| ts-node<br>ts-bun | 108–255 | 108 以上 | 全部 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| ts-node<br>ts-bun | 108–255 | 108 以上 | 全部 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| ts-node<br>ts-bun | 108–255 | 108 以上 | 全部 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 107<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
-| ts-node<br>ts-bun | 108–255 | 108 以上 | 全部 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 107<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| ts-node<br>ts-bun | 108–255 | 108 以上 | 全部 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| 言語 | ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | スレッドの cwd を使える | /proc を使える | $XDG_RUNTIME_DIR | $TMPDIR | /tmp | ソケットのディレクトリに書ける | Options.base | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 全部 | 全部 | 108 以上 | × | × | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| 全部 | 全部 | 108 以上 | × | × | 全部 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| 全部 | 全部 | 108 以上 | × | × | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: runtime) | — | — | 見積もり |
+| 全部 | 全部 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| ts-node<br>ts-bun | 全部 | 108 以上 | ○ | × | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| ts-node<br>ts-bun | 全部 | 108 以上 | ○ | × | 全部 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| ts-node<br>ts-bun | 全部 | 108 以上 | ○ | × | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: runtime) | — | — | 見積もり |
+| ts-node<br>ts-bun | 全部 | 108 以上 | ○ | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 全部 | 1–90 | 全部 | 全部 | ○ | 全部 | 全部 | 全部 | 全部 | 全部 | ○ | proc-direct | — | — | 実測: linux-long-connect |
+| 全部 | 1–107 | 1–107 | 全部 | × | 全部 | 全部 | 全部 | 全部 | 全部 | ○ | relative | — | — | 実測: no-proc-connect-near-cwd (rs・py・go・ts-node) |
+| rs<br>py<br>go | 1–107 | 108 以上 | ○ | × | 全部 | 全部 | 全部 | 全部 | 全部 | ○ | thread-cwd-direct | — | — | 見積もり |
+| rs<br>py<br>go | 1–107 | 108 以上 | × | × | 全部 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py<br>go | 1–107 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py<br>go | 1–107 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py<br>go | 1–107 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 1–107 | 108 以上 | 全部 | × | 全部 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 107<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 1–107 | 108 以上 | 全部 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 1–107 | 108 以上 | 全部 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 1–107 | 108 以上 | 全部 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 全部 | 91–107 | 全部 | × | ○ | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| 全部 | 91–107 | 全部 | × | ○ | 全部 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| 全部 | 91–107 | 全部 | × | ○ | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: runtime) | — | — | 見積もり |
+| 全部 | 91–107 | 全部 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| rs<br>py<br>go | 91–107 | 全部 | ○ | ○ | 全部 | 全部 | 全部 | 全部 | 全部 | ○ | thread-cwd-direct | — | — | 見積もり |
+| rs<br>py<br>go | 91–107 | 全部 | × | ○ | 全部 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py<br>go | 91–107 | 全部 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py<br>go | 91–107 | 全部 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py<br>go | 91–107 | 全部 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 91–107 | 全部 | 全部 | ○ | 全部 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 91–107 | 全部 | 全部 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 91–107 | 全部 | 全部 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 91–107 | 全部 | 全部 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 91–107 | 全部 | ○ | ○ | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| ts-node<br>ts-bun | 91–107 | 全部 | ○ | ○ | 全部 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| ts-node<br>ts-bun | 91–107 | 全部 | ○ | ○ | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: runtime) | — | — | 見積もり |
+| ts-node<br>ts-bun | 91–107 | 全部 | ○ | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 全部 | 108–255 | 108 以上 | 全部 | ○ | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| 全部 | 108–255 | 108 以上 | 全部 | ○ | 全部 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| 全部 | 108–255 | 108 以上 | 全部 | ○ | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: runtime) | — | — | 見積もり |
+| 全部 | 108–255 | 108 以上 | 全部 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | ○ | ○ | 全部 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 107) | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | ○ | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | ○ | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | ○ | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | ○ | × | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | ○ | × | 全部 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 107<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 107) | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | ○ | × | 全部 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | ○ | × | /run/user/<uid> (14、0700) | 全部 | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: runtime) | — | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | ○ | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | ○ | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | ○ | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | ○ | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: ファイル名 > 107<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | × | ○ | 全部 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 107) | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | × | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | × | × | 全部 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 107) | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| rs<br>py<br>go | 108–255 | 108 以上 | × | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| ts-node<br>ts-bun | 108–255 | 108 以上 | 全部 | ○ | 全部 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 107) | — | 見積もり |
+| ts-node<br>ts-bun | 108–255 | 108 以上 | 全部 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
+| ts-node<br>ts-bun | 108–255 | 108 以上 | 全部 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| ts-node<br>ts-bun | 108–255 | 108 以上 | 全部 | ○ | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | proc-direct: ファイル名 > 90<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| ts-node<br>ts-bun | 108–255 | 108 以上 | 全部 | × | 全部 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 107<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 107) | — | 見積もり |
+| ts-node<br>ts-bun | 108–255 | 108 以上 | 全部 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
+| ts-node<br>ts-bun | 108–255 | 108 以上 | 全部 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| ts-node<br>ts-bun | 108–255 | 108 以上 | 全部 | × | /run/user/<uid> に書けない (14。作る前の見積もりには使う)<br>無い (空・相対パスを含む) | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 107<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### 既定の connect / macOS
 
-| 言語 | ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | スレッドの cwd を使える | $TMPDIR | /tmp | ソケットのディレクトリに書ける | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 1–103 | 1–103 | 全部 | 全部 | 全部 | 全部 | ○ | relative | — | — | 実測: long-connect |
-| 全部 | 1–103 | 254 以上 | × | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 1–103 | 254 以上 | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| rs<br>py | 1–253 | 104–253 | 全部 | 全部 | 全部 | 全部 | ○ | widened | — | — | 実測: long-filename-connect |
-| rs<br>py<br>go | 1–103 | 254 以上 | ○ | 全部 | 全部 | 全部 | ○ | thread-cwd-direct | — | — | 見積もり |
-| rs<br>py | 1–253 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 1–253 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 1–253 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go | 1–103 | 104–253 | ○ | 全部 | 全部 | 全部 | ○ | thread-cwd-direct | — | — | 見積もり |
-| go<br>ts-node<br>ts-bun | 1–103 | 104–253 | × | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| go<br>ts-node<br>ts-bun | 1–103 | 104–253 | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| go | 1–253 | 104 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go | 1–253 | 104 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go | 1–253 | 104 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| ts-node<br>ts-bun | 1–253 | 104 以上 | 全部 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| ts-node<br>ts-bun | 1–253 | 104 以上 | 全部 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| ts-node<br>ts-bun | 1–253 | 104 以上 | 全部 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| ts-node<br>ts-bun | 1–103 | 104 以上 | ○ | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| ts-node<br>ts-bun | 1–103 | 104 以上 | ○ | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| 全部 | 104–255 | 254 以上 | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 104–255 | 254 以上 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| rs<br>py | 104–253 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 104–253 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 104–253 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go<br>ts-node<br>ts-bun | 104–253 | 104–253 | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| go<br>ts-node<br>ts-bun | 104–253 | 104–253 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| go | 104–253 | 104 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go | 104–253 | 104 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go | 104–253 | 104 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| go | 254–255 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| go | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| go | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| go | 254–255 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| go | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| go | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| ts-node<br>ts-bun | 254–255 | 254 以上 | 全部 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| ts-node<br>ts-bun | 254–255 | 254 以上 | 全部 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| ts-node<br>ts-bun | 254–255 | 254 以上 | 全部 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| 言語 | ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | スレッドの cwd を使える | $TMPDIR | /tmp | ソケットのディレクトリに書ける | Options.base | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 全部 | 1–103 | 1–103 | 全部 | 全部 | 全部 | 全部 | 全部 | ○ | relative | — | — | 実測: long-connect |
+| 全部 | 1–103 | 254 以上 | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| 全部 | 1–103 | 254 以上 | × | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| 全部 | 1–103 | 254 以上 | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| rs<br>py | 1–253 | 104–253 | 全部 | 全部 | 全部 | 全部 | 全部 | ○ | widened | — | — | 実測: long-filename-connect |
+| rs<br>py<br>go | 1–103 | 254 以上 | ○ | 全部 | 全部 | 全部 | 全部 | ○ | thread-cwd-direct | — | — | 見積もり |
+| rs<br>py | 1–253 | 254 以上 | × | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 1–253 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 1–253 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 1–253 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 1–103 | 104–253 | ○ | 全部 | 全部 | 全部 | 全部 | ○ | thread-cwd-direct | — | — | 見積もり |
+| go<br>ts-node<br>ts-bun | 1–103 | 104–253 | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| go | 1–253 | 104 以上 | × | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go<br>ts-node<br>ts-bun | 1–103 | 104–253 | × | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| go<br>ts-node<br>ts-bun | 1–103 | 104–253 | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| go | 1–253 | 104 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 1–253 | 104 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 1–253 | 104 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 1–253 | 104 以上 | 全部 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 1–253 | 104 以上 | 全部 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 1–253 | 104 以上 | 全部 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 1–253 | 104 以上 | 全部 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 1–103 | 104 以上 | ○ | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| ts-node<br>ts-bun | 1–103 | 104 以上 | ○ | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| ts-node<br>ts-bun | 1–103 | 104 以上 | ○ | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 全部 | 104–255 | 254 以上 | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| 全部 | 104–255 | 254 以上 | 全部 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| 全部 | 104–255 | 254 以上 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| rs<br>py | 104–253 | 254 以上 | ○ | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 104–253 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 104–253 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 104–253 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go<br>ts-node<br>ts-bun | 104–253 | 104–253 | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| go<br>ts-node<br>ts-bun | 104–253 | 104–253 | 全部 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| go<br>ts-node<br>ts-bun | 104–253 | 104–253 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| go | 104–253 | 104 以上 | ○ | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 104–253 | 104 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 104–253 | 104 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 104–253 | 104 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | ○ | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | × | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| go | 254–255 | 254 以上 | ○ | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | — | 見積もり |
+| go | 254–255 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| go | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| go | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| go | 254–255 | 254 以上 | × | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | — | 見積もり |
+| go | 254–255 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| go | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| go | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| ts-node<br>ts-bun | 254–255 | 254 以上 | 全部 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | — | 見積もり |
+| ts-node<br>ts-bun | 254–255 | 254 以上 | 全部 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| ts-node<br>ts-bun | 254–255 | 254 以上 | 全部 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| ts-node<br>ts-bun | 254–255 | 254 以上 | 全部 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### 既定の connect / iOS 等の他の Apple の OS
 
-| 言語 | ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | スレッドの cwd を使える | $TMPDIR | /tmp | ソケットのディレクトリに書ける | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 1–103 | 1–103 | 全部 | 全部 | 全部 | 全部 | ○ | relative | — | — | 見積もり |
-| 全部 | 1–103 | 254 以上 | × | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 1–103 | 254 以上 | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| rs<br>py | 1–253 | 104–253 | 全部 | 全部 | 全部 | 全部 | ○ | widened | — | — | 見積もり |
-| rs<br>py<br>go | 1–103 | 254 以上 | ○ | 全部 | 全部 | 全部 | ○ | thread-cwd-direct | — | — | 見積もり |
-| rs<br>py | 1–253 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 1–253 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 1–253 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go | 1–103 | 104–253 | ○ | 全部 | 全部 | 全部 | ○ | thread-cwd-direct | — | — | 見積もり |
-| go<br>ts-node<br>ts-bun | 1–103 | 104–253 | × | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| go<br>ts-node<br>ts-bun | 1–103 | 104–253 | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| go | 1–253 | 104 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go | 1–253 | 104 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go | 1–253 | 104 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| ts-node<br>ts-bun | 1–253 | 104 以上 | 全部 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| ts-node<br>ts-bun | 1–253 | 104 以上 | 全部 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| ts-node<br>ts-bun | 1–253 | 104 以上 | 全部 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| ts-node<br>ts-bun | 1–103 | 104 以上 | ○ | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| ts-node<br>ts-bun | 1–103 | 104 以上 | ○ | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| 全部 | 104–255 | 254 以上 | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 104–255 | 254 以上 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| rs<br>py | 104–253 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 104–253 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 104–253 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go<br>ts-node<br>ts-bun | 104–253 | 104–253 | 全部 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| go<br>ts-node<br>ts-bun | 104–253 | 104–253 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| go | 104–253 | 104 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go | 104–253 | 104 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| go | 104–253 | 104 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| rs<br>py | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| go | 254–255 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| go | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| go | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| go | 254–255 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| go | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| go | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| ts-node<br>ts-bun | 254–255 | 254 以上 | 全部 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| ts-node<br>ts-bun | 254–255 | 254 以上 | 全部 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| ts-node<br>ts-bun | 254–255 | 254 以上 | 全部 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| 言語 | ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | スレッドの cwd を使える | $TMPDIR | /tmp | ソケットのディレクトリに書ける | Options.base | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 全部 | 1–103 | 1–103 | 全部 | 全部 | 全部 | 全部 | 全部 | ○ | relative | — | — | 見積もり |
+| 全部 | 1–103 | 254 以上 | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| 全部 | 1–103 | 254 以上 | × | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| 全部 | 1–103 | 254 以上 | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| rs<br>py | 1–253 | 104–253 | 全部 | 全部 | 全部 | 全部 | 全部 | ○ | widened | — | — | 見積もり |
+| rs<br>py<br>go | 1–103 | 254 以上 | ○ | 全部 | 全部 | 全部 | 全部 | ○ | thread-cwd-direct | — | — | 見積もり |
+| rs<br>py | 1–253 | 254 以上 | × | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 1–253 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 1–253 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 1–253 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 1–103 | 104–253 | ○ | 全部 | 全部 | 全部 | 全部 | ○ | thread-cwd-direct | — | — | 見積もり |
+| go<br>ts-node<br>ts-bun | 1–103 | 104–253 | × | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| go | 1–253 | 104 以上 | × | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go<br>ts-node<br>ts-bun | 1–103 | 104–253 | × | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| go<br>ts-node<br>ts-bun | 1–103 | 104–253 | × | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| go | 1–253 | 104 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 1–253 | 104 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 1–253 | 104 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 1–253 | 104 以上 | 全部 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 1–253 | 104 以上 | 全部 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 1–253 | 104 以上 | 全部 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 1–253 | 104 以上 | 全部 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 1–103 | 104 以上 | ○ | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| ts-node<br>ts-bun | 1–103 | 104 以上 | ○ | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| ts-node<br>ts-bun | 1–103 | 104 以上 | ○ | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 全部 | 104–255 | 254 以上 | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| 全部 | 104–255 | 254 以上 | 全部 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| 全部 | 104–255 | 254 以上 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| rs<br>py | 104–253 | 254 以上 | ○ | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 104–253 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 104–253 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 104–253 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go<br>ts-node<br>ts-bun | 104–253 | 104–253 | 全部 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| go<br>ts-node<br>ts-bun | 104–253 | 104–253 | 全部 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| go<br>ts-node<br>ts-bun | 104–253 | 104–253 | 全部 | 既定 (/private/var/folders/…/T、56、0700) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| go | 104–253 | 104 以上 | ○ | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 104–253 | 104 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 104–253 | 104 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| go | 104–253 | 104 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | ○ | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | × | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| rs<br>py | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: 元のパスも相対パスも > 253<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| go | 254–255 | 254 以上 | ○ | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | — | 見積もり |
+| go | 254–255 | 254 以上 | ○ | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| go | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| go | 254–255 | 254 以上 | ○ | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| go | 254–255 | 254 以上 | × | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | — | 見積もり |
+| go | 254–255 | 254 以上 | × | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| go | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| go | 254–255 | 254 以上 | × | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: スレッドの cwd を使えない<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| ts-node<br>ts-bun | 254–255 | 254 以上 | 全部 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | — | 見積もり |
+| ts-node<br>ts-bun | 254–255 | 254 以上 | 全部 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| ts-node<br>ts-bun | 254–255 | 254 以上 | 全部 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| ts-node<br>ts-bun | 254–255 | 254 以上 | 全部 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>widened: この言語に無い<br>thread-cwd-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### 既定の connect / FreeBSD
 
-| 言語 | ファイル名 (バイト) | $TMPDIR | /tmp | ソケットのディレクトリに書ける | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
-|---|---|---|---|---|---|---|---|---|---|
-| rs<br>py<br>go | 1–103 | 全部 | 全部 | 全部 | ○ | at-direct | — | — | 見積もり |
-| ts-node<br>ts-bun | 1–103 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| ts-node<br>ts-bun | 1–103 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| ts-node<br>ts-bun | 1–103 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | at-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| ts-node<br>ts-bun | 1–103 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | at-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| ts-node<br>ts-bun | 1–103 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | at-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 全部 | 104–255 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 104–255 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| rs<br>py<br>go | 104–255 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | at-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| rs<br>py<br>go | 104–255 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | at-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| rs<br>py<br>go | 104–255 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | at-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
-| ts-node<br>ts-bun | 104–255 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | at-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| ts-node<br>ts-bun | 104–255 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | at-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| ts-node<br>ts-bun | 104–255 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | at-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| 言語 | ファイル名 (バイト) | $TMPDIR | /tmp | ソケットのディレクトリに書ける | Options.base | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| rs<br>py<br>go | 1–103 | 全部 | 全部 | 全部 | 全部 | ○ | at-direct | — | — | 見積もり |
+| ts-node<br>ts-bun | 1–103 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| ts-node<br>ts-bun | 1–103 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | at-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 1–103 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| ts-node<br>ts-bun | 1–103 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| ts-node<br>ts-bun | 1–103 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | at-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 1–103 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | at-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| ts-node<br>ts-bun | 1–103 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | at-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 全部 | 104–255 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| 全部 | 104–255 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| 全部 | 104–255 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| rs<br>py<br>go | 104–255 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | at-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | — | 見積もり |
+| rs<br>py<br>go | 104–255 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | at-direct: ファイル名 > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| rs<br>py<br>go | 104–255 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | at-direct: ファイル名 > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| rs<br>py<br>go | 104–255 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | at-direct: ファイル名 > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| ts-node<br>ts-bun | 104–255 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | at-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | — | 見積もり |
+| ts-node<br>ts-bun | 104–255 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | at-direct: この言語に無い<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| ts-node<br>ts-bun | 104–255 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | at-direct: この言語に無い<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| ts-node<br>ts-bun | 104–255 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | at-direct: この言語に無い<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### 既定の connect / NetBSD
 
 効かない条件: 言語
 
-| ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | $TMPDIR | /tmp | ソケットのディレクトリに書ける | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
-|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 104 以上 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 104 以上 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| 1–103 | 1–103 | 全部 | 全部 | 全部 | ○ | relative | — | — | 見積もり |
-| 1–103 | 104 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 1–103 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 1–103 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 104–255 | 104 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| 104–255 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 104–255 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | $TMPDIR | /tmp | ソケットのディレクトリに書ける | Options.base | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 全部 | 104 以上 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| 全部 | 104 以上 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| 全部 | 104 以上 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 1–103 | 1–103 | 全部 | 全部 | 全部 | 全部 | ○ | relative | — | — | 見積もり |
+| 1–103 | 104 以上 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–103 | 104 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–103 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–103 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 104–255 | 104 以上 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | — | 見積もり |
+| 104–255 | 104 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| 104–255 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 104–255 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### 既定の connect / OpenBSD
 
 効かない条件: 言語
 
-| ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | $TMPDIR | /tmp | ソケットのディレクトリに書ける | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
-|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 104 以上 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 104 以上 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| 1–103 | 1–103 | 全部 | 全部 | 全部 | ○ | relative | — | — | 見積もり |
-| 1–103 | 104 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 1–103 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 1–103 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 104–255 | 104 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| 104–255 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 104–255 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | $TMPDIR | /tmp | ソケットのディレクトリに書ける | Options.base | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 全部 | 104 以上 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| 全部 | 104 以上 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| 全部 | 104 以上 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 1–103 | 1–103 | 全部 | 全部 | 全部 | 全部 | ○ | relative | — | — | 見積もり |
+| 1–103 | 104 以上 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–103 | 104 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–103 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–103 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 104–255 | 104 以上 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | — | 見積もり |
+| 104–255 | 104 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| 104–255 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 104–255 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### 既定の connect / illumos
 
 効かない条件: 言語
 
-| ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | $TMPDIR | /tmp | ソケットのディレクトリに書ける | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
-|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 108 以上 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 108 以上 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| 1–107 | 1–107 | 全部 | 全部 | 全部 | ○ | relative | — | — | 見積もり |
-| 1–107 | 108 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 1–107 | 108 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 1–107 | 108 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 108–255 | 108 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
-| 108–255 | 108 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 108–255 | 108 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | $TMPDIR | /tmp | ソケットのディレクトリに書ける | Options.base | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 全部 | 108 以上 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| 全部 | 108 以上 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| 全部 | 108 以上 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 1–107 | 1–107 | 全部 | 全部 | 全部 | 全部 | ○ | relative | — | — | 見積もり |
+| 1–107 | 108 以上 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–107 | 108 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–107 | 108 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–107 | 108 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 108–255 | 108 以上 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 107) | — | 見積もり |
+| 108–255 | 108 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 107) | — | 見積もり |
+| 108–255 | 108 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 108–255 | 108 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 107<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 #### 既定の connect / その他の Unix
 
 効かない条件: 言語
 
-| ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | $TMPDIR | /tmp | ソケットのディレクトリに書ける | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
-|---|---|---|---|---|---|---|---|---|---|
-| 全部 | 104 以上 | 全部 | 書ける (1777) | 全部 | ○ | link-file (B: tmp) | — | — | 見積もり |
-| 全部 | 104 以上 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | ○ | link-file (B: tmpdir) | — | — | 見積もり |
-| 1–103 | 1–103 | 全部 | 全部 | 全部 | ○ | relative | — | — | 見積もり |
-| 1–103 | 104 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 1–103 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 1–103 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
-| 104–255 | 104 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
-| 104–255 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
-| 104–255 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
+| ファイル名 (バイト) | 元のパスと相対パスの短い方 (バイト) | $TMPDIR | /tmp | ソケットのディレクトリに書ける | Options.base | 届く | 経路 | 届かない理由 | fork-cwd なら | 根拠 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 全部 | 104 以上 | 全部 | 全部 | 全部 | /tmp/app-<uid>/sockat (20、0700 の下) | ○ | link-file (B: given) | — | — | 見積もり |
+| 全部 | 104 以上 | 全部 | 書ける (1777) | 全部 | 指定しない | ○ | link-file (B: tmp) | — | — | 見積もり |
+| 全部 | 104 以上 | /var/tmp (8、1777) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | ○ | link-file (B: tmpdir) | — | — | 見積もり |
+| 1–103 | 1–103 | 全部 | 全部 | 全部 | 全部 | ○ | relative | — | — | 見積もり |
+| 1–103 | 104 以上 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–103 | 104 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–103 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 1–103 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | [届く](../fork-cwd-ja.md#connect-without-place-or-thread-cwd) | 見積もり |
+| 104–255 | 104 以上 | 全部 | 全部 | 全部 | 深い所 (113、0700 の下) | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 124 > 103) | — | 見積もり |
+| 104–255 | 104 以上 | 深い所 (113、0700 の下) | 書けない (作る前の見積もりには使う) | 全部 | 指定しない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B の綴りが長い (綴り 136 > 103) | — | 見積もり |
+| 104–255 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書ける | 指定しない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B がソケットのディレクトリにあり、実パスの綴りは元のパスより長い | — | 見積もり |
+| 104–255 | 104 以上 | 未設定・書けない | 書けない (作る前の見積もりには使う) | 書けない | 指定しない | × | — | relative: 相対パス > 103<br>link-file (B の実パス): B を作れる置き場が無い | — | 見積もり |
 
 ### resolve_for_connect
 

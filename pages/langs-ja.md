@@ -16,6 +16,7 @@
 | Python | asyncio の `start_unix_server(sock=)` は、3.13 以上なら閉じる時に元のパスのソケットファイルを消す (3.11 / 3.12 は消さない) | [sockat-py](https://github.com/kawaz/sockat-py/blob/main/docs/MANUAL-ja.md#asyncio) |
 | Python | `_ex` は `sockat.ex` に置く (`socket.socket.connect_ex` と紛れるため)。`import sockat` では読み込まない | [sockat-py](https://github.com/kawaz/sockat-py/blob/main/docs/MANUAL-ja.md#python-に固有の注意) |
 | Python | `os.path.abspath`・`normpath`・`relpath` は `..` を字句で畳む。相対パスを絶対にする時は `os.path.join(os.getcwd(), path)` | [sockat-py](https://github.com/kawaz/sockat-py/blob/main/docs/MANUAL-ja.md#python-に固有の注意) |
+| Python | 標準の `socket` はパスを NUL で黙って切り詰める (`bind("/tmp/a\0b")` が `/tmp/a` に bind する)。sockat は先頭以外の NUL をどの長さでも `ValueError` にする | [sockat-py](https://github.com/kawaz/sockat-py/blob/main/docs/MANUAL-ja.md#python-に固有の注意) |
 | TypeScript | native 抜きなので、スレッドの cwd・`bindat` / `connectat`・広げた sockaddr の経路が無い。`usableCrossUid` を満たせない時は `ENAMETOOLONG` | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/README-ja.md#長いパスへの届き方) |
 | TypeScript | Linux で `flock(1)` (util-linux / busybox) が無いと、長いパスの bind と resolve は `ENAMETOOLONG` (既定の connect は届く)。illumos はロックの手段が無く同じ | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/README-ja.md#長いパスへの届き方) |
 | TypeScript | Linux で `/proc` が見えないと Bun 自体が起動しない (Node は動く) | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/README-ja.md#どこから届かなくなるか) |

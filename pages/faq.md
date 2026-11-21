@@ -4,7 +4,7 @@
 
 Questions that come up before using sockat, and their answers. The specification is [SPEC](../docs/SPEC.md); where a path is reached is in [the reach tables](reach/README.md).
 
-The answers are about the design of [DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md) (Japanese). Each language's implementation is being rebuilt to this design; the behavior of the published versions is in each language repository's README.
+The answers are about the design of [DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md) (Japanese). Differences between languages are in [Per-language caveats](langs.md) and each language repository's README.
 
 ## Basics
 
@@ -84,7 +84,7 @@ It would put hidden state in the process, the caller could not see when it is cl
 
 ### What does the default `bind` leave behind?
 
-Only for a long path, a small directory and a symlink in `/tmp/sockat-<uid>`. They take almost no space and go with the OS's temporary-directory cleaning. To clean up right away, use `remove()` of `bind_ex`.
+Only for a long path, a small directory and a symlink in `/tmp/sockat-<uid>`. They take almost no space and go with the OS's temporary-directory cleaning. When none of the temporary bases can be used, it creates `.sockat.<random>` in the socket's directory (to fix the place, use `Options.base`). To clean up right away, use `remove()` of `bind_ex` (whether closing the listener removes the file differs by language; see [Per-language caveats](langs.md)).
 
 ### May I remove what is in `/tmp/sockat-<uid>`?
 
@@ -100,7 +100,7 @@ Call `sweep()` once at the end of the tests. It does not remove what is in use, 
 
 ### What about a daemon that binds long paths many times?
 
-The default `bind` reuses the symlink for binds to the same directory, so symlinks grow only with the number of socket directories, and stay until the process exits (one per bind when the file name is very long and the bind goes through a symlink to the socket's file). A daemon that makes a socket in a different directory per session, for example, cleans up with `remove()` of `bind_ex`.
+The default `bind` reuses the symlink for binds to the same directory, so symlinks grow only with the number of socket directories, and stay until the process exits (one per bind when the file name is very long and the bind goes through a symlink to the socket's file). A daemon that makes a socket in a different directory per session, for example, cleans up with `remove()` of `bind_ex` (whether closing the listener removes the file differs by language; see [Per-language caveats](langs.md)).
 
 ### Does the default `connect` leave anything?
 

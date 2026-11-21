@@ -36,7 +36,7 @@
     {"id": "ts-node", "label": {"ja": "TypeScript・Node (sockat-ts)", "en": "TypeScript on Node (sockat-ts)"}, "lacks": ["widened", "thread-cwd", "at", "thread-cwd-direct", "at-direct"]},
     {"id": "ts-bun", "label": {"ja": "TypeScript・Bun (sockat-ts。Linux は /proc が見えないと Bun 自体が起動しない)", "en": "TypeScript on Bun (sockat-ts; on Linux Bun itself does not start without /proc)"}, "lacks": ["widened", "thread-cwd", "at", "thread-cwd-direct", "at-direct"]}
   ],
-  "lacks_basis": "conformance/langs.json の lacks と同じ。新しい経路 (link-dir・link-file・thread-cwd-direct) を作れない言語は無い前提 (各言語の作り直しの前なので見積もり)",
+  "lacks_basis": "conformance/langs.json の lacks と同じ",
   "floor": {
     "pid": {"value": 7, "note": {"ja": "procB の pid の桁。Linux の pid_max の上限 4194304 (最大の pid は 4194303)", "en": "digits of procB's pid. Linux's pid_max upper bound 4194304 (the largest pid is 4194303)"}},
     "fd": {"value": 7, "note": {"ja": "B の fd の桁。Linux の fs.nr_open の既定 1048576 (最大の fd は 1048575)", "en": "digits of B's fd. Linux's fs.nr_open default 1048576 (the largest fd is 1048575)"}},
@@ -91,7 +91,7 @@
     {"id": "xdg", "label": {"ja": "$XDG_RUNTIME_DIR", "en": "$XDG_RUNTIME_DIR"}, "kind": "place", "ops": ["bind", "bind_ex", "resolve_for_bind", "connect", "resolve_for_connect"], "note": {"ja": "B の置き場の 2 番目", "en": "the second base for B"}},
     {"id": "tmpdir", "label": {"ja": "$TMPDIR", "en": "$TMPDIR"}, "kind": "place", "ops": ["bind", "bind_ex", "resolve_for_bind", "connect", "resolve_for_connect"], "note": {"ja": "B の置き場の 3 番目", "en": "the third base for B"}},
     {"id": "sockdir", "label": {"ja": "ソケットのディレクトリに書ける", "en": "Socket's directory writable"}, "kind": "place", "ops": ["connect", "resolve_for_connect"], "note": {"ja": "B の置き場の 4 番目。bind はソケットのファイルを作るので書ける前提", "en": "the fourth base for B. bind creates the socket file, so it is assumed writable"}},
-    {"id": "base", "label": {"ja": "Options.base", "en": "Options.base"}, "kind": "place", "ops": ["bind_ex", "resolve_for_bind", "resolve_for_connect"], "note": {"ja": "B そのもののパス。指定すると自動の置き場を使わない。usable_cross_uid と一緒で途中と base 自身が other に x を持たなければ EPERM。途中が無い等の確かめのエラーは表に入れない", "en": "the path of B itself. When given, the automatic bases are not used. With usable_cross_uid, EPERM unless the path and the base itself give other x. Errors of the other checks (a missing parent etc.) are not in the tables"}},
+    {"id": "base", "label": {"ja": "Options.base", "en": "Options.base"}, "kind": "place", "ops": ["bind_ex", "resolve_for_bind", "connect", "resolve_for_connect"], "note": {"ja": "B そのもののパス。指定すると自動の置き場を使わない。connect 系では connect_ex 系だけが取り、B の置き場として使う。usable_cross_uid と一緒の bind 系で途中と base 自身が other に x を持たなければ EPERM。途中が無い等の確かめのエラーは表に入れない", "en": "the path of B itself. When given, the automatic bases are not used. Among the connect operations only the connect_ex variants take it, as the base for B. In a bind operation with usable_cross_uid, EPERM unless the path and the base itself give other x. Errors of the other checks (a missing parent etc.) are not in the tables"}},
     {"id": "private_tmp", "label": {"ja": "PrivateTmp (自分か相手が /tmp を隔離)", "en": "PrivateTmp (either side has /tmp isolated)"}, "kind": "bool", "os": ["linux"], "ops": ["bind", "bind_ex", "resolve_for_bind"], "note": {"ja": "systemd の PrivateTmp 等。綴りを相手が辿れるかにだけ効く", "en": "systemd's PrivateTmp etc. Affects only whether the peer can follow the spelling"}},
     {"id": "cross_uid", "label": {"ja": "Options.usable_cross_uid (別の uid の相手)", "en": "Options.usable_cross_uid (peer with another uid)"}, "kind": "bool", "ops": ["bind_ex", "resolve_for_bind"], "note": {"ja": "指定して別の uid の相手と通信する。B の選び方 (途中と B 自身が other に x の所だけ)、procB を使わないこと、綴りを相手が辿れるかに効く", "en": "given, talking to a peer with another uid. Affects which B is chosen (only bases whose path and B itself give other x), not using procB, and whether the peer can follow the spelling"}}
   ],
@@ -103,7 +103,7 @@
     {"id": "bind", "label": {"ja": "既定の bind", "en": "default bind"}, "note": {"ja": "bind_ex と同じ順で、Options を取らない。綴りは残す (E はプロセスが終わるまで、D と一緒に OS の掃除で消える)", "en": "the same order as bind_ex, without Options. The spelling is kept (E stays until the process exits and goes with D in the OS's cleanup)"}},
     {"id": "bind_ex", "label": {"ja": "bind_ex", "en": "bind_ex"}, "note": {"ja": "resolve の綴り (link-dir・link-file) を先に試し、収まらなければ thread-cwd (FreeBSD は at)", "en": "tries resolve's spellings (link-dir, link-file) first, then thread-cwd (at on FreeBSD) when they do not fit"}},
     {"id": "resolve_for_bind", "label": {"ja": "resolve_for_bind", "en": "resolve_for_bind"}, "note": {"ja": "bind_ex と同じ順で、パスを返すだけなので thread-cwd・at を持たない", "en": "the same order as bind_ex; it only returns a path, so it has no thread-cwd or at"}},
-    {"id": "connect", "label": {"ja": "既定の connect", "en": "default connect"}, "note": {"ja": "connect・connect_nonblocking と、Options.base を指定しない connect_ex 系。D を作らず、link-file は B の直下の E を通す B/E で、connect の後すぐ E を消す。DGRAM の connect・send_to も同じ経路 (send_to が relative を使わないかは SPEC の「未確定」)", "en": "connect, connect_nonblocking and the connect_ex variants without Options.base. Creates no D; link-file goes through an E right under B as B/E and removes E right after connect. A DGRAM connect and send_to take the same routes (whether send_to avoids relative is open in the SPEC)"}},
+    {"id": "connect", "label": {"ja": "既定の connect", "en": "default connect"}, "note": {"ja": "connect・connect_nonblocking と connect_ex 系 (Options.base を指定した行は connect_ex 系だけ)。D を作らず、link-file は B の直下の E を通す B/E で、connect の後すぐ E を消す。DGRAM の connect・send_to も同じ経路 (send_to が relative を使わないかは SPEC の「未確定」)", "en": "connect, connect_nonblocking and the connect_ex variants (rows with Options.base given are the connect_ex variants only). Creates no D; link-file goes through an E right under B as B/E and removes E right after connect. A DGRAM connect and send_to take the same routes (whether send_to avoids relative is open in the SPEC)"}},
     {"id": "resolve_for_connect", "label": {"ja": "resolve_for_connect", "en": "resolve_for_connect"}, "note": {"ja": "綴り B/D/E (link-file) を返す。cleanup まで残し、同じパスへの connect に何度も使う", "en": "returns the spelling B/D/E (link-file), kept until cleanup and reused for connects to the same path"}}
   ],
   "routes": {
@@ -159,12 +159,12 @@
     ]
   },
   "evidence": {
-    "note": "今の実装 (sockat-rs 0.4 系・sockat-py・sockat-go・sockat-ts の Node と Bun。Linux で /proc が無い場面は Bun が起動せず対象外) を適合試験 (just conformance --no-build --verbose、2026-11-20、全場面で言語の差なし) に流した結果。DR-0017 で変わらない connect の経路 (unchanged) の行だけに当てる。条件を書いていない次元は、その行で効かない (全部) 時だけ当てる",
+    "note": "各言語の main (sockat-rs 0.5.1・sockat-py 0.3.1・sockat-go v0.4.1・sockat-ts 0.1.1 の Node と Bun。Linux で /proc が無い場面は Bun が起動せず対象外) を適合試験の下の 4 場面 (python3 -I conformance/run.py --case linux-long-connect,no-proc-connect-near-cwd,long-connect,long-filename-connect --verbose、2026-11-22、言語の差なし) に流した結果。書き込みもスレッドも要らない connect の経路 (unchanged) の行だけに当てる。条件を書いていない次元は、その行で効かない (全部) 時だけ当てる",
     "cases": [
       {"case": "linux-long-connect", "op": "connect", "os": "linux", "when": {"thread_cwd": true, "proc": true}, "filename": 6, "observed": {"rs": "proc-direct", "py": "proc-direct", "go": "proc-direct", "ts-node": "proc-direct", "ts-bun": "proc-direct"}},
       {"case": "no-proc-connect-near-cwd", "op": "connect", "os": "linux", "when": {"thread_cwd": true, "proc": false}, "filename": 6, "relpath": 6, "observed": {"rs": "relative", "py": "relative", "go": "relative", "ts-node": "relative"}},
       {"case": "long-connect", "op": "connect", "os": "macos", "when": {"thread_cwd": true}, "filename": 6, "relpath": "fits-sockaddr", "observed": {"rs": "relative", "py": "relative", "go": "relative", "ts-node": "relative", "ts-bun": "relative"}},
-      {"case": "long-filename-connect", "op": "connect", "os": "macos", "when": {"thread_cwd": true}, "filename": 100, "relpath": "over-sockaddr-within-widened", "observed": {"rs": "widened", "py": "widened", "go": "symlink-file", "ts-node": "link-file", "ts-bun": "link-file"}}
+      {"case": "long-filename-connect", "op": "connect", "os": "macos", "when": {"thread_cwd": true}, "filename": 100, "relpath": "over-sockaddr-within-widened", "observed": {"rs": "widened", "py": "widened", "go": "thread-cwd-direct", "ts-node": "link-file", "ts-bun": "link-file"}}
     ]
   }
 }

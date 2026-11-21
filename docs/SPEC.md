@@ -7,14 +7,14 @@ How sockat behaves, independent of the language (the promise to users and to tho
 - How the routes are built (building the base B, each route's steps): [SPEC-routes.md](SPEC-routes.md)
 - How far each condition reaches: [the reach table](../pages/reach/README.md)
 - Decisions and rejected alternatives: [docs/decisions](decisions/INDEX.md) (Japanese; the current design is [DR-0017](decisions/DR-0017-resolve-through-persistent-base.md))
-- What is specific to a language (types, runtime integration, memory safety): the README and manual of each language's repository ([sockat-rs](https://github.com/kawaz/sockat-rs), [sockat-py](https://github.com/kawaz/sockat-py), [sockat-go](https://github.com/kawaz/sockat-go))
+- What is specific to a language (types, runtime integration, memory safety): the README and manual of each language's repository ([sockat-rs](https://github.com/kawaz/sockat-rs), [sockat-py](https://github.com/kawaz/sockat-py), [sockat-go](https://github.com/kawaz/sockat-go), [sockat-ts](https://github.com/kawaz/sockat-ts))
 
 ## Terms
 
 | Term | Meaning |
 |---|---|
 | standard | the language's standard library bind / connect for Unix domain sockets |
-| standard length | the longest path the language's standard accepts unchanged in a sockaddr that is not widened. A path up to it is handed to the standard unchanged. Usually `sun_path` − 1, `sun_path` − 2 for Java. Even if the standard lets a longer path through by truncating it, widening the sockaddr or a detour of its own, that is not used (Node on macOS, Bun) ([DR-0004](decisions/DR-0004-standard-length-per-language.md), Japanese) |
+| standard length | the longest path the language's standard accepts unchanged in a sockaddr that is not widened, never more than the sockaddr length (`sun_path` − 1). A path up to it is handed to the standard unchanged. Usually `sun_path` − 1, `sun_path` − 2 for Java. Even if the standard lets a longer path through by truncating it, widening the sockaddr or a detour of its own, that is not used (Node on macOS, Bun). A path of exactly `sun_path` with no room for the NUL is not used either, even if the standard accepts it (108 for Node on Linux, etc.) ([DR-0004](decisions/DR-0004-standard-length-per-language.md), Japanese) |
 | sockaddr length | the length of `sun_path` − 1 byte (leaving room for the NUL). The longest spelling a sockaddr that is not widened carries |
 | original path | the path the user passed |
 | directory / file name | what precedes the last component of the original path, and the last component. The socket's directory is the former |
@@ -32,7 +32,7 @@ How sockat behaves, independent of the language (the promise to users and to tho
 | spelling properties | whether a bind's spelling can be used later. Returned as `Spelling` ([Spelling properties: `Spelling`](#spelling-properties-spelling)). `Dangling` is a spelling that contains an E already removed, and reaches nothing |
 | fails the checks | does not pass the owner and permission checks of a base, B or `Options.base` (a real directory, owned by oneself or root, not writable by others) |
 | the connect variants | `connect`, `connect_nonblocking`, and the `_ex` of each |
-| `/proc` usable | `/proc/self/fd/<fd>` and `/proc/<pid>/fd/<fd>` can be looked up (how it is checked with B's fd is in [Spelling forms](SPEC-routes.md#spelling-forms)) |
+| `/proc` usable | checked differently where it is used (against a mismatch between the PID namespace and the `/proc` mount).<br>Choosing the connect row (the proc-direct row or the relative row of [Connect order](#connect-order)): `/proc/self/fd/<fd>` stat'ed with an fd opened on `/` has the same `(st_dev, st_ino)` as `fstat` of that fd. Apart from this, proc-direct makes the same check with the socket's directory's fd of that connect, and is unusable when they differ ([proc-direct](SPEC-routes.md#proc-direct))<br>Using procB (including the estimate of the spelling's length): `/proc/<pid>/fd/<B's fd>` stat'ed has the same `(st_dev, st_ino)` as `fstat` of B's fd ([Spelling forms](SPEC-routes.md#spelling-forms)) |
 
 OSes are grouped as follows.
 
@@ -73,10 +73,10 @@ Shown with the Rust names.
 | DGRAM | `datagram::bind(path)` | a standard `UnixDatagram` |
 | DGRAM | `datagram::unbound()` | a standard `UnixDatagram` |
 | DGRAM | `datagram::connect(&sock, path)` | nothing |
-| DGRAM | `datagram::send_to(&sock, buf, path)` | the number of bytes sent |
+| DGRAM | `datagram::send_to(&sock, buf, path)` | the number of bytes sent (its routes are in "[Open questions](#open-questions)") |
 | DGRAM | `datagram::bind_ex(path, Options)` | `Bound<UnixDatagram>` |
 | DGRAM | `datagram::connect_ex(&sock, path, Options)` | `Report` |
-| DGRAM | `datagram::send_to_ex(&sock, buf, path, Options)` | the number of bytes sent and `Report` |
+| DGRAM | `datagram::send_to_ex(&sock, buf, path, Options)` | the number of bytes sent and `Report` (its routes are in "[Open questions](#open-questions)") |
 | SEQPACKET | `seqpacket::bind(path)`, `connect(path)`, `connect_nonblocking(path)` and each `_ex` | open |
 | resolve | `resolve_for_bind(path, Options)` | `ForBind` |
 | resolve | `resolve_for_connect(path, Options)` | `ForConnect` |
@@ -134,7 +134,7 @@ On success `_ex` and resolve return the following.
 | `skipped` | the routes tried and found unusable, in the order tried. Each element is `{ name: the route name, reason: why it was unusable }`. For a long path `standard` is included |
 
 - `skipped` has one element per route name. Trying link-dir with procB and with the real path is still one element, with the `reason` of the last try. Not using procB because of `usable_cross_uid` is not skipping a route, so nothing is added
-- When the B with the default name in bases 1 to 3 already exists and fails the checks (occupied), the `reason` of the routes that use B includes a reason that tells it was occupied ([Building B](SPEC-routes.md#building-b))
+- When a call skips a base among 1 to 3 because the B with the default name already exists there and fails the checks (occupied), the occupation is added to the `reason` why a route that uses B could not be used (the spelling does not fit, etc.) ([Building B](SPEC-routes.md#building-b)). It does not appear in calls after an earlier call has come to hold the B in the next base
 - `skipped` contains only the routes in that call's row of the order tables (for bind the row is decided by the OS, for connect by the OS and whether `/proc` is usable). The connect row of Linux without `/proc` usable has no proc-direct, so it is not included.  A route whose means the OS lacks (thread-cwd on NetBSD, OpenBSD and illumos, thread-cwd-direct on an OS that cannot move a thread's cwd) is not in that OS's row and is not included
 
 - Every route tried before `route` was unusable (when a route actually binds / connects and fails, the error is returned there and the next is not tried; only when a bind's link-file is told apart at run time does it go on). So there is no "was it usable" bool
@@ -219,6 +219,7 @@ Attributes of `Linked`:
 - Even when it fails, it goes on to `cleanup`, and returns the error of removing the file
 - A replacement is told apart by `(st_dev, st_ino)` only, and what is promised is a replacement while the listener is open. Something removed and recreated after the listener is closed cannot be told apart on a filesystem that reuses numbers at once (ext4, BSD UFS / FFS). Each language's docs recommend calling `remove` before closing the listener ([findings](findings/2026-11-19-inode-reuse-after-close.md), Japanese)
 - Someone who can write to the socket's directory swapping the file between the check and the removal, or between the bind and the remembering, cannot be prevented (POSIX has no way to remove by inode)
+- For a bind to an abstract name (a path starting with NUL on Linux / Android), `SocketFile` holds no file and `remove()` removes no file (it only does what `cleanup` does). `socket_file()` of `ForBind` returns the same form
 
 | Language | Form |
 |---|---|
@@ -230,8 +231,7 @@ Attributes of `Linked`:
 
 At resolve time nothing is bound, so `ForBind` cannot remember the socket file's `(st_dev, st_ino)` and has no `remove()`. When the user calls `socket_file()` after binding on their own (the name follows each language's convention; in Rust `socket_file(&self) -> io::Result<SocketFile>`), it returns a `SocketFile`. Without that call there is nothing that removes the file.
 
-- At the call it follows the spelling and remembers the socket file's realpath and `(st_dev, st_ino)`. When it cannot follow it (before the bind, no file), it is an error. When what it reaches is not a socket (an unrelated file that was at the original path before the bind, etc.), it is an error
-- When the last element of the original path is a symlink (the standard bind follows it on macOS and NetBSD), it remembers the realpath and `(st_dev, st_ino)` of what it led to. When that is not a socket, it is an error. So that `remove` does not remove the user's symlink
+- At the call it follows the spelling all the way, including a symlink at the last element of the original path (the standard bind follows it on macOS and NetBSD), and remembers the realpath and `(st_dev, st_ino)` of the socket file it ends at (so that `remove` does not remove the user's symlink). When it cannot follow it (before the bind, no file), it is an error. When what it ends at is not a socket (an unrelated file that was at the original path before the bind, etc.), it is an error
 - The returned `SocketFile` works like the one of `Bound` ([`remove`](#remove)). Its `cleanup()` cleans up once the same E as `cleanup()` of `ForBind`
 - Call it after the bind and before closing the listener. A replacement between the bind and the call cannot be told apart
 - When the spelling is `CwdRelative`, the process cwd's `(st_dev, st_ino)` at resolve time and at the call are compared, and a difference is an error
@@ -248,6 +248,7 @@ At resolve time nothing is bound, so `ForBind` cannot remember the socket file's
 - The default `bind` reuses the link-dir E for binds to the same directory, so the E grow only with the number of socket directories. A link-file E is one per bind
 - The default `connect` leaves no D or E in the process (it creates no D, and unlinks the E right under B right after the connect). When it creates B for the first time, that B and its fd are used as the process's B from then on
 - A B in the socket's directory (`.sockat.<random>`) is not covered by `sweep`, may not be removed by the OS's cleaning either, and stays in the user's directory
+- A long-lived process that keeps creating and removing socket directories where bases 1 to 3 cannot be used accumulates the fds of each directory's B and D, so it passes a fixed `Options.base`
 
 The OS's temporary-directory cleaning ([research](research/2026-11-20-tmp-cleaners-and-persistent-base.md), Japanese):
 
@@ -267,7 +268,8 @@ The OS's temporary-directory cleaning ([research](research/2026-11-20-tmp-cleane
 - Only when called, it removes the D in B whose owners are dead (D whose lock has been released). It does not remove the D of other live processes (how it tells is in [D and E](SPEC-routes.md#d-and-e))
 - `sweep()` covers the B with the default names in bases 1 to 3 (`sockat-<uid>`, `sockat`). Only those that exist; it creates no B
 - `sweep_base(path)` (the name follows each language's convention) removes the dead D in the B passed as `Options.base`. The app that manages that B calls it. When B or its parent is missing, it does nothing and succeeds. The path is checked as for `Options.base` (a wrong form is an invalid argument; a symlink, someone else's, or a B or directory on the way writable by others is `EPERM`; not a directory is `ENOTDIR`)
-- `sweep()` silently skips the bases and B that fail the checks
+- `sweep()` silently skips the bases and B that fail the checks, and a B it cannot read (no permission, etc.)
+- Inside B and D it lists by fd, and removes only after taking the exclusive lock and checking that the name's `(st_dev, st_ino)` is the same as the locked fd's
 - It covers only the directories right under B whose name has the form of a D (10 characters of the 62 alphanumerics). B (including the B of `Options.base`) is sockat's own, and the user puts nothing else there
 - A B in the socket's directory is not covered
 - It does not touch the E right under B (the default connect's). A D containing something other than a symlink is left
@@ -362,7 +364,7 @@ Routes needing neither a write nor a thread come first; routes that start a thre
 
 | Point | What happens |
 |---|---|
-| The address the kernel returns | `getsockname` on the bound side, and `getpeername` on a side that connected to it, return the bind's spelling, not the original path. Whether it can be used later is told by `Spelling`. A language that can replace, within the standard type, what returns the address (Python) returns the original path. On illumos, the connecting side's `getpeername` returns the spelling passed to connect rather than the one bound (measured in sockat-rs's CI, 2026-11-19) |
+| The address the kernel returns | `getsockname` on the bound side, and `getpeername` on a side that connected to it, return the bind's spelling, not the original path. Whether it can be used later is told by `Spelling`. A language that can replace, within the standard type, what returns the address (Python, TypeScript) returns the original path. On illumos, the connecting side's `getpeername` returns the spelling passed to connect rather than the one bound (measured in sockat-rs's CI, 2026-11-19) |
 | How it looks in operational tools | the address shown by `ss -x`, `lsof`, `/proc/net/unix`, etc. is the bind's spelling. For link-dir and thread-cwd / at the file name stays at the end of the spelling. A link-file spelling does not show the file name |
 | When the listener is closed | the default bind (Go's `Listen`, etc.) behaves as the standard does. With a standard that unlinks by the address's spelling on close (Go's `UnixListener.Close`), a link-dir spelling follows the E in the middle and removes the file at the original path (same as the standard). With a link-file spelling the unlink does not follow the last symlink, so E itself is removed and the socket file stays (differs from the standard; each language's README says so). A `Dangling` spelling is not unlinked (Go uses `SetUnlinkOnClose(false)`). The bind of `_ex` does not remove anything on close, whatever the spelling; only `remove()` of `SocketFile` removes the file (removing by the spelling would remove a replaced file without telling it apart) |
 | The directory is looked up first | link-dir's and thread-cwd / at's E point to the realpath of the socket's directory, and proc-direct, at-direct and thread-cwd-direct look up the directory before passing the file name. A rename or a symlink swap in between is not reflected |
@@ -400,7 +402,7 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 | no route can be used (the spelling does not fit, the means is missing) | `ENAMETOOLONG` |
 | `resolve_for_bind` at a length only thread-cwd / at reaches | `ENAMETOOLONG` |
 | `resolve_for_connect` when link-file cannot be used (B cannot be created, the spelling does not fit) | `ENAMETOOLONG` |
-| `Options.base` is a relative path, or its last component is not a file name (`dir/`, `..`, `/`). Regardless of the path's length, and checked before telling whether it is an abstract name (a check of the argument's form, like a NUL not at the start) | invalid argument |
+| `Options.base` is a relative path, contains a NUL, or its last component is not a file name (`dir/`, `..`, `/`). Regardless of the path's length, and checked before telling whether it is an abstract name (a check of the argument's form, like a NUL not at the start) | invalid argument |
 | `Options.base` is a symlink | `EPERM` (not a real directory; the check fails) |
 | `Options.base` is neither a directory nor a symlink | `ENOTDIR` |
 | a directory on the way to `Options.base` is missing | `ENOENT` |
