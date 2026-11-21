@@ -404,6 +404,7 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 | `Options.base` の持ち主・権限の確かめに外れた (`usable_cross_uid` と一緒の bind 系の、途中と base 自身が other に x を持つかを含む) | `EPERM` |
 | 標準に渡す長さを超えるパスで、名前で終わらない | 引数の誤り |
 | 先頭以外に NUL を含むパス (長さによらない) | 引数の誤り |
+| 空のパス | 引数の誤り (`Options.base` の形の検査の後、abstract の判定より前。Linux の標準は空のパスの bind を名前の無い abstract のアドレスへの autobind にする) |
 | relative の途中で cwd が変わった | 一般のエラー |
 
 - ディレクトリを先に引くので、`ENOENT` と `ENOTDIR` はどの OS でも長さの判定より前に決まる

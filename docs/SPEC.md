@@ -404,6 +404,7 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 | `Options.base` failed the owner / permission checks (including, on the bind side with `usable_cross_uid`, whether every directory on the way and the base itself give x to other) | `EPERM` |
 | a path over the standard length that does not end in a name | invalid argument |
 | a path containing NUL anywhere but at the start (whatever its length) | invalid argument |
+| an empty path | invalid argument (after the form check of `Options.base`, before the abstract check. Linux's standard turns a bind of an empty path into an autobind to a nameless abstract address) |
 | the cwd changed during relative | general error |
 
 - The directory is looked up first, so `ENOENT` and `ENOTDIR` are decided before the length on every OS
