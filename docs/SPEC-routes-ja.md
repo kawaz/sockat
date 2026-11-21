@@ -247,7 +247,7 @@ resolve の綴りが収まらない時の bind が使う。
 ## 経路の失敗の扱い
 
 - 経路が実際に bind / connect して失敗したら (`ENOENT`、`EADDRINUSE`、`ECONNREFUSED` 等)、そのエラーを返し、次の経路を試さない
-- その時、その呼び出しで作った E は返す前に消す (link-dir・link-file・thread-cwd・at。既定の connect の link-file も)。既定の bind が前の呼び出しから使い回した E、D と B は残す
+- その時、その呼び出しで作った E は返す前に消す (link-dir・link-file・thread-cwd・at。既定の connect の link-file も)。既定の bind の link-dir の E は、その呼び出しで作った物も含めて残す (並行する他の既定の bind が同じ E を使い回しているかもしれず、残っても次の bind が使う。消さないので、既定の bind どうしを順番にする lock は要らない)。D と B も残す
 - E を消すのに失敗しても、呼び出しの成否も元のエラーも変えずに黙る (成功した connect を失敗にしない。元のエラーを消す側のエラーに置き換えない)。利用者が呼ぶ `cleanup()` は別で、失敗をエラーで返す ([SPEC の `remove` と `cleanup`](SPEC-ja.md#remove-と-cleanup))
 - 次へ進むのは、経路自体が使えない時だけ (各経路の節の「使えない時」)
   - 綴りが収まらない

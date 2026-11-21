@@ -247,7 +247,7 @@ Used by [relative](#relative).
 ## How a failing route is treated
 
 - When a route actually binds / connects and fails (`ENOENT`, `EADDRINUSE`, `ECONNREFUSED`, etc.), that error is returned and the next route is not tried
-- Then the E made in that call is removed before returning (link-dir, link-file, thread-cwd, at; and the default connect's link-file). The E the default bind reuses from an earlier call, D and B are kept
+- Then the E made in that call is removed before returning (link-dir, link-file, thread-cwd, at; and the default connect's link-file). The default bind's link-dir E is kept, including one made in that call (another concurrent default bind may be reusing the same E, and a kept E is used by the next bind; since it is not removed, no lock serializing default binds is needed). D and B are kept too
 - When removing the E fails, it stays silent and changes neither the result of the call nor the original error (a successful connect is not turned into a failure; the original error is not replaced by the removal's). The `cleanup()` the user calls is different and returns the failure as an error ([SPEC `remove` and `cleanup`](SPEC.md#remove-and-cleanup))
 - It goes on to the next only when the route itself is unusable (each route's "unusable when")
   - the spelling does not fit

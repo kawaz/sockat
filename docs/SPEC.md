@@ -444,7 +444,7 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 | thread-cwd / at | when forced, neither the process's cwd nor the calling thread's cwd changes and no E remains after the call. The socket is created at the original path and can send and receive |
 | link-file on bind | on an OS whose bind does not follow the symlink it goes into `skipped` and nothing remains. When something is at the original path, that error (`EADDRINUSE`) is returned and the next is not tried |
 | The connect routes | forcing proc-direct, relative, widened, at-direct, thread-cwd-direct and link-file one by one reaches the socket |
-| No retry on failure | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` are returned and nothing is created on later routes. When a bind by link-dir or link-file fails, no E made in that call is left (the E the default bind reuses stays) |
+| No retry on failure | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` are returned and nothing is created on later routes. When a bind by link-dir or link-file fails, no E made in that call is left (the default bind's link-dir E stays) |
 | relative and the cwd | a cwd change during relative gives a general error |
 | macOS | a 253-byte path reaches via widened for the connect variants. bind does not use widened |
 | Non-blocking connect | it fails without waiting when the backlog is full |

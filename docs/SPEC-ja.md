@@ -444,7 +444,7 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 | thread-cwd・at | 強制して、プロセスの cwd も呼び出し元のスレッドの cwd も変わらず、呼び出しの後に E が残らない。ソケットが元のパスにでき送受信できる |
 | link-file の bind | bind が symlink を辿らない OS で `skipped` に入り、何も残らない。元のパスに物がある時はそのエラー (`EADDRINUSE`) を返し、次を試さない |
 | connect の経路 | proc-direct・relative・widened・at-direct・thread-cwd-direct・link-file を 1 つずつ強制して、ソケットに届く |
-| 失敗をやり直さない | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` を返し、後の経路に何も作らない。link-dir・link-file で bind に失敗した時は、その呼び出しで作った E が残らない (既定の bind が使い回す E は残る) |
+| 失敗をやり直さない | `ENOENT` / `EADDRINUSE` / `ECONNREFUSED` を返し、後の経路に何も作らない。link-dir・link-file で bind に失敗した時は、その呼び出しで作った E が残らない (既定の bind の link-dir の E は残る) |
 | relative と cwd | relative の途中で cwd が変わったら一般のエラー |
 | macOS | connect 系で 253 バイトのパスが widened で通る。bind は widened を使わない |
 | ブロックしない connect | backlog が満杯で待たずに失敗する |
