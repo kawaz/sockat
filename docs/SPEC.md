@@ -268,7 +268,7 @@ The OS's temporary-directory cleaning ([research](research/2026-11-20-tmp-cleane
 - It covers only the directories right under B whose name has the form of a D (10 characters of the 62 alphanumerics). B (including the B of `Options.base`) is sockat's own, and the user puts nothing else there
 - A B with a random name (fallen back to after the checks failed) and a B in the socket's directory are not covered
 - It does not touch the E right under B (the default connect's). A D containing something other than a symlink is left
-- It is never called automatically (resolve does not list B on each call)
+- It is never called automatically (B is not listed on each resolve, at the start of a process, or at exit). Where tests run over and over, the user calls it
 
 ## Short paths
 

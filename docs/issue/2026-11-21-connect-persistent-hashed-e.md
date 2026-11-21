@@ -29,7 +29,7 @@ origin: 自リポ TODO
 
 ## bind に使う場合
 
-- 未検討。D をやめると溜まる問題 (AS-Q1) と exec をまたぐ問題が消えうるが、ロックの無い E が OS の掃除 (Linux の systemd-tmpfiles の 10 日等) で消されないかが分かっていない
+- 未検討。D をやめると溜まる問題と exec をまたぐ問題が消えうるが、ロックの無い E が OS の掃除 (Linux の systemd-tmpfiles の 10 日等) で消されないかが分かっていない
 
 ## 統括の案 (connect の細部、採否は未定)
 
@@ -41,4 +41,4 @@ origin: 自リポ TODO
 
 ## 関連
 
-- [DR-0017](../decisions/DR-0017-resolve-through-persistent-base.md)、[SPEC の connect の順](../SPEC-ja.md#connect-の順)、[AS-Q1](../QUESTIONS.md)
+- [DR-0017](../decisions/DR-0017-resolve-through-persistent-base.md)、[SPEC の connect の順](../SPEC-ja.md#connect-の順)
