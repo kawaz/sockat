@@ -6,7 +6,7 @@ Caveats specific to each language's implementation (bugs and limits of its stand
 
 | Language | Caveat | Details |
 |---|---|---|
-| Rust | On OpenBSD, Rust 1.99 and earlier std's `local_addr`, `peer_addr` and `recv_from` drop the last byte of the path (fixed in 1.100). Replying over DGRAM to the address from `recv_from` needs 1.100 or later | [sockat-rs](https://github.com/kawaz/sockat-rs) |
+| Rust | On OpenBSD, Rust 1.99 and earlier std's `local_addr`, `peer_addr` and `recv_from` drop the last byte of the path (fixed in 1.100). Replying over DGRAM to the address from `recv_from` needs 1.100 or later | [sockat-rs](https://github.com/kawaz/sockat-rs/blob/main/docs/MANUAL.md#caveats-specific-to-rust) |
 | Go | No widened-sockaddr route on macOS | [sockat-go](https://github.com/kawaz/sockat-go) |
 | Go | The standard `UnixListener.Close` unlinks by the spelling. A `ListenEx` listener does not remove the file when closed (`SetUnlinkOnClose(false)`) | [sockat-go](https://github.com/kawaz/sockat-go) |
 | Python | A socket returned for a long path (and `datagram.unbound()`) is a subclass of `socket.socket` whose `getsockname()` / `getpeername()` return the original path. `type(x) is socket.socket` is false, and rebuilding it with `socket.fromfd` brings back the kernel's spelling | [sockat-py](https://github.com/kawaz/sockat-py/blob/main/docs/MANUAL.md#notes-specific-to-python) |
