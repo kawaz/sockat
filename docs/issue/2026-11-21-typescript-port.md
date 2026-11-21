@@ -14,12 +14,16 @@ origin: 他プロジェクトからの依頼 (claude-ccmsg)
 - claude-ccmsg (Bun) の webui の実ブラウザの試験と daemon で、macOS の深い一時ディレクトリの Unix socket が sun_path を超えて起動できないことがある。TypeScript (Bun / Node) から長いパスで bind / connect したい
 - リポ・対象の runtime・適合試験への載せ方は sockat 側で決める。決まったら claude-ccmsg の統括 (session 37fc4760) に知らせる
 
+## 決まったこと
+
+- リポは kawaz/sockat-ts、package 名は `sockat` (scope なし。crates.io・PyPI と揃える。`@kawaz/sockat` は作らない) (kawaz 2026-11-21)
+
 ## 決めること
 
 - 対象の runtime (Bun / Node / 両方。Deno は需要が弱い)
 - native の部品 (flock、openat、bindat / connectat、スレッドの cwd) を Bun の FFI / Node の addon で持つか、JS だけで作れる経路に絞るか
 - 標準の型 (`net.Server` / `net.Socket`、`Bun.listen` / `Bun.connect`) への載せ方
-- 公開 (npm の名前、trusted publishing の初回の手順)
+- 公開 (trusted publishing の初回の手順。名前を押さえる 0.0.0 を先に出すか)
 
 ## 残り
 
