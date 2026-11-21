@@ -219,7 +219,7 @@ Attributes of `Linked`:
 - It succeeds when the file is already gone and when it has been replaced by another file and is left alone. It fails when the check cannot be made (`lstat` fails with something other than `ENOENT` / `ENOTDIR`) and when the removal itself fails
 - Even when it fails, it goes on to `cleanup`, and returns the error of removing the file
 - A replacement is told apart by `(st_dev, st_ino)` only, and what is promised is a replacement while the listener is open. Something removed and recreated after the listener is closed cannot be told apart on a filesystem that reuses numbers at once (ext4, BSD UFS / FFS). Each language's docs recommend calling `remove` before closing the listener ([findings](findings/2026-11-19-inode-reuse-after-close.md), Japanese)
-- Someone who can write to the socket's directory swapping the file between the check and the removal, or between the bind and the remembering, cannot be prevented (POSIX has no way to remove by inode)
+- Someone who can write to the socket's directory or a directory on the way swapping the file or a directory (renaming a real directory on the way and putting a symlink in its place, etc.) between the check and the removal, or between the bind and the remembering, cannot be prevented (POSIX has no way to remove by inode)
 - For a bind to an abstract name (a path starting with NUL on Linux / Android), `SocketFile` holds no file and `remove()` removes no file (it only does what `cleanup` does). `socket_file()` of `ForBind` returns the same form
 
 | Language | Form |
