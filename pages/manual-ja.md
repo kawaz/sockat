@@ -8,8 +8,8 @@
 |---|---|
 | Rust | [sockat-rs](https://github.com/kawaz/sockat-rs/blob/main/docs/MANUAL-ja.md) |
 | Python | [sockat-py](https://github.com/kawaz/sockat-py/blob/main/docs/MANUAL-ja.md) |
-| Go | [sockat-go](https://github.com/kawaz/sockat-go/blob/main/README-ja.md) |
-| JavaScript / TypeScript | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/README-ja.md) |
+| Go | [sockat-go](https://github.com/kawaz/sockat-go/blob/main/docs/MANUAL-ja.md) |
+| JavaScript / TypeScript | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/MANUAL-ja.md) |
 
 この下では、どの言語でも共通の「できること」を紹介します。関数の名前は Rust の物で書きます。他の言語も同じ形で、名前はその言語の慣習に合わせてあります。
 

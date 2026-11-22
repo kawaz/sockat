@@ -8,8 +8,8 @@ Replace the standard bind / connect with sockat's, and long paths just work ([RE
 |---|---|
 | Rust | [sockat-rs](https://github.com/kawaz/sockat-rs/blob/main/docs/MANUAL.md) |
 | Python | [sockat-py](https://github.com/kawaz/sockat-py/blob/main/docs/MANUAL.md) |
-| Go | [sockat-go](https://github.com/kawaz/sockat-go/blob/main/README.md) |
-| JavaScript / TypeScript | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/README.md) |
+| Go | [sockat-go](https://github.com/kawaz/sockat-go/blob/main/docs/MANUAL.md) |
+| JavaScript / TypeScript | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/MANUAL.md) |
 
 Below are the things you can do in every language. Function names are the Rust ones. The other languages have the same shape, with names that follow each language's conventions.
 
