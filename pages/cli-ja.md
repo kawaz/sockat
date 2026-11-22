@@ -10,12 +10,6 @@
 brew install kawaz/tap/sockat
 ```
 
-または:
-
-```sh
-cargo install sockat-cli
-```
-
 [リリースのページ](https://github.com/kawaz/sockat-rs/releases) に、OS ごとの実行ファイルもあります。コマンドの名前は `sockat` です。
 
 ## 他のコマンドに渡す

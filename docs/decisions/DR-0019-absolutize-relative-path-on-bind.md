@@ -1,6 +1,6 @@
 # DR-0019: bind と resolve は、相対パスを cwd で絶対パスにしてから扱う
 
-- Status: Active (進行中。4 言語とも実装済みで、適合試験は全言語で差なし (2026-11-22)。公開: sockat-go v0.5.1、@kawaz/sockat 0.2.0、sockat-py 0.4.2。sockat-rs 0.6.0 はこれから)
+- Status: Active (実装済み。適合試験は全言語で差なし (2026-11-22)。公開: sockat-rs 0.6.1、sockat-go v0.5.1、@kawaz/sockat 0.2.0、sockat-py 0.4.2)
 - Date: 2026-11-22
 
 ## Context
