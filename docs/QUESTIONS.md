@@ -17,7 +17,18 @@
 
 ## 裁定待ち
 
-(なし)
+### CP-Q1: CPython の本家に、`os.getcwd` が止まらなくなる件を報告するか
+
+下調べは [docs/research/2026-11-22-cpython-getcwd-over-path-max.md](research/2026-11-22-cpython-getcwd-over-path-max.md) (再現コード、原因の切り分け、窓口の判断、直し方の案、報告文の下書きが入っている)。報告そのものは、まだ何も出していない。
+
+- 現象: illumos で cwd が PATH_MAX を超えていると、CPython の `os.getcwd()` がバッファを増やし続けて `MemoryError` になる (import でも当たる)。Python 2.7 にあった回避が、3.x で失われた回帰
+- 窓口の判断: 公開の issue (Bug report) が妥当。非公開の窓口には当たらない (公式に支援していない OS だけに当たる、引き金に被害者の cwd を作る力が要る、情報は漏れず止まるだけ)
+- 引き金は illumos の `getcwd` の側の不具合でもある (十分なバッファでも `ERANGE` を返す)。illumos への報告は、下調べでは扱っていない
+
+- [ ] a: CPython に公開の issue を出す (誰の名前で、どう出すかも決める。下書きは英語で用意済み)
+- [ ] b: 出さない (記録だけ残す)
+- [ ] c: illumos の側にも報告する (別に下調べが要る)
+- [ ] d: 本家の Solaris 系の担当者に宛てて知らせる (下書きでは宛先を空けてある)
 
 ## 確認待ち
 
