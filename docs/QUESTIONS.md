@@ -42,9 +42,9 @@
 
 ### DC-Q1: README と 2 段目の下書き
 
-作業コピーにあり、まだコミットしていない: [README-ja.md](../README-ja.md) (1 段目)、[pages/usage-ja.md](../pages/usage-ja.md) (2 段目)。
+作業コピーにあり、まだコミットしていない: [README-ja.md](../README-ja.md) (1 段目)、[pages/manual-ja.md](../pages/manual-ja.md) (2 段目、利用マニュアル)。
 
 - [ ] a: 文の調子 (です・ます、冒頭のエラーの表、書き換え前後の並べ方) はこれで良いか
-- [ ] b: 2 段目のファイル名 `usage` で良いか
+- [ ] b: 2 段目 (利用マニュアル) の中身はこれで良いか
 
 OK なら英語版を作り、AGENTS.md・SPEC の決まりの修正と一緒にコミットする。

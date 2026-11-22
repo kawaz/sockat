@@ -104,7 +104,7 @@ D を作らず、B の直下に、ソケットのディレクトリを指す E �
 ## Consequences
 
 - CLI のサブコマンド・オプション・出力の決まりをハブの設計文書に書き、sockat-rs のセッションに実装を頼む
-- 利用者向けの文書 (`pages/usage`) に CLI の節を足すのは、CLI を公開した後
+- 利用マニュアル (`pages/manual`) に CLI の節を足すのは、CLI を公開した後
 - [ハッシュの名前の E の案](../issue/2026-11-21-connect-persistent-hashed-e.md) のうち、名前の作り方と置き換え方をこの DR が使う。ライブラリの connect に入れるかは、その issue のまま
 
 ## 未決
