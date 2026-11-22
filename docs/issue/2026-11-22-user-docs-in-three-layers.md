@@ -48,6 +48,7 @@ origin: "自リポ TODO"
 - [ ] リファレンスに CLI のことも載せる。CLI の利用マニュアルはハブに置き、そこへ張る (kawaz 2026-11-22。CLI を公開する時に)
 - [ ] 技術説明の構成と分け方は、後で考える (テーマごとに分けても量がある。worker に任せてよい。kawaz 2026-11-22)
 - [ ] Q&A (`pages/faq`) は、ネタを溜めるメモとして今のまま置く (kawaz 2026-11-22。構成を考える時に直す)。載せる予定のネタ: CLI の「通したのに短くならない・長くなった」([DR-0018](../decisions/DR-0018-cli-resolve-with-reused-hashed-link.md))
-- [ ] CLI を公開したら、ハブと sockat-rs の README に「CLI もあります」の節を足し、利用マニュアルに CLI の節を足す
+- [ ] CLI の公開 (ライブラリ 0.6.0 と sockat-cli 0.1.0 を同じ release で出す) の前に、ハブに CLI の利用マニュアルを書く: `pages/cli-ja.md` と `pages/cli.md`。CLI の `--help` の末尾が `pages/cli.md#environment` を指しているので、環境変数の節の見出しは英語が `Environment`、日本語が「環境変数」
+- [ ] CLI を公開したら、ハブと sockat-rs の README に「CLI もあります。アプリに組み込む前のお試しに便利です」の節 (`sockat <パス>` と `sockat --json <パス>` の例つき) を足し、リファレンスに CLI の行を足す
 - [ ] DR-0019 が決まったら、README の「短いパスは今までどおり標準にそのまま渡す」の言い方を見直す
 - [ ] pages/ の公開の経路 (GitHub Pages) と、言語を選べる入口・検索から入るランディングページ
