@@ -159,7 +159,7 @@ Linux (sockaddr 107):
 
 - Linux の bind は procB と実パスの B の両方を順に試すので、届く長さは 2 つの式の大きい方。thread-cwd を使えない環境 (docker の既定 seccomp) で、B が `/tmp` にある時: max(84 − p − f − e, 82 − u − e)。実パスの B の側が pid・fd によらないので、下限は **82 − 10 − e = 72 − e**。E が 2 文字 (D の中の E が 1296 個まで) で **70 バイト**、3 文字 (46656 個まで) で 69、カウンタの上限 (13 文字) で 59
 - thread-cwd を使える環境では **96 バイト** (桁によらない)
-- 前提: B は `/tmp/sockat-<uid>` (既にある `sockat-<uid>` が確かめに外れて `sockat-<uid>.<乱数 10 文字>` に落ちると 11 バイト長く、下限は 59 − (e − 2))。`/tmp` に作れず `$XDG_RUNTIME_DIR` (`/run/user/<uid>/sockat`) の時は 10 + u + 7 + 1 + 10 + 1 + e + 1 + F ≤ 107 → F ≤ 77 − u − e で 65 (e = 2)。どちらも実パスの B の式の値で、`/proc` を使えれば procB (84 − p − f − e = 68) も試すので、届く長さは大きい方の 68。procB を使わない時 (`/proc` が無い、`usable_cross_uid`) は 59・65 が下限
+- 前提: B は `/tmp/sockat-<uid>`。`/tmp` に作れず (既にある `sockat-<uid>` が確かめに外れた時を含む) `$XDG_RUNTIME_DIR` (`/run/user/<uid>/sockat`) の時は 10 + u + 7 + 1 + 10 + 1 + e + 1 + F ≤ 107 → F ≤ 77 − u − e で 65 (e = 2)。これは実パスの B の式の値で、`/proc` を使えれば procB (84 − p − f − e = 68) も試すので、届く長さは大きい方の 68。procB を使わない時 (`/proc` が無い、`usable_cross_uid`) は 65 が下限
 - Linux の connect は、B を `/tmp` に作れれば link-file がファイル名によらず届く。置き場が無くても thread-cwd を使えれば 107、/proc だけなら 92 − f
 
 macOS (sockaddr 103、`/tmp` の実パスは `/private/tmp`):
