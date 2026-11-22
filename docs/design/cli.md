@@ -16,6 +16,8 @@ $ sockat /very/long/…/app.sock
 $ curl --unix-socket "$(sockat /very/long/…/app.sock)" http://localhost/
 ```
 
+- 綴りは置き場の実パスで出す。macOS では `/private/tmp/sockat-501/3f9c2a7b1e04/app.sock` の形になる (`/tmp` より長く見えても、出す綴りはいつも sockaddr に入る長さに収まっている)
+
 ## 呼び方
 
 ```text
