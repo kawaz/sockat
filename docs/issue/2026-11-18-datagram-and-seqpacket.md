@@ -56,3 +56,10 @@ SEQPACKET の直接のラッパーになる API (`seqpacket::`) は、無くて�
 - `cleanup` の後に、その綴りで connect し直すと `ENOENT` (つなぎ直す間は綴りを持ち続ける)
 - stream の `sockat.connect` で SEQPACKET の listener につなぐと `EPROTOTYPE`
 - macOS は `socket.socket(AF_UNIX, SOCK_SEQPACKET)` が `EPROTONOSUPPORT`
+
+### sockat-go が動かして分かったこと (2026-11-22)
+
+- 形は stream の resolve の使い方と同じで、`unixpacket` に固有の扱いは無い (`ResolveForBind` の綴りで `net.ListenUnix("unixpacket")` → 失敗したら `Cleanup` → `SetUnlinkOnClose(false)` → `SocketFile()` → 終わる時は `Remove` の後に `Close`。connect は `ResolveForConnect` の綴りで `DialUnix` → すぐ `Cleanup`)
+- `unixpacket` の listener の `Close` も、stream と同じく綴りで unlink する。長いパスで `Close` だけだと、ファイルは消えるが E が 1 つ置き場に残る
+- Linux・NetBSD・OpenBSD・illumos の CI で通った。macOS は `socket: protocol not supported`
+- **FreeBSD の CI では止まった** (未解決): connect と 2 回の `Write` は通ったのに、listener の `AcceptUnix` が返らず、つなぐ側の `Read` も返らなかった (go test の 10 分の打ち切り)。FreeBSD は bind が link-dir、connect が link-file の綴り。Go の FreeBSD の `unixpacket` の問題か、綴りが別の所に届いているのか (sockat の問題) かは切り分けていない。stream は FreeBSD で通っている。sockat-go の `docs/issue/2026-11-22-freebsd-unixpacket-example-hang.md` に記録がある。sockat-rs と sockat-py は FreeBSD で SEQPACKET を試していない
