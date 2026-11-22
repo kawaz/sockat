@@ -56,7 +56,7 @@ Per language:
 | C / C++ | yes | `fork` and the steps above can be written directly |
 | Rust | yes (`unsafe`) | use `libc::fork`, with no allocation or panic in the child (std's `Command` only does fork + exec). sockat-rs has no fork route |
 | Python | hard | the child of `os.fork()` keeps running the interpreter and cannot avoid bytecode execution, reference counting or allocation (the section cannot be made async-signal-safe). CPython warns with `DeprecationWarning` on `os.fork()` in a multithreaded process (measured on 3.15.2). To be sure, write the part from fork to `_exit` in a C extension. sockat-py has no fork route |
-| Go | no (not with fork alone) | the runtime is multithreaded and `syscall.ForkExec` only has the form that execs right after the fork. The runtime does not run in a raw forked child ("routes outside the SPEC" in sockat-go's manual). Instead, starting a small helper program with the socket's directory as its cwd (`os/exec`'s `Cmd.Dir`), passing it the socket's fd (`ExtraFiles`) and having it bind / connect by the file name is possible (fork + exec, so it costs even more; not verified) |
+| Go | no (not with fork alone) | the runtime is multithreaded and `syscall.ForkExec` only has the form that execs right after the fork. The runtime does not run in a raw forked child ("routes outside the SPEC" in sockat-go's reference). Instead, starting a small helper program with the socket's directory as its cwd (`os/exec`'s `Cmd.Dir`), passing it the socket's fd (`ExtraFiles`) and having it bind / connect by the file name is possible (fork + exec, so it costs even more; not verified) |
 
 ## Where fork-cwd reaches
 

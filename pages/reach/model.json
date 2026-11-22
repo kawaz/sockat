@@ -32,7 +32,7 @@
   "langs": [
     {"id": "rs", "label": {"ja": "Rust (sockat-rs)", "en": "Rust (sockat-rs)"}, "lacks": []},
     {"id": "py", "label": {"ja": "Python (sockat-py)", "en": "Python (sockat-py)"}, "lacks": []},
-    {"id": "go", "label": {"ja": "Go (sockat-go)", "en": "Go (sockat-go)"}, "lacks": ["widened"], "lacks_note": {"widened": "標準の型に取り込むと、相手が広げた形で bind している時に RemoteAddr() が nil になる (sockat-go のマニュアル、SPEC の「各実装に求めること」)"}},
+    {"id": "go", "label": {"ja": "Go (sockat-go)", "en": "Go (sockat-go)"}, "lacks": ["widened"], "lacks_note": {"widened": "標準の型に取り込むと、相手が広げた形で bind している時に RemoteAddr() が nil になる (sockat-go のリファレンス、SPEC の「各実装に求めること」)"}},
     {"id": "ts-node", "label": {"ja": "TypeScript・Node (sockat-ts)", "en": "TypeScript on Node (sockat-ts)"}, "lacks": ["widened", "thread-cwd", "at", "thread-cwd-direct", "at-direct"], "d_lock": {"linux": "flock_cmd", "illumos": false}},
     {"id": "ts-bun", "label": {"ja": "TypeScript・Bun (sockat-ts。Linux は /proc が見えないと Bun 自体が起動しない)", "en": "TypeScript on Bun (sockat-ts; on Linux Bun itself does not start without /proc)"}, "lacks": ["widened", "thread-cwd", "at", "thread-cwd-direct", "at-direct"], "d_lock": {"linux": "flock_cmd", "illumos": false}}
   ],

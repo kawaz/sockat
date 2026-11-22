@@ -324,7 +324,7 @@ bind と resolve の手順:
 - `CwdRelative` が返るのは 5 の場面だけ。cwd がとても深い (絶対パスが PATH_MAX を超える。Linux 4096、macOS 1024) と、実パスの候補も `$PWD` の候補も作れないか収まらず、4 か 5 に進む
 - `/proc/self/cwd/…` のような、絶対パスだが cwd に依る綴りには触らない (相対パスだけが対象)
 - 名前で終わらない相対パス (`dir/`・`..` 等) で標準に渡す長さ以下の物は、絶対にせず、相対のまま標準に渡す (ファイル名が無く、候補を作れない。標準が返すエラーをそのまま返す)。resolve は標準を呼ばないので、そのまま返して `CwdRelative` にする (誤りは、利用者がその綴りを標準に渡した時に標準が返す)
-- 相対パスで、ソケットのディレクトリはあるのに、パスの長さのせいで realpath を引けない時 (cwd が PATH_MAX を超える等。errno は `ENAMETOOLONG` か `ERANGE`。macOS の realpath は `ERANGE` を返す。Linux の glibc の realpath は成功して PATH_MAX を超える実パスを返すので、その実パスを `stat` して `ENAMETOOLONG` になる時も、引けなかった物として同じに扱う。sockat-rs・sockat-ts の実測 2026-11-22) は、エラーにせず、経路が使えない物として 5 に進む。この時は経路を 1 つも試していないので `skipped` は空 (元の相対パスが標準に渡す長さ以下なら `route` は `standard` で `CwdRelative`、超えるなら `ENAMETOOLONG` で `route` は無し)。それ以外の失敗 (`ENOENT`・`ENOTDIR`・`EACCES` 等) は、そのエラーを返す
+- 相対パスで、ソケットのディレクトリはあるのに、パスの長さのせいで realpath を引けない時 (cwd が PATH_MAX を超える等。errno は OS と、実パスの引き方 (libc の realpath か、言語の自前の実装か) で違う。実測 2026-11-22: libc の realpath は macOS で `ERANGE`。Go の `Getwd` + `EvalSymlinks` は Linux で `ENAMETOOLONG`、macOS で `EINVAL`、FreeBSD で `ENOMEM`。Linux の glibc の realpath と Python の `os.path.realpath` は成功して PATH_MAX を超える実パスを返すので、その実パスを `stat` して `ENAMETOOLONG` になる時も、引けなかった物として同じに扱う。各実装は、その言語と OS でパスの長さのせいで出る errno を、まとめて 1 か所で判定する) は、エラーにせず、経路が使えない物として 5 に進む。この時は経路を 1 つも試していないので `skipped` は空 (元の相対パスが標準に渡す長さ以下なら `route` は `standard` で `CwdRelative`、超えるなら `ENAMETOOLONG` で `route` は無し)。それ以外の失敗 (`ENOENT`・`ENOTDIR`・`EACCES` 等) は、そのエラーを返す
 - 5 で相対のまま標準に渡した時の診断は、`route` が `standard`、`skipped` は 4 で使えなかった経路だけで、`standard` は入れない (最後に通った経路なので)。相対のまま渡したことは `Spelling` の `CwdRelative` で分かる
 - cwd が PATH_MAX を超えていて 5 で相対のまま標準に渡す時、届くのは既定の bind だけ。`bind_ex` は、bind したソケットのファイルの実パスを引けず覚えられないので、エラーを返す ([`remove`](#remove) の「覚えられなければ」と同じ扱い)
 - 絶対パスの候補を標準に渡す時は、`Options.base` を確かめない (B を使わない。標準に渡す長さ以下の絶対パスで base を見ないのと同じ)。候補が収まらずに経路に進んだ時は、今のとおり base を確かめ、外れたらそのエラーを返す (相対パスでも 5 に落とさない。base のエラーは「経路が使えない」ではない)
@@ -478,7 +478,7 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 - リファレンスにこの仕様へのリンクを置く (README からは、末尾の技術説明を通して辿れる)。仕様と食い違う振る舞いを入れる時は、先にこの仕様を直す
 - 利用者向けの説明 (各言語のマニュアルとリファレンス) は、言語によらない話を写さず、この仕様と pages の該当の節へリンクする。リンクする節: 「[長いパスで標準と違う点](#長いパスで標準と違う点)」「[使ってはいけない書き方](#使ってはいけない書き方)」「[置き場に残る物](#置き場に残る物)」「[`sweep`](#sweep)」。各言語の文書に書くのは、その言語での名前と型の対応、その言語での具体的な形と推奨コード、その言語に固有の注意 (標準ライブラリや runtime の不具合・制約) だけ。固有の注意はハブの [言語ごとの注意](../pages/langs-ja.md) に 1 行で載せる
 - 各言語の README の冒頭 (何に困っている人の物か、その言語の標準が出すエラー、その言語での書き換え前後、入れ方) は、リンクで済ませずその言語の例で書く。写さないのは、その先の説明
-- 各言語の文書は、パスをそろえる (ハブから張るため): マニュアルのトップ `docs/MANUAL-ja.md`・`docs/MANUAL.md` (したいことの並びだけ。順は bind、connect、DGRAM、resolve)、場面ごとの使い方 `docs/manual/bind-ja.md`・`connect-ja.md`・`datagram-ja.md`・`resolve-ja.md` と英語の `.md` (場面ごとの見出しと典型的なサンプルコード。その言語に無い物は置かない)、リファレンス `docs/REFERENCE-ja.md`・`docs/REFERENCE.md` (使い方でない物: 関数と型の一覧、`Options`、`Spelling`、エラー、使ってはいけない書き方、固有の注意、OS × 経路の表)
+- 各言語の文書は、パスをそろえる (ハブから張るため): マニュアルのトップ `docs/MANUAL-ja.md`・`docs/MANUAL.md` (したいことの並びだけ。順は bind、connect、SEQPACKET、DGRAM、resolve)、場面ごとの使い方 `docs/manual/bind-ja.md`・`connect-ja.md`・`seqpacket-ja.md`・`datagram-ja.md`・`resolve-ja.md` と英語の `.md` (場面ごとの見出しと典型的なサンプルコード。その言語に無い物は置かない)、リファレンス `docs/REFERENCE-ja.md`・`docs/REFERENCE.md` (使い方でない物: 関数と型の一覧、`Options`、`Spelling`、エラー、使ってはいけない書き方、固有の注意、OS × 経路の表)
 
 ## 実装が確かめる試験の観点
 

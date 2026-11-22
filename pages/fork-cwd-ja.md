@@ -56,7 +56,7 @@ sockat はこの手法を使わない (kawaz 裁定 2026-11-20)。fork の副作
 | C / C++ | できる | `fork` と上の手順をそのまま書ける |
 | Rust | できる (`unsafe`) | `libc::fork` を使い、子では allocation も panic もしない (std の `Command` は fork + exec しかしない)。sockat-rs は fork の経路を作っていない |
 | Python | 難しい | `os.fork()` の子はインタプリタのまま動き続け、バイトコードの実行・参照カウント・allocation を避けられない (async-signal-safe な区間にできない)。CPython は多スレッドのプロセスでの `os.fork()` に `DeprecationWarning` を出す (3.15.2 で実測)。確実にするなら、fork から `_exit` までを C の拡張で書く。sockat-py は fork の経路を作っていない |
-| Go | できない (fork だけでは) | runtime が多スレッドで、`syscall.ForkExec` は fork の直後に exec する形しか持たない。生の fork の子では runtime が動かない (sockat-go のマニュアルの「SPEC から外れる経路」)。代わりに、cwd をソケットのディレクトリにして小さな補助のプログラムを起動し (`os/exec` の `Cmd.Dir`)、ソケットの fd を渡して (`ExtraFiles`) 補助のプログラムにファイル名で bind / connect させる形はありうる (fork + exec なので費用はさらに大きい。未検証) |
+| Go | できない (fork だけでは) | runtime が多スレッドで、`syscall.ForkExec` は fork の直後に exec する形しか持たない。生の fork の子では runtime が動かない (sockat-go のリファレンスの「SPEC から外れる経路」)。代わりに、cwd をソケットのディレクトリにして小さな補助のプログラムを起動し (`os/exec` の `Cmd.Dir`)、ソケットの fd を渡して (`ExtraFiles`) 補助のプログラムにファイル名で bind / connect させる形はありうる (fork + exec なので費用はさらに大きい。未検証) |
 
 ## fork-cwd なら届く場面
 
