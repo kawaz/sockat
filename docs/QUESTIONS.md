@@ -17,22 +17,7 @@
 
 ## 裁定待ち
 
-### RL-Q1: CLI のパッケージ `sockat-cli` を crates.io に公開してよいか
-
-- sockat-rs の手元に、`resolve`・`sweep`・補完・`--help` / `--help-all` の枠ができている (未 push、`publish = false`)。ハブの統括が macOS で動かして確かめた (長い絶対パス、相対パス、`--json`、エラー、出た綴りでの bind / connect)
-- 新しいパッケージの公開になる。コマンド名は `sockat`、入れ方は `cargo install sockat-cli`
-- CL-Q1 = b (connect 用に出して警告) への直しは、これから sockat-rs に頼む
-
-- [ ] a: 直しが済んだら公開する
-- [ ] b: まだ公開しない (手法を試す口や、DR-0019 の実装が揃ってから)
-
-### RL-Q2: DR-0019 (相対パスを絶対にする) を、各言語の次の版に入れて進めてよいか
-
-- [DR-0019](decisions/DR-0019-absolutize-relative-path-on-bind.md) の問いは全部裁定済み。実装すると、相対パスの bind でカーネルが返すアドレスが変わり、`resolve_for_connect` の返す物に項目が増えるので、0.x の minor を上げる版になる
-- sockat-rs は、次の版を 0.6.0 にするかの裁定待ちがあり (sockat-rs の VB-Q1)、同じ版に入れれば上げるのは 1 回で済む
-
-- [ ] a: 4 言語に実装を頼み、それぞれ次の minor の版で出す (Rust は 0.6.0)
-- [ ] b: 先に Rust だけで実装して確かめ、他の言語はその後
+(なし)
 
 ## 確認待ち
 
