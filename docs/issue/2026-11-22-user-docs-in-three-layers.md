@@ -40,7 +40,7 @@ origin: "自リポ TODO"
 - [x] AGENTS.md と SPEC の「各実装に求めること」の、各言語の README に関する決まりを直す
 - [x] ハブのリファレンスのページ (`pages/reference`、日英) を書く
 - [x] 各言語のリポの README を 1 段目の形にし、末尾に利用マニュアル・リファレンス (その言語の物)・技術説明 (ハブ) の 3 つを置く (Python と TypeScript は push 済み、Go は v0.4.5 で公開、Rust は手元に commit 済みで次の版と一緒に出す)
-- [ ] 利用マニュアルを「使い方」の形に組み直す (kawaz 2026-11-22。今の「できること」の紹介は、利用者の知りたいことでない)
+- [x] 利用マニュアルを「使い方」の形に組み直す (kawaz 2026-11-22。今の「できること」の紹介は、利用者の知りたいことでない)
   - 利用者は、何に使いたいかを知って来る。bind か connect が 9 割、次にパスだけを解決したい人 (resolve)、その後に DGRAM 等
   - マニュアルのトップは、その並びだけにする
   - その先は、トピックごとのページ。bind・connect 等それぞれの利用の場面ごとに、典型的なサンプルコードを見せる
@@ -51,12 +51,12 @@ origin: "自リポ TODO"
     - SEQPACKET のページは、「resolve で作ったパスを使えばよい」という短い案内と、resolve のページへのリンクだけにする。直接のラッパーになる API は無くてよい。マニュアルで案内すれば利用者は困らない (kawaz 2026-11-22。TypeScript は標準に無いので対象外)
     - `docs/REFERENCE-ja.md`・`docs/REFERENCE.md`: 使い方でない物 (関数と型の一覧、`Options`、`Spelling`、エラー、使ってはいけない書き方、その言語に固有の注意、OS × 経路の表、仕様へのリンク)。API の文書が別にある言語 (docs.rs、pkg.go.dev) は、先頭でそこへ張る
   - ハブのトップは、各言語がそろったら「したいこと × 言語」の表にする。それまでは言語の表だけにする (「できること」の紹介は消した)
-- [ ] リファレンスに CLI のことも載せる。CLI の利用マニュアルはハブに置き、そこへ張る (kawaz 2026-11-22。CLI を公開する時に)
+- [x] リファレンスに CLI のことも載せる。CLI の利用マニュアルはハブに置き、そこへ張る (kawaz 2026-11-22。CLI を公開する時に)
 - [ ] 技術説明の構成と分け方は、後で考える (テーマごとに分けても量がある。worker に任せてよい。kawaz 2026-11-22)
 - [ ] Q&A (`pages/faq`) は、ネタを溜めるメモとして今のまま置く (kawaz 2026-11-22。構成を考える時に直す)。載せる予定のネタ: CLI の「通したのに短くならない・長くなった」([DR-0018](../decisions/DR-0018-cli-resolve-with-reused-hashed-link.md))
 - [x] CLI の公開 (ライブラリ 0.6.0 と sockat-cli 0.1.0 を同じ release で出す) の前に、ハブに CLI の利用マニュアルを書く (書いた。公開まで README 等からは張らない。公開の時に、実物の出力と合っているかを見直す): `pages/cli-ja.md` と `pages/cli.md`。CLI の `--help` の末尾が `pages/cli.md#environment` を指しているので、環境変数の節の見出しは英語が `Environment`、日本語が「環境変数」
 - [x] CLI の公開 (sockat-rs 0.6.1) に合わせた追記を出す: README (日英) の CLI の節、`pages/cli` の入れ方 (Homebrew `kawaz/tap/sockat`、`cargo install sockat-cli`、リリースのページの実行ファイル)、`pages/reference` の CLI の行、`pages/manual` の表、`pages/langs` の Rust の行の付け替え
 - [x] README の「短いパスは今までどおり…そのまま渡します」は、DR-0019 の後も言い直さない (kawaz 2026-11-22、RM-Q1 = b。「そのまま」を外すと意味が変わる)
-- [ ] 文書の語彙を、会話を知らない読者が読んで自然な日本語にする (kawaz 2026-11-22): 「標準」だけで標準ライブラリを指す書き方をやめ、「標準ライブラリ」と書く (README は直した。残りは `pages/`、SPEC、`docs/design/`、各言語のリポ)。作業の中で通じていた略し方 (std の直訳) を文書に持ち込まない
-- [ ] 各言語が文書を組み直した版を push する時に、ハブのリンクを付け替える: `pages/langs` (日英) の各言語の行をその言語の REFERENCE のアンカーへ (Rust は `docs/REFERENCE-ja.md#rust-に固有の注意`・`docs/REFERENCE.md#caveats-specific-to-rust`。他の言語は知らせを待つ)、`pages/fork-cwd` の Go の言及、`pages/reference` の Python・TypeScript の行。そろったら `pages/manual` を「したいこと × 言語」の表にする
+- [x] 文書の語彙を、会話を知らない読者が読んで自然な日本語にする (kawaz 2026-11-22): 「標準」「std」だけで標準ライブラリを指す書き方をやめ、「標準ライブラリ」と書く。「入れる」「入れ方」は「インストール」。作業の中で通じていた略し方や言い換えを文書に持ち込まない (ハブの README・`pages/`・SPEC・現役の DR と、4 言語の README・マニュアル・リファレンス・API の文書を直した)
+- [x] 各言語が文書を組み直した版を push する時に、ハブのリンクを付け替える: `pages/langs` (日英) の各言語の行をその言語の REFERENCE のアンカーへ (Rust は `docs/REFERENCE-ja.md#rust-に固有の注意`・`docs/REFERENCE.md#caveats-specific-to-rust`。他の言語は知らせを待つ)、`pages/fork-cwd` の Go の言及、`pages/reference` の Python・TypeScript の行。そろったら `pages/manual` を「したいこと × 言語」の表にする
 - [ ] pages/ の公開の経路 (GitHub Pages) と、言語を選べる入口・検索から入るランディングページ
