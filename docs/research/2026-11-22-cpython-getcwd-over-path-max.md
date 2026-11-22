@@ -58,7 +58,7 @@ E           lost sys.stderr
 - Python は OmniOS の system の 3.13。`<frozen posixpath>` の 424 行目が `getcwd()` の呼び出しになっているのは 3.13.10 以降 (3.13.1・3.13.3・3.13.5・3.13.8 では別の行、3.13.10〜3.13.18 では `path = sep if filename.startswith(sep) else getcwd()`)。omnios-build の branch r151060 の `build/python313/build.sh` は `VER=3.13.18`。VM の image に入っていた版は 3.13.16 (ログには無く、同じ image を手元で起動して `pkg list` で確かめた、3-2)
 - OmniOS の Python のパッチ (`omnios-build` r151060 の `build/python313/patches/` の 35 本) に `posixmodule.c` や `getcwd` に触れるものは無い (確認済み)
 - 試験のコード (sockat-py の `41a23e99` の `tests/test_relative.py`) は、`/tmp` の下に 200 バイトのディレクトリを相対パスで 1 段ずつ作って chdir し、cwd を 1027 バイトにした後、`os.getcwdb()` → `os.path.realpath(".", strict=True)` の順に呼ぶ。traceback の最後の枠は `realpath` の lambda なので、**先の `os.getcwdb()` は返っていて (成功か、`OSError`)、2 回目の cwd の読み (`realpath` の中の `os.getcwd()`) で止まらなくなった** と読める
-- 進み具合の行の時刻 (05:13:04 に 70%、05:26:21 に 94%) から、この試験 1 本でおよそ 13 分かかって `MemoryError` になった。`lost sys.stderr` は、エラーを書き出す時にもメモリが足りなかったため (推測)
+- 進み具合の行の時刻 (05:13:04 に 70%、05:26:21 に 94%) から、この試験 1 本でおよそ 13 分かかって `MemoryError` になった (pytest の最後の行の 806 秒は 306 本全体の時間で、試験 1 本の時間ではない)。VM のメモリは 6144 MiB (`anyvm.py ... --mem 6144`)。`lost sys.stderr` は、エラーを書き出す時にもメモリが足りなかったため (推測)
 - 同じ試験は他の OS で次の結果 (同じ run の各 job の `[deep cwd]` の行):
 
 | OS (CI) | PATH_MAX | cwd | `os.getcwdb()` | `os.path.realpath('.')` |
@@ -125,7 +125,7 @@ POSIX の実装 ([main の Modules/posixmodule.c 4718〜4752 行](https://github
 
 - `os.getcwd` / `os.getcwdb` そのもの
 - 相対パスを渡した `os.path.abspath` / `os.path.realpath` ([3.13.18 の posixpath.py 424 行](https://github.com/python/cpython/blob/0d4bd512fc429e3d4eacdd113c975e161f21644d/Lib/posixpath.py#L424))、`pathlib.Path.cwd` / `absolute` / `resolve`
-- import の仕組み: `sys.path` の `''` (`python -c` や対話の時の先頭) を `os.getcwd()` に置き換える ([main の Lib/importlib/_bootstrap_external.py 1226〜1232 行](https://github.com/python/cpython/blob/1cc580249141838a520809c21cd971883b5b10cb/Lib/importlib/_bootstrap_external.py#L1226-L1232))。`FileNotFoundError` と `PermissionError` しか受けない
+- import の仕組み: `PathFinder._path_importer_cache` が `sys.path` の `''` (`python -c` や対話の時の先頭) を `os.getcwd()` に置き換える ([3.13.16 の Lib/importlib/_bootstrap_external.py 1509〜1513 行](https://github.com/python/cpython/blob/cbc944f4bc59639a444dd971c737788ba2283a91/Lib/importlib/_bootstrap_external.py#L1509-L1513)、[main では 1226〜1232 行](https://github.com/python/cpython/blob/1cc580249141838a520809c21cd971883b5b10cb/Lib/importlib/_bootstrap_external.py#L1226-L1232))。`find_spec` (3.13.16 の 1560 行) → `_get_spec` (1532 行) → `_path_importer_cache` (1511 行の `path = _os.getcwd()`) と辿る。illumos の実機の traceback の行番号 (3-2) と一致する。受ける例外は 3.13 では `FileNotFoundError` だけ、main では `FileNotFoundError` と `PermissionError`。どちらも `MemoryError` や他の `OSError` は受けない。そのため、PATH_MAX を超える cwd で起動した `python -c` や対話から、初めて読む top-level のモジュール (`json`、`ctypes` 等) を import するだけで当たる
 - インタプリタの起動 (getpath) は影響しない: `_Py_wgetcwd` ([main の Python/fileutils.c 2784 行〜](https://github.com/python/cpython/blob/1cc580249141838a520809c21cd971883b5b10cb/Python/fileutils.c#L2784-L2800)) は `MAXPATHLEN` の固定のバッファで 1 回呼ぶだけ
 
 ### 3. illumos の `getcwd`
@@ -311,7 +311,7 @@ if __name__ == "__main__":
 
 CPython 側だけを見る実験 (Linux glibc、3.15.2): `getcwd()` が常に `ERANGE` を返す `LD_PRELOAD` の shim (`char *getcwd(char *b, size_t n) { errno = ERANGE; return NULL; }`) の下で `os.getcwd()` を呼ぶと、`RLIMIT_AS` を 64 MiB にしても 512 MiB にしても、上限まで確保して `MemoryError` になる。上限を掛けなければメモリが尽きるまで確保し続ける見込み (上限なしでは試していない。ソースからの推測で、illumos の CI の 13 分がその形)。
 
-関連して見えたこと (この報告の範囲外): musl で PATH_MAX を超える cwd から `python3 -c "import json"` を動かすと、import の仕組みが `''` を `os.getcwd()` に置き換える所の `OSError: [Errno 36] Filename too long` で落ちる (glibc と macOS では通る)。import の仕組みが `FileNotFoundError` と `PermissionError` しか受けないため。
+関連して見えたこと (この報告の範囲外): musl で PATH_MAX を超える cwd から `python3 -c "import json"` を動かすと、import の仕組みが `''` を `os.getcwd()` に置き換える所の `OSError: [Errno 36] Filename too long` で落ちる (glibc と macOS では通る)。import の仕組みが受ける例外が限られているため (2 の「影響する呼び出し元」)。
 
 ### 6. 既に報告されていないか
 
@@ -348,7 +348,7 @@ PEP 11 ([peps/pep-0011.rst](https://github.com/python/peps/blob/4434e728a7db2454
 
 - 当たる OS (illumos。推測では 4096 を超える cwd の NetBSD・OpenBSD も) は全部 PEP 11 の unsupported。policy は「unsupported の OS だけに当たるものは Python の脆弱性として扱わない」と書く。Tier の OS では当たらない (Linux・macOS・FreeBSD はソースと実測・CI で確かめた。Windows は別の実装 (`GetCurrentDirectoryW`) でこのループを通らない)
 - 引き金は「PATH_MAX を超える深さのディレクトリを作り、そこを cwd にしたプロセスで `os.getcwd()` が呼ばれる」こと。攻撃者がそれを起こすには、被害者のプロセスの cwd か、被害者が入るディレクトリの木を作る力が要る。これは policy の言う launch conditions / modifications to files on the target system に当たり、得るものはそのプロセスを止めることだけで、既に持っている力に対して lateral
-- 止まった先は `MemoryError` (例外)。ただしメモリを使い切るまでの間、同じ機械の他のプロセスにも影響しうる (CI では 13 分、VM のメモリを使い切った)。この点は policy の resource exhaustion に字の上では当たるが、上の 2 点 (unsupported、launch conditions) で外れる
+- 止まった先は `MemoryError` (例外)。ただしメモリを使い切るまでの間、同じ機械の他のプロセスにも影響しうる (CI では 13 分かけて 6144 MiB の VM のメモリを使い切った)。この点は policy の resource exhaustion に字の上では当たるが、上の 2 点 (unsupported、launch conditions) で外れる
 - 前の CPython への報告 (8) は、macOS (Tier 1) で初期化されていないメモリを読んで返す (情報が漏れうる) ものだったので非公開にした。今回はそれと違い、情報は漏れない
 
 unsupported の OS の不具合を公開の issue に出すこと自体は、PEP 11 の Unsupported platforms の「Contributions in this area are welcome as long as they: pose a minimal maintenance burden to the core team, and benefit substantially more people than the contributor.」の範囲で受け付けられる。直し方を OS によらない数行にすれば (9)、この条件に合わせやすい。devguide の [Ports and contacts](https://github.com/python/devguide/blob/8c852bdd3f06b8447185fe2945af5de52a96a0ac/developer-workflow/porting.rst) は Solaris/OpenIndiana の窓口として `jcea`・`kulikjak` (GitHub のユーザ名) を挙げ、「It is OK to @mention the listed GitHub usernames to draw maintainers' attention」と書く。illumos の項は無い。
