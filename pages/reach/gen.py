@@ -127,8 +127,8 @@ TEXT = {
         "en": "- A condition that is \"any\" in every row of a table gets no column; it is listed above the table under \"Conditions with no effect\"",
     },
     "md.fold.5": {
-        "ja": "- 置き場の長さは代表値で計算する (「条件」の置き場の表)。パス全体の長さは、ディレクトリが標準に渡す長さを超えるほど深い前提で、PATH_MAX まで効かない",
-        "en": "- Base lengths are typical values (the bases table under \"Conditions\"). The directory is assumed deep enough that the path is over the standard length; the whole path's length has no effect up to PATH_MAX",
+        "ja": "- 置き場の長さは代表値で計算する (「条件」の置き場の表)。パス全体の長さは、ディレクトリが標準ライブラリに渡す長さを超えるほど深い前提で、PATH_MAX まで効かない",
+        "en": "- Base lengths are typical values (the bases table under \"Conditions\"). The directory is assumed deep enough that the path is over the standard library length; the whole path's length has no effect up to PATH_MAX",
     },
     "md.fold.6": {"ja": "- 言語は、作れない経路 (lacks) で結果が変わる所だけ分かれる", "en": "- Languages are split only where a route they cannot build (lacks) changes the result"},
     "md.est.h": {"ja": "## 見積もりと実測", "en": "## Estimates and measurements"},

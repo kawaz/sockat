@@ -19,8 +19,8 @@ These are the APIs. The names are the Rust ones; the other languages use names t
 
 | API | What it does |
 |---|---|
-| `bind(path)` | binds even at a long path and returns a listening standard listener |
-| `connect(path)` | connects even to a long path and returns a standard stream |
+| `bind(path)` | binds even at a long path and returns a listening standard library listener |
+| `connect(path)` | connects even to a long path and returns a standard library stream |
 | `connect_nonblocking(path)` | connects without waiting (for async runtimes) |
 | `datagram::bind(path)`<br>`datagram::unbound()`<br>`datagram::connect(&sock, path)` | binds / connects a DGRAM socket |
 | `bind_ex(path, options)`<br>`connect_ex(path, options)` etc. | does the same as above, and also returns a handle that removes the socket file and information on how it was reached |

@@ -22,7 +22,7 @@
 
 - 言語ごとにビルド・CI・release の手順・publish 先 (crates.io、PyPI、npm、RubyGems、Go の module proxy) が違い、1 つのリポでは手順と tag が混ざる
 - Go の module path はリポの path そのもの (`github.com/kawaz/sockat-go`) にするのが慣習。サブディレクトリの module は tag に path の接頭辞が要る
-- 仕様の正本を 1 か所にし、どの言語のリポからも同じ所を参照させる。特定の言語のリポに置くと、その言語の都合 (std の型、`unsafe` 等) と混ざる
+- 仕様の正本を 1 か所にし、どの言語のリポからも同じ所を参照させる。特定の言語のリポに置くと、その言語の都合 (標準ライブラリの型、`unsafe` 等) と混ざる
 - crate 名を変えると利用者の依存の書き換えが要るので、名前は変えない
 
 ## Alternatives Considered

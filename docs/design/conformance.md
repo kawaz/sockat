@@ -59,7 +59,7 @@
 
 - bind は `bind_ex`、connect は `connect_ex` (各言語の名前。Python は `sockat.ex`、Go は `ListenEx` / `DialEx`) に、入力の `Options` を渡して呼ぶ。`Options` を全部既定にした `_ex` は既定の操作と同じ経路を試すので、既定の操作は呼ばない
 - `remove()` と `cleanup()` を呼ばない (置き場に残す物をスクリプトが見る)
-- bind が通ったら、CLI は listener を閉じずにプロセスを終える (終了で閉じる)。閉じる時にファイルを消す言語の標準 (Go の短いパス等) があり、閉じると言語の差を拾ってしまうため
+- bind が通ったら、CLI は listener を閉じずにプロセスを終える (終了で閉じる)。閉じる時にファイルを消す言語の標準ライブラリ (Go の短いパス等) があり、閉じると言語の差を拾ってしまうため
 - connect が通ったら、1 バイト `x` を送ってから閉じる
 - 終了コード: 結果を出したら 0 (connect の後に `x` を送れなかった時も、結果を出して 0。届いたかはスクリプトが見る)。入力の JSON が不正なら標準出力に何も出さず 2。それ以外はスクリプトが「壊れた」とみなす
 - 標準出力は結果の JSON 1 行だけ。ビルドの出力等は標準エラーへ
@@ -140,12 +140,12 @@ CLI の出力に加えて、CLI が終わった後に:
 | 場面 | 確かめること |
 |---|---|
 | 短い絶対パスの bind | `route` が `standard`、`spelling` が `Original`、`left` が空 |
-| 短い相対パスの bind (cwd は `{short}`) | 絶対パスの候補で標準に渡る。`route` が `standard`、`spelling` が `Original`、`left` が空 |
+| 短い相対パスの bind (cwd は `{short}`) | 絶対パスの候補で標準ライブラリに渡る。`route` が `standard`、`spelling` が `Original`、`left` が空 |
 | `..` を含む短い相対パスの bind (cwd は `{short}` の下 5 段、パスは `../../../../../s.sock`) | `$PWD` の候補は、畳まないと収まらず、畳むと収まる。`route` が `standard`、`spelling` が `Original` |
 | 深い cwd (`{long}`) の短い相対パスの bind | 絶対にすると長いので経路に回る。通る、ソケットが元のパスにある (`spelling` は環境で変わるので、言語どうしの比べと `CwdRelative` でない決まりで見る) |
 | `$PWD` が cwd と違う、深い cwd の短い相対パスの bind (`pwd` は `{short}`) | `$PWD` の候補を使わず経路に回る。ソケットが元のパスにある (`$PWD` の所に作らない) |
 | ディレクトリが無い短い相対パスの bind | `ENOENT`、`route` が `null`、`skipped` が空 (絶対パスの候補を作れず、経路に進んでディレクトリを引いた所で決まる) |
-| 深い cwd の短い相対パスへの connect | 絶対にせず相対のまま標準に渡る。`route` が `standard`、`skipped` が空、`x` が届く |
+| 深い cwd の短い相対パスへの connect | 絶対にせず相対のまま標準ライブラリに渡る。`route` が `standard`、`skipped` が空、`x` が届く |
 | 長い絶対パスの bind | 通る、ソケットが元のパスにある |
 | 長いパスでディレクトリが無い | `ENOENT`、`route` が `null`、`skipped` が空 |
 | 長いパスの途中がファイル | `ENOTDIR` |
@@ -233,7 +233,7 @@ docker の seccomp の実測 (2026-11-20、OrbStack の docker 29.8.2、arm64):
 |---|---|---|
 | linux-long-bind | 無し (`unconfined`) | 比べの基準 |
 | symlink-cwd-relative-bind | 無し (`unconfined`)。cwd は `{long}/l` (`{root}` を指す symlink)、パスは `s.sock` | `$PWD` の候補は収まらず、実パスの候補 (`/work` の下で短い) が収まる。`route` が `standard`、`spelling` が `Original` |
-| symlink-long-absolute-bind | 無し (`unconfined`)。パスは `{long}/l/s.sock` (`l` は `{root}` を指す symlink) | 長い絶対パスでも、実パスの候補が収まれば標準に渡る。`route` が `standard`、`spelling` が `Original`、`left` が空 |
+| symlink-long-absolute-bind | 無し (`unconfined`)。パスは `{long}/l/s.sock` (`l` は `{root}` を指す symlink) | 長い絶対パスでも、実パスの候補が収まれば標準ライブラリに渡る。`route` が `standard`、`spelling` が `Original`、`left` が空 |
 | no-thread-cwd-bind | `default` | スレッドの cwd を使えない bind |
 | no-thread-cwd-bind-kill-unshare | `kill-unshare` | 同じ。`unshare` を呼ばない |
 | no-proc-bind | `/proc` 無し | `/proc` を使えない bind |

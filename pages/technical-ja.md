@@ -10,7 +10,7 @@ sockat が長いパスの代わりに短いパスをどう作っているかの�
 /home/u/.cache/example-app/worktrees/feature-login/.tmp/test-0f3a9c/daemon.sock
 ```
 
-Unix domain socket のアドレス (`sockaddr_un`) は、パスを `sun_path` という固定長の欄に入れて渡します。NUL の分を除いて入るのは、Linux で 107 バイト、macOS と BSD で 103 バイトです。この文書ではこれを「sockaddr に入る長さ」と呼びます。上のような深い所のパスはこれを超え、標準ライブラリが bind / connect の前に断ります (Rust の `path must be shorter than SUN_LEN`、Python の `AF_UNIX path too long` 等)。Linux の Node.js 22 のように、黙って 108 バイトに切り詰めて別の所に作ってしまう標準もあります。
+Unix domain socket のアドレス (`sockaddr_un`) は、パスを `sun_path` という固定長の欄に入れて渡します。NUL の分を除いて入るのは、Linux で 107 バイト、macOS と BSD で 103 バイトです。この文書ではこれを「sockaddr に入る長さ」と呼びます。上のような深い所のパスはこれを超え、標準ライブラリが bind / connect の前に断ります (Rust の `path must be shorter than SUN_LEN`、Python の `AF_UNIX path too long` 等)。Linux の Node.js 22 のように、黙って 108 バイトに切り詰めて別の所に作ってしまう標準ライブラリもあります。
 
 上限に当たるのは、カーネルに渡すパスの文字列の長さです。ディレクトリの深さではありません。同じ場所を指す短い文字列を渡せば、深い所のソケットにも届きます。
 
@@ -46,7 +46,7 @@ cwd をソケットのディレクトリに移せば、ファイル名だけの�
 
 - スレッドの cwd は、Linux で seccomp の filter が掛かっていると使えません (docker の既定や、systemd の `SystemCallFilter=`)。filter によっては `unshare` を呼んだだけでプロセスが SIGSYS で殺されるので、掛かっているかを先に確かめる必要があります
 - `pthread_fchdir_np` は libSystem の非公開 API で、将来消えるおそれがあります
-- スレッドを立てる費用が掛かります。TypeScript の実装の調査では、使い捨ての Worker を立てる形が 1 回およそ 9ms、symlink を通した綴りで標準の connect をする形が 0.1ms でした
+- スレッドを立てる費用が掛かります。TypeScript の実装の調査では、使い捨ての Worker を立てる形が 1 回およそ 9ms、symlink を通した綴りで標準ライブラリの connect をする形が 0.1ms でした
 - fork は副作用がプロセス全体に及びます。子が全 fd の複製を持つ、親に `SIGCHLD` が届く、`pthread_atfork` の handler が走る、他のスレッドの `waitpid(-1)` が子を刈り取りうる、connect では相手に見える peer の pid が終わった子になる、等です。Go では fork した子で runtime が動かないので使えません
 - bind では、カーネルが覚える綴りがファイル名だけになります ([次の節](#bind-と-connect-で事情が違う))
 
@@ -74,7 +74,7 @@ fd = open("/very/deep/.../dir", O_PATH | O_DIRECTORY)     → 7
 
 - 使える OS: `/proc` のある Linux / Android
 - 届く長さ: ファイル名がおよそ 90 バイトまで (fd の桁で変わる)
-- 長所: 書き込みもスレッドも要りません。crun・conmon・podman・systemd の `connect_unix_path`・Bun の標準 (Linux) が、長いパスにこの形を使っています
+- 長所: 書き込みもスレッドも要りません。crun・conmon・podman・systemd の `connect_unix_path`・Bun の標準ライブラリ (Linux) が、長いパスにこの形を使っています
 - 短所: PID 名前空間と `/proc` の mount が食い違う環境に備える必要があります。sockat は `/proc/self/fd/<fd>` を stat した `(st_dev, st_ino)` が fd の `fstat` と同じ時だけ使います。bind では、fd を閉じた後に綴りが別の所を指します
 
 ### symlink を置く
@@ -170,7 +170,7 @@ getsockname(sock)                                          → "/proc/self/fd/7/
 | cwd からの相対パス | cwd が変わると別の場所に当たる |
 | 広げた sockaddr | アドレスが途中で切れ、読む側が壊れる |
 
-消すのは利用者のコードでなく上のライブラリなので、利用者には避けようがありません。実際に使われている例もあります。Bun の標準は長いパスの bind で、Linux では `/proc/self/fd/<fd>/<ファイル名>` で bind した後に fd を閉じ、macOS ではファイル名だけで bind します。crun と conmon も、後で閉じる fd の `/proc/self/fd/<fd>/<名前>` で bind しています。
+消すのは利用者のコードでなく上のライブラリなので、利用者には避けようがありません。実際に使われている例もあります。Bun の標準ライブラリは長いパスの bind で、Linux では `/proc/self/fd/<fd>/<ファイル名>` で bind した後に fd を閉じ、macOS ではファイル名だけで bind します。crun と conmon も、後で閉じる fd の `/proc/self/fd/<fd>/<名前>` で bind しています。
 
 逆に、乱数の名前の symlink を通して bind し、呼び出しの中ですぐ消す形もあります。後で無関係なファイルには当たりませんが、綴りがどこにも届かなくなるので、`getsockname` の綴りで消すライブラリ、DGRAM の返信、運用の道具が元のパスに届きません。長いパスに bind した DGRAM の送り元に返信が届かないことは、実測で確かめています。
 
@@ -217,7 +217,7 @@ Linux で `/proc` を使える時は、B を `/proc/<pid>/fd/<B の fd>` で綴�
 
 | 手法 | sockat の中での名前 | 使う操作 |
 |---|---|---|
-| 元のパスをそのまま標準に渡す | `standard` | bind、connect |
+| 元のパスをそのまま標準ライブラリに渡す | `standard` | bind、connect |
 | ディレクトリを指す symlink (B・D・E を通す) | `link-dir` | bind |
 | ファイルを指す symlink (B・D・E を通す) | `link-file` | bind、connect |
 | スレッドの cwd (D と、すぐ消す E を通す) | `thread-cwd` | bind |
@@ -233,7 +233,7 @@ Linux で `/proc` を使える時は、B を `/proc/<pid>/fd/<B の fd>` で綴�
 
 | 順 | 経路 | 綴り | 使う時 |
 |---|---|---|---|
-| 1 | `standard` | 元のパス | 標準に渡す長さ以下 |
+| 1 | `standard` | 元のパス | 標準ライブラリに渡す長さ以下 |
 | 2 | `link-dir` | `/proc/<pid>/fd/<B の fd>/D/E/<ファイル名>` | Linux で `/proc` を使えて収まる |
 | 3 | `link-dir` | `<B の実パス>/D/E/<ファイル名>` | 収まる |
 | 4 | `link-file` | `<B の実パス>/D/E` | bind が symlink を辿る OS |
@@ -328,7 +328,7 @@ sockat は B と D を自分では片付けません。死んだプロセスの 
 | 案 | 採らなかった理由 |
 |---|---|
 | fork した子で bind / connect する | 副作用 (fd の複製、`SIGCHLD`、`pthread_atfork`、他のスレッドの `waitpid(-1)`、connect では相手に見える pid) がプロセス全体に及び、望まない利用者の方が多い。bind の listen を親がすれば相手に見える副作用は消えるが、見えない副作用は残る。thread-cwd-direct と link-file の後に置くと、出番はスレッドも B も使えない環境だけになる |
-| bind で広げた sockaddr を使う | アドレスが途中で切れ、CPython と Go の標準を壊す |
+| bind で広げた sockaddr を使う | アドレスが途中で切れ、CPython と Go の標準ライブラリを壊す |
 | bind の綴りに乱数の名前を挟まない (`/proc/self/fd/<fd>/<ファイル名>`、ファイル名だけ) | 後で解決すると無関係なファイルに当たる。消すのは上のライブラリで、利用者が避けられない |
 | bind の綴りを呼び出しの中で片付ける | `getsockname` の綴りで消すライブラリ、DGRAM の返信、運用の道具が元のパスに届かない |
 | B を開いて fd で掴んだ後に消し、`/proc` の fd だけで使う (置き場に何も残さない) | 消したディレクトリの中には作れない (`ENOENT`、実測) |

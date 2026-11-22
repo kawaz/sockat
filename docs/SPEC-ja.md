@@ -13,8 +13,8 @@
 
 | 用語 | 意味 |
 |---|---|
-| 標準 | その言語の標準ライブラリの Unix domain socket の bind / connect |
-| 標準に渡す長さ (standard length) | その言語の標準が、パスを変えずに広げない sockaddr に入れて受け付ける最長で、sockaddr に入る長さ (`sun_path` − 1) を超えない。これ以下は標準にそのまま渡す。多くは `sun_path` − 1、Java は `sun_path` − 2。標準がそれより長いパスを切り詰め・広げた sockaddr・自前の迂回で通しても、それは使わない (Node の macOS・Bun)。NUL の入らない `sun_path` ちょうどのパスも、標準が受け付けても使わない (Linux の Node の 108 等) ([DR-0004](decisions/DR-0004-standard-length-per-language.md)) |
+| 標準ライブラリ | その言語の標準ライブラリが持つ Unix domain socket の bind / connect |
+| 標準ライブラリに渡す長さ (standard library length) | その言語の標準ライブラリが、パスを変えずに広げない sockaddr に入れて受け付ける最長で、sockaddr に入る長さ (`sun_path` − 1) を超えない。これ以下は標準ライブラリにそのまま渡す。多くは `sun_path` − 1、Java は `sun_path` − 2。標準ライブラリがそれより長いパスを切り詰め・広げた sockaddr・自前の迂回で通しても、それは使わない (Node の macOS・Bun)。NUL の入らない `sun_path` ちょうどのパスも、標準ライブラリが受け付けても使わない (Linux の Node の 108 等) ([DR-0004](decisions/DR-0004-standard-length-per-language.md)) |
 | sockaddr に入る長さ (sockaddr length) | `sizeof(sun_path) - 1` (NUL の分を除く)。広げていない sockaddr に入る綴りの最長 |
 | 元のパス | 利用者が渡したパス |
 | ディレクトリ / ファイル名 | 元のパスの最後の要素の前と、最後の要素。ソケットのディレクトリは前者 |
@@ -52,12 +52,12 @@ OS は次の括りで呼ぶ。
 
 ## 公開する操作
 
-- 型ごとのモジュールに std の形で置く (stream は crate 直下、`datagram::`、`seqpacket::`)
+- 型ごとのモジュールに 標準ライブラリの形で置く (stream は crate 直下、`datagram::`、`seqpacket::`)
 - 既定の操作は path だけを取る。後始末と診断が要る人のために、既定の操作ごとに `_ex(…, Options)` を 1 つずつ置く
-- 綴りを自分で std に渡す人のために、resolve を用途ごとに 2 つ置く ([resolve](#resolve))
+- 綴りを自分で標準ライブラリに渡す人のために、resolve を用途ごとに 2 つ置く ([resolve](#resolve))
 - 置き場の死んだ D を消す `sweep()` と、`Options.base` の B の中の死んだ D を消す `sweep_base(path)` を置く ([`sweep`](#sweep))
 - 経路を利用者が選ぶ・組み合わせる口と、プロセス全体の既定を変える関数は作らない
-- 名前は各言語の慣習で決める。Python は `_ex` を子モジュール `sockat.ex` に置く (標準の `socket.connect_ex` と紛れるため)。Go の stream は `Listen` / `ListenEx` / `Dial` / `DialEx`
+- 名前は各言語の慣習で決める。Python は `_ex` を子モジュール `sockat.ex` に置く (標準ライブラリの `socket.connect_ex` と紛れるため)。Go の stream は `Listen` / `ListenEx` / `Dial` / `DialEx`
 
 ### 関数
 
@@ -65,14 +65,14 @@ Rust の名前で示す。
 
 | 型 | 関数 | 返す物 |
 |---|---|---|
-| stream | `bind(path)` | listen 済みの標準の listener |
-| stream | `connect(path)` | 標準の stream |
-| stream | `connect_nonblocking(path)` | 非ブロッキングの標準の stream |
+| stream | `bind(path)` | listen 済みの標準ライブラリの listener |
+| stream | `connect(path)` | 標準ライブラリの stream |
+| stream | `connect_nonblocking(path)` | 標準ライブラリの非ブロッキングの stream |
 | stream | `bind_ex(path, Options)` | `Bound<UnixListener>` |
 | stream | `connect_ex(path, Options)` | `Connected<UnixStream>` |
 | stream | `connect_nonblocking_ex(path, Options)` | `Connected<UnixStream>` (stream は非ブロッキング) |
-| DGRAM | `datagram::bind(path)` | 標準の `UnixDatagram` |
-| DGRAM | `datagram::unbound()` | 標準の `UnixDatagram` |
+| DGRAM | `datagram::bind(path)` | 標準ライブラリの `UnixDatagram` |
+| DGRAM | `datagram::unbound()` | 標準ライブラリの `UnixDatagram` |
 | DGRAM | `datagram::connect(&sock, path)` | 無し |
 | DGRAM | `datagram::send_to(&sock, buf, path)` | 送ったバイト数 (経路は「[未確定](#未確定)」) |
 | DGRAM | `datagram::bind_ex(path, Options)` | `Bound<UnixDatagram>` |
@@ -84,10 +84,10 @@ Rust の名前で示す。
 | 置き場 | `sweep()` | 無し |
 | 置き場 | `sweep_base(path)` | 無し |
 
-- 失敗は、既定の操作は標準と同じエラーの型、`_ex` と resolve はエラーに診断を付けた型 ([診断](#診断))
-- DGRAM は std の `UnixDatagram` の、パスを取る関数と、それと組で使う `unbound` だけを写す。`pair` は写さない
+- 失敗は、既定の操作は標準ライブラリと同じエラーの型、`_ex` と resolve はエラーに診断を付けた型 ([診断](#診断))
+- DGRAM は 標準ライブラリの `UnixDatagram` の、パスを取る関数と、それと組で使う `unbound` だけを写す。`pair` は写さない
 - DGRAM の connect は stream の connect と同じ順で経路を試す ([connect の順](#connect-の順))。`send_to` の経路は「[未確定](#未確定)」
-- Go の DGRAM の connect は `DialUnixgram(path)` (ソケットの作成と connect を 1 回で行う。Go の標準の形)。bind したソケットを長いパスへ connect したい人は、resolve で綴りを作って標準に渡す
+- Go の DGRAM の connect は `DialUnixgram(path)` (ソケットの作成と connect を 1 回で行う。Go の標準ライブラリの形)。bind したソケットを長いパスへ connect したい人は、resolve で綴りを作って標準ライブラリに渡す
 
 ### `Options`
 
@@ -100,15 +100,15 @@ Rust の名前で示す。
 
 | 型 | 中身 |
 |---|---|
-| `Bound<S>` | `socket` (標準の型)、`file: SocketFile` (`remove()`・`cleanup()`)、`spelling: Spelling`、診断 (`route`・`base`・`skipped`) |
-| `Connected<S>` | `socket` (標準の型)、診断 (`route`・`skipped`) |
+| `Bound<S>` | `socket` (標準ライブラリの型)、`file: SocketFile` (`remove()`・`cleanup()`)、`spelling: Spelling`、診断 (`route`・`base`・`skipped`) |
+| `Connected<S>` | `socket` (標準ライブラリの型)、診断 (`route`・`skipped`) |
 | `Report` | 診断 (`route`・`skipped`) |
 | `ForBind` | `path` (綴り)、`spelling`、`cleanup()`、`socket_file()` (bind した後に呼んで `SocketFile` を受け取る口。[`ForBind` の `SocketFile`](#forbind-の-socketfile))、診断。`remove()` は持たない |
 | `ForConnect` | `path` (綴り)、`spelling`、`cleanup()`、診断 (`route`・`skipped`)。`SocketFile` を受け取る口は持たない (消し間違いを型で防ぐ) |
 
 - `remove()` と `cleanup()` は「[片付け](#片付け)」
 - connect 系 (`Connected`・`Report`) は綴りの性質を返さない (connect の綴りは相手に残らず、使うのはその呼び出しの中だけ)。`ForConnect` は返す (resolve した綴りは利用者が長く持って使いうる。[綴りの性質 `Spelling`](#綴りの性質-spelling))
-- 「標準にそのまま渡したか」の bool は持たない (`spelling == Original` か `route == "standard"` で分かる)
+- 「標準ライブラリにそのまま渡したか」の bool は持たない (`spelling == Original` か `route == "standard"` で分かる)
 - 項目と型の名前は各言語の慣習で決める
 
 ### ブロックしない connect
@@ -116,13 +116,13 @@ Rust の名前で示す。
 - connect の前にソケットを非ブロッキングにして、そのまま返す。相手の backlog が満杯なら待たずに失敗する
 - `EINPROGRESS` はエラーとして返し、ソケットを閉じる
 - 片付けで待たない (既定の connect が link-file で作った E は unlink するだけ)
-- 標準の connect が元から待たない言語 (Node.js、Go 等) は、標準と同じ形の connect を 1 つだけ出し、`_nonblocking` を分けない。`connect_ex` 系も同じ ([DR-0003](decisions/DR-0003-single-connect-when-standard-never-blocks.md))。Go の `Dial` / `DialEx` は標準の `net.DialUnix` と同じく待たない (backlog が満杯なら Linux は即 `EAGAIN`、macOS は `ECONNREFUSED`)
+- 標準ライブラリの connect が元から待たない言語 (Node.js、Go 等) は、標準ライブラリと同じ形の connect を 1 つだけ出し、`_nonblocking` を分けない。`connect_ex` 系も同じ ([DR-0003](decisions/DR-0003-single-connect-when-standard-never-blocks.md))。Go の `Dial` / `DialEx` は標準ライブラリの `net.DialUnix` と同じく待たない (backlog が満杯なら Linux は即 `EAGAIN`、macOS は `ECONNREFUSED`)
 
-### 標準と同じにすること
+### 標準ライブラリと同じにすること
 
-- 戻り値の listener / stream / datagram は標準が返すのと同じ型。標準の代わりに置き換えるだけで使える
-- 自前で作るソケットは、その言語の標準が作るソケットと同じ設定にする (close-on-exec、`SO_NOSIGPIPE`、listen の backlog 等)。backlog を指定する口は作らない
-- 標準の listener を閉じた時にソケットのファイルが消えるかは、標準と同じ仕組みに任せる (長いパスでの違いは「[長いパスで標準と違う点](#長いパスで標準と違う点)」)。`bind_ex` の listener は短いパスでも閉じた時に消さず、消すのは `remove()` だけ
+- 戻り値の listener / stream / datagram は標準ライブラリが返すのと同じ型。標準ライブラリの代わりに置き換えるだけで使える
+- 自前で作るソケットは、その言語の標準ライブラリが作るソケットと同じ設定にする (close-on-exec、`SO_NOSIGPIPE`、listen の backlog 等)。backlog を指定する口は作らない
+- 標準ライブラリの listener を閉じた時にソケットのファイルが消えるかは、標準ライブラリと同じ仕組みに任せる (長いパスでの違いは「[長いパスで標準ライブラリと違う点](#長いパスで標準ライブラリと違う点)」)。`bind_ex` の listener は短いパスでも閉じた時に消さず、消すのは `remove()` だけ
 
 ### 診断
 
@@ -132,7 +132,7 @@ Rust の名前で示す。
 |---|---|
 | `route` | 通った経路の名前 |
 | `base` | bind で使った B の綴り (`proc`・`sockdir`・`runtime`・`tmpdir`・`tmp`・`given`。値の意味は [綴りの形](SPEC-routes-ja.md#綴りの形))。綴りが B を通る時 (link-dir・link-file) だけ値を持ち、他 (standard・thread-cwd・at) は無し。`Connected`・`Report`・`ForConnect` には無い |
-| `skipped` | 試して使えなかった経路の並び (試した順)。各要素は `{ name: 経路の名前, reason: 使えなかった理由 }`。経路に進んだ時 (標準に渡す長さを超えるパスと、絶対パスの候補が収まらない相対パス) は `standard` も入る |
+| `skipped` | 試して使えなかった経路の並び (試した順)。各要素は `{ name: 経路の名前, reason: 使えなかった理由 }`。経路に進んだ時 (標準ライブラリに渡す長さを超えるパスと、絶対パスの候補が収まらない相対パス) は `standard` も入る |
 
 - `skipped` は経路の名前ごとに 1 件。link-dir を procB と実パスで試しても 1 件で、`reason` は最後に試した物。`usable_cross_uid` で procB を使わないのは経路を飛ばすことではないので、何も足さない
 - その呼び出しで、置き場 1〜3 の既定の名前の B が既にあって確かめに外れた (占拠) 置き場を飛ばした時は、B を使う経路が使えなかった理由 (綴りが収まらない等) の `reason` に占拠を書き添える ([B の作り方](SPEC-routes-ja.md#b-の作り方))。前の呼び出しで次の置き場の B を持った後の呼び出しでは出ない
@@ -146,7 +146,7 @@ Rust の名前で示す。
 
 ## resolve
 
-長いパスを、元のパスと同じ所を指し続ける短い綴りに言い換えて返す。綴りが生きている間は、`getsockname` の綴りで消す上のライブラリ、DGRAM の返信、運用の道具が元のパスと同じに働く。綴りはただのパスなので、ソケットの型 (stream / DGRAM / SEQPACKET) と操作 (bind / connect / `send_to`) を問わず、利用者が std に渡して使える。返した綴りは後で cwd が変わった後にも使われうるので、相対パスは絶対パスにしてから扱う ([相対パスを絶対パスにする](#相対パスを絶対パスにする))。
+長いパスを、元のパスと同じ所を指し続ける短い綴りに言い換えて返す。綴りが生きている間は、`getsockname` の綴りで消す上のライブラリ、DGRAM の返信、運用の道具が元のパスと同じに働く。綴りはただのパスなので、ソケットの型 (stream / DGRAM / SEQPACKET) と操作 (bind / connect / `send_to`) を問わず、利用者が標準ライブラリに渡して使える。返した綴りは後で cwd が変わった後にも使われうるので、相対パスは絶対パスにしてから扱う ([相対パスを絶対パスにする](#相対パスを絶対パスにする))。
 
 | | `resolve_for_bind` | `resolve_for_connect` |
 |---|---|---|
@@ -155,9 +155,9 @@ Rust の名前で示す。
 | 返す物 | `ForBind` (`spelling`、`cleanup()`、`socket_file()`) | `ForConnect` (`spelling`、`cleanup()`) |
 | 使えない時 | `ENAMETOOLONG` (thread-cwd・at でしか届かない長さ) | `ENAMETOOLONG` (B を作れない等で link-file を使えない) |
 
-- 標準に渡す長さ以下の絶対パスはそのまま返す (`Original`)
-- 相対パスと、標準に渡す長さを超える絶対パスは、収まる絶対パスの候補があればそれを返す (`Original`。置き場に何も作らない)
-- 相対パスで、上の綴りがどれも使えない時は、標準に渡す長さ以下なら元の相対パスをそのまま返す (`CwdRelative`)。超えるなら `ENAMETOOLONG`
+- 標準ライブラリに渡す長さ以下の絶対パスはそのまま返す (`Original`)
+- 相対パスと、標準ライブラリに渡す長さを超える絶対パスは、収まる絶対パスの候補があればそれを返す (`Original`。置き場に何も作らない)
+- 相対パスで、上の綴りがどれも使えない時は、標準ライブラリに渡す長さ以下なら元の相対パスをそのまま返す (`CwdRelative`)。超えるなら `ENAMETOOLONG`
 - resolve は綴りを返すだけなので、`ENAMETOOLONG` の所も届かせたい人は `bind` / `connect` を使う。既定の `bind` は thread-cwd・at を、既定の `connect` は書き込みの要らない経路と thread-cwd-direct を試せる
 - resolve の B の綴りは procB か実パスで、選び方は既定の bind と同じ ([綴りの形](SPEC-routes-ja.md#綴りの形))
 - resolve のたびに B の中を一覧しない (resolve の手数を増やさない)
@@ -181,7 +181,7 @@ pub enum Spelling {
 | 値 | 綴り | 経路 |
 |---|---|---|
 | `Original` | 元の絶対パスか、絶対パスの候補 (cwd によらない) | standard |
-| `CwdRelative` | 元の相対パス。cwd を変えると別の所を指す (標準が元から持つ危険だが、知らせる)。相対パスを絶対にしても、どの経路も使えなかった時だけ ([相対パスを絶対パスにする](#相対パスを絶対パスにする) の 5) | standard |
+| `CwdRelative` | 元の相対パス。cwd を変えると別の所を指す (標準ライブラリが元から持つ危険だが、知らせる)。相対パスを絶対にしても、どの経路も使えなかった時だけ ([相対パスを絶対パスにする](#相対パスを絶対パスにする) の 5) | standard |
 | `Linked` | B・D・E を通り、元のパスと同じ所を指す | link-dir、link-file |
 | `Dangling` | 片付け済みの E を含む。どこにも届かない | thread-cwd、at |
 
@@ -209,16 +209,16 @@ pub enum Spelling {
 - どちらも自動では行わない (Rust の Drop でも消さない)。成功した後の呼び出しは何もしない (`remove` は resolve した綴りの物を 1 回だけ消す、の意味の冪等)。失敗した後の呼び出しはやり直す (失敗を覚えて返し続けると、片付ける手段が無くなる)。並行して呼ばれても消す操作は同時に 1 つ
 - `cleanup()` は E の unlink の失敗 (`ENOENT` 以外) をエラーで返す (利用者が頼んだ片付けの結果を知らせる)。黙るのは呼び出しの中の E の片付けだけ ([経路の失敗の扱い](SPEC-routes-ja.md#経路の失敗の扱い))。`remove()` はファイルを消す側のエラーを先に返し、無ければ `cleanup` のエラーを返す (両方を 1 つのエラーにまとめる慣習の言語はまとめてよい。Go の `errors.Join`)
 - B と D は sockat が片付けない ([置き場に残る物](#置き場に残る物))
-- 片付けた後の綴りは使わない。B が `/tmp` にある時は、B が消えた後に他人が同じ名前で作り直しうる (std の元のパスを消した後に、そのディレクトリに書ける人が作り直せるのと同じ)
+- 片付けた後の綴りは使わない。B が `/tmp` にある時は、B が消えた後に他人が同じ名前で作り直しうる (標準ライブラリで元のパスを消した後に、そのディレクトリに書ける人が作り直せるのと同じ)
 
 ### `remove`
 
 - `remove` はファイルを消すだけで、listener を閉じない。閉じるのは利用者
 - bind したソケットのファイルの realpath と `(st_dev, st_ino)` を覚え、そのパスの `(st_dev, st_ino)` が同じ時だけ消す
   - 覚えるのは bind が通った直後 (listener を返す前)。覚えられなければ listener を閉じ、作った E を片付け、ソケットのファイルは消さずにエラーを返す (消せない `remove()` を成功に見せない。確かめられなかったので消すと置き換わった物を消しうる)
-  - 綴りが `CwdRelative` の時 (どの経路も使えず、相対パスのまま標準に渡した時) は、パスを何も引く前と、bind と覚えるための realpath の両方の後でプロセスの cwd の `(st_dev, st_ino)` を比べ、違えば覚えられない時と同じに扱う (間の cwd の変更で、元の cwd の無関係なファイルを覚えて消さないため。変えて戻した場合は見えない)。相対パスを絶対にして bind した時は、覚える realpath が cwd によらないので比べない
-  - bind の後、元のパスの最後の要素が symlink なら (macOS・NetBSD では標準の bind が最後の symlink を辿り、その先にソケットを作る)、辿った先の実パスと `(st_dev, st_ino)` を覚える (`remove` が利用者の symlink を消さないため)。最後の要素が symlink でない時も含め、覚える物がソケットでなければ覚えられない時と同じに扱う (`bind_ex` は listener を閉じ E を片付けてエラー。bind の直後に置き換わった物を覚えると `remove` がそれを消すため)
-  - 覚える場所: link-dir・thread-cwd・at は、経路がソケットを作った実ディレクトリ (E が指す realpath、移った D) とファイル名を覚える (元のパスを引き直さない。経路を組んでから bind の後までに途中の symlink が張り替わっても、作った所を覚えるため)。standard は bind の後に、標準に渡した綴り (元のパスか絶対パスの候補) の realpath を引く。link-file は bind の後に、E が指す先 (元のパス。相対パスなら cwd を前に付けた物) の realpath を引く
+  - 綴りが `CwdRelative` の時 (どの経路も使えず、相対パスのまま標準ライブラリに渡した時) は、パスを何も引く前と、bind と覚えるための realpath の両方の後でプロセスの cwd の `(st_dev, st_ino)` を比べ、違えば覚えられない時と同じに扱う (間の cwd の変更で、元の cwd の無関係なファイルを覚えて消さないため。変えて戻した場合は見えない)。相対パスを絶対にして bind した時は、覚える realpath が cwd によらないので比べない
+  - bind の後、元のパスの最後の要素が symlink なら (macOS・NetBSD では標準ライブラリの bind が最後の symlink を辿り、その先にソケットを作る)、辿った先の実パスと `(st_dev, st_ino)` を覚える (`remove` が利用者の symlink を消さないため)。最後の要素が symlink でない時も含め、覚える物がソケットでなければ覚えられない時と同じに扱う (`bind_ex` は listener を閉じ E を片付けてエラー。bind の直後に置き換わった物を覚えると `remove` がそれを消すため)
+  - 覚える場所: link-dir・thread-cwd・at は、経路がソケットを作った実ディレクトリ (E が指す realpath、移った D) とファイル名を覚える (元のパスを引き直さない。経路を組んでから bind の後までに途中の symlink が張り替わっても、作った所を覚えるため)。standard は bind の後に、標準ライブラリに渡した綴り (元のパスか絶対パスの候補) の realpath を引く。link-file は bind の後に、E が指す先 (元のパス。相対パスなら cwd を前に付けた物) の realpath を引く
   - 引数のパスは入口で一度だけ文字列にし、覚える・bind する・返すのすべてにその値を使う
 - ファイルが既に無い時と、別のファイルに置き換わっていて消さない時も成功を返す。失敗を返すのは、確かめられない時 (`lstat` が `ENOENT` / `ENOTDIR` 以外で失敗) と、消そうとして失敗した時
 - 失敗した時も `cleanup` まで行い、ファイルを消す側のエラーを返す
@@ -236,7 +236,7 @@ pub enum Spelling {
 
 resolve の時点では bind していないので、`ForBind` はソケットのファイルの `(st_dev, st_ino)` を覚えられず、`remove()` を持たない。利用者が自分で bind した後に `socket_file()` (名前は各言語の慣習。Rust は `socket_file(&self) -> io::Result<SocketFile>`) を呼ぶと、`SocketFile` を返す。呼ばなければ消す口は無い。
 
-- 呼んだ時点で綴りを、元のパスの最後の要素の symlink (macOS・NetBSD では標準の bind が辿る) も含めて辿り切り、行き着いたソケットのファイルの realpath と `(st_dev, st_ino)` を覚える (`remove` が利用者の symlink を消さないため)。辿れなければ (bind する前、ファイルが無い) エラー。行き着いた先がソケットでなければ (bind する前に元のパスにあった無関係なファイル等) エラー
+- 呼んだ時点で綴りを、元のパスの最後の要素の symlink (macOS・NetBSD では標準ライブラリの bind が辿る) も含めて辿り切り、行き着いたソケットのファイルの realpath と `(st_dev, st_ino)` を覚える (`remove` が利用者の symlink を消さないため)。辿れなければ (bind する前、ファイルが無い) エラー。行き着いた先がソケットでなければ (bind する前に元のパスにあった無関係なファイル等) エラー
 - 返す `SocketFile` は `Bound` の物と同じ働き ([`remove`](#remove))。`cleanup()` は `ForBind` の `cleanup()` と同じ E を 1 回だけ片付ける
 - 呼ぶのは bind の後・listener を閉じる前。bind から呼ぶまでの間の置き換えは見分けられない
 - 綴りが `CwdRelative` の時 (どの綴りも使えず、相対パスのまま返した時) は、resolve の時と呼んだ時でプロセスの cwd の `(st_dev, st_ino)` を比べ、違えばエラー
@@ -282,15 +282,15 @@ OS の一時ディレクトリの掃除 ([research](research/2026-11-20-tmp-clea
 
 ## 短いパス
 
-標準に渡す長さ以下の絶対パスは、標準にそのまま渡す。何も足さず、環境変数も読まない。それを超えたら経路に回す ([DR-0004](decisions/DR-0004-standard-length-per-language.md))。相対パスは、bind と resolve では絶対パスにしてから長さで分け、connect 系と `send_to` では相対のまま長さで分ける ([相対パスを絶対パスにする](#相対パスを絶対パスにする))。
+標準ライブラリに渡す長さ以下の絶対パスは、標準ライブラリにそのまま渡す。何も足さず、環境変数も読まない。それを超えたら経路に回す ([DR-0004](decisions/DR-0004-standard-length-per-language.md))。相対パスは、bind と resolve では絶対パスにしてから長さで分け、connect 系と `send_to` では相対のまま長さで分ける ([相対パスを絶対パスにする](#相対パスを絶対パスにする))。
 
-- 先頭以外に NUL を含むパスは、長さによらず標準に渡さず引数の誤りにする ([DR-0006](decisions/DR-0006-nul-is-invalid-at-any-length.md))
+- 先頭以外に NUL を含むパスは、長さによらず標準ライブラリに渡さず引数の誤りにする ([DR-0006](decisions/DR-0006-nul-is-invalid-at-any-length.md))
 - 空のパスは引数の誤り
-- 相対のまま標準に渡す綴りのうち、標準がパスとして読まない物 (Node の node:net は数値に読める文字列を TCP のポートとみなす。Go の illumos の標準は先頭の `@` を abstract に書き換える) は、同じファイルを指す `./` を前に付けた形で標準に渡す。相対のまま渡すのは、connect 系と `send_to` の相対パスと、bind と resolve の [相対パスを絶対パスにする](#相対パスを絶対パスにする) の 5 の場面。経路の相対パスの綴り (relative) も同じ。bind と resolve の `Spelling` は `CwdRelative` のまま
-- Linux / Android で先頭が NUL のパス (abstract namespace) は対象外で、長さによらず標準にそのまま渡す。言語固有の abstract の書き方 (Go の `@` 等) も同じ。`_ex` と resolve の `Spelling` は `Original`
+- 相対のまま標準ライブラリに渡す綴りのうち、標準ライブラリがパスとして読まない物 (Node の node:net は数値に読める文字列を TCP のポートとみなす。illumos での Go の標準ライブラリは先頭の `@` を abstract に書き換える) は、同じファイルを指す `./` を前に付けた形で標準ライブラリに渡す。相対のまま渡すのは、connect 系と `send_to` の相対パスと、bind と resolve の [相対パスを絶対パスにする](#相対パスを絶対パスにする) の 5 の場面。経路の相対パスの綴り (relative) も同じ。bind と resolve の `Spelling` は `CwdRelative` のまま
+- Linux / Android で先頭が NUL のパス (abstract namespace) は対象外で、長さによらず標準ライブラリにそのまま渡す。言語固有の abstract の書き方 (Go の `@` 等) も同じ。`_ex` と resolve の `Spelling` は `Original`
 - abstract namespace の無い OS では、先頭が NUL のパスも長さによらず引数の誤り
-- 標準にブロックしない connect が無い言語では、ブロックしない connect に限り、標準と同じアドレスで自前のソケットを connect する
-- 経路の綴りを標準が受け付けない時 (標準に渡す長さが sockaddr に入る長さより短い言語) も、標準と同じアドレスで自前のソケットを使う
+- 標準ライブラリにブロックしない connect が無い言語では、ブロックしない connect に限り、標準ライブラリと同じアドレスで自前のソケットを connect する
+- 経路の綴りを標準ライブラリが受け付けない時 (標準ライブラリに渡す長さが sockaddr に入る長さより短い言語) も、標準ライブラリと同じアドレスで自前のソケットを使う
 
 | OS | sockaddr に入る長さ |
 |---|---|
@@ -299,7 +299,7 @@ OS の一時ディレクトリの掃除 ([research](research/2026-11-20-tmp-clea
 
 ## 相対パスを絶対パスにする
 
-相対パスで bind すると、カーネルが覚える綴りも相対になり、後で cwd が変わると別の所を指す (閉じる時にアドレスの綴りで unlink する標準、閉じた時点の cwd で渡されたパスを unlink する標準、DGRAM の返信が、別の所に当たるか届かない)。綴りが残る操作は、相対パスを cwd で絶対パスにしてから扱う ([DR-0019](decisions/DR-0019-absolutize-relative-path-on-bind.md))。
+相対パスで bind すると、カーネルが覚える綴りも相対になり、後で cwd が変わると別の所を指す (閉じる時にアドレスの綴りで unlink する標準ライブラリ、閉じた時点の cwd で渡されたパスを unlink する標準ライブラリ、DGRAM の返信が、別の所に当たるか届かない)。綴りが残る操作は、相対パスを cwd で絶対パスにしてから扱う ([DR-0019](decisions/DR-0019-absolutize-relative-path-on-bind.md))。
 
 | 操作 | 相対パスを受け取ったら |
 |---|---|
@@ -309,36 +309,36 @@ OS の一時ディレクトリの掃除 ([research](research/2026-11-20-tmp-clea
 
 bind と resolve の手順:
 
-1. 引数の形の検査 (空のパス、NUL、`Options.base` の形) を先に行う。abstract の名前は対象外 (長さによらず標準にそのまま渡す)
+1. 引数の形の検査 (空のパス、NUL、`Options.base` の形) を先に行う。abstract の名前は対象外 (長さによらず標準ライブラリにそのまま渡す)
 2. 相対パスなら、絶対パスの候補を 2 つ作る ([SPEC-routes の絶対パスの候補の作り方](SPEC-routes-ja.md#絶対パスの候補の作り方))
    - 実パスの候補: ソケットのディレクトリを realpath で実パスにし (symlink を辿る)、ファイル名を付けた物
    - `$PWD` の候補: `$PWD` が `.` と同じ物の時だけ、相対パスを文字列でつないで `..` と `.` を字句で畳み、畳んだディレクトリが元のディレクトリと同じ物だと `(st_dev, st_ino)` で確かめた物
-3. 候補のうち標準に渡す長さ以下の物があれば、それを標準に渡す (実パスの候補を先に見る)。`route` は `standard`、`Spelling` は `Original`。置き場には何も作らない
+3. 候補のうち標準ライブラリに渡す長さ以下の物があれば、それを標準ライブラリに渡す (実パスの候補を先に見る)。`route` は `standard`、`Spelling` は `Original`。置き場には何も作らない
 4. どちらも収まらないか作れなければ、[長いパスの経路](#長いパスの経路と試す順番) に進む
-5. 4 でどの経路も使えない時は、元の相対パスで続ける。標準に渡す長さ以下なら相対のまま標準に渡す (`Spelling` は `CwdRelative`)。超えるなら `ENAMETOOLONG` (長いパスの経路は 4 で試した物と同じ)。標準で届く所に届かなくならないようにするため
+5. 4 でどの経路も使えない時は、元の相対パスで続ける。標準ライブラリに渡す長さ以下なら相対のまま標準ライブラリに渡す (`Spelling` は `CwdRelative`)。超えるなら `ENAMETOOLONG` (長いパスの経路は 4 で試した物と同じ)。標準ライブラリで届く所に届かなくならないようにするため
 
-- 標準に渡す長さを超える絶対パスも、経路に進む前に実パスの候補を見て、収まればそれを標準に渡す (`route` は `standard`、`Spelling` は `Original`)。絶対パスに `$PWD` の候補は作らない
-- 候補を 2 つ見るのは、標準にそのまま渡せる場面を増やすため (実パスの方が短い時も、`$PWD` の候補の方が短い時もある)。収まれば置き場に何も作らずに済む。短さは競わない (収まっていれば足りる)
+- 標準ライブラリに渡す長さを超える絶対パスも、経路に進む前に実パスの候補を見て、収まればそれを標準ライブラリに渡す (`route` は `standard`、`Spelling` は `Original`)。絶対パスに `$PWD` の候補は作らない
+- 候補を 2 つ見るのは、標準ライブラリにそのまま渡せる場面を増やすため (実パスの方が短い時も、`$PWD` の候補の方が短い時もある)。収まれば置き場に何も作らずに済む。短さは競わない (収まっていれば足りる)
 - 5 に落ちるのは、経路自体が使えない時だけ。絶対パスの候補や経路で実際に bind して失敗した時 (`EADDRINUSE`・`ENOENT` 等) は、そのエラーを返し、もう 1 つの候補や元の相対パスで試し直さない (同じ失敗を 2 回試したり、別の所に作ったりしないため)
 - 変わるのはカーネルが覚える綴りが相対か絶対かで、ソケットのファイルができる場所は変わらない
 - `CwdRelative` が返るのは 5 の場面だけ。cwd がとても深い (絶対パスが PATH_MAX を超える。Linux 4096、macOS 1024) と、実パスの候補も `$PWD` の候補も作れないか収まらず、4 か 5 に進む
 - `/proc/self/cwd/…` のような、絶対パスだが cwd に依る綴りには触らない (相対パスだけが対象)
-- 名前で終わらない相対パス (`dir/`・`..` 等) で標準に渡す長さ以下の物は、絶対にせず、相対のまま標準に渡す (ファイル名が無く、候補を作れない。標準が返すエラーをそのまま返す)。resolve は標準を呼ばないので、そのまま返して `CwdRelative` にする (誤りは、利用者がその綴りを標準に渡した時に標準が返す)
-- 相対パスで、ソケットのディレクトリはあるのに、パスの長さのせいで realpath を引けない時 (cwd が PATH_MAX を超える等。errno は OS と、実パスの引き方 (libc の realpath か、言語の自前の実装か) で違う。実測 2026-11-22: libc の realpath は macOS で `ERANGE`。Go の `Getwd` + `EvalSymlinks` は Linux で `ENAMETOOLONG`、macOS で `EINVAL`、FreeBSD で `ENOMEM`。Linux の glibc の realpath と Python の `os.path.realpath` は成功して PATH_MAX を超える実パスを返すので、その実パスを `stat` して `ENAMETOOLONG` になる時も、引けなかった物として同じに扱う。各実装は、その言語と OS でパスの長さのせいで出る errno を、まとめて 1 か所で判定する) は、エラーにせず、経路が使えない物として 5 に進む。この時は経路を 1 つも試していないので `skipped` は空 (元の相対パスが標準に渡す長さ以下なら `route` は `standard` で `CwdRelative`、超えるなら `ENAMETOOLONG` で `route` は無し)。それ以外の失敗 (`ENOENT`・`ENOTDIR`・`EACCES` 等) は、そのエラーを返す
-- 5 で相対のまま標準に渡した時の診断は、`route` が `standard`、`skipped` は 4 で使えなかった経路だけで、`standard` は入れない (最後に通った経路なので)。相対のまま渡したことは `Spelling` の `CwdRelative` で分かる
-- cwd が PATH_MAX を超えていて 5 で相対のまま標準に渡す時、届くのは既定の bind だけ。`bind_ex` は、bind したソケットのファイルの実パスを引けず覚えられないので、エラーを返す ([`remove`](#remove) の「覚えられなければ」と同じ扱い)
-- 絶対パスの候補を標準に渡す時は、`Options.base` を確かめない (B を使わない。標準に渡す長さ以下の絶対パスで base を見ないのと同じ)。候補が収まらずに経路に進んだ時は、今のとおり base を確かめ、外れたらそのエラーを返す (相対パスでも 5 に落とさない。base のエラーは「経路が使えない」ではない)
-- アドレスを返す口を差し替える言語 (Python・TypeScript) は、渡されたのが絶対パスなら、実パスの候補で標準に渡した時も、渡されたパスを返す
-- アドレスを返す口を差し替える言語 (Python・TypeScript) は、相対パスで bind した時、渡した相対の文字列でなく、絶対にした形を返す (候補を標準に渡した時はその候補。経路に進んだ時は実パスの候補の形、作れなければ `$PWD` の候補の形)。渡した相対パスのまま返すのは 5 の時だけ
-- 標準と違う所 (カーネルが返すアドレスが絶対パスになる、深い cwd では短い相対パスでも置き場に物ができる等) は「[長いパスで標準と違う点](#長いパスで標準と違う点)」
+- 名前で終わらない相対パス (`dir/`・`..` 等) で標準ライブラリに渡す長さ以下の物は、絶対にせず、相対のまま標準ライブラリに渡す (ファイル名が無く、候補を作れない。標準ライブラリが返すエラーをそのまま返す)。resolve は標準ライブラリを呼ばないので、そのまま返して `CwdRelative` にする (誤りは、利用者がその綴りを標準ライブラリに渡した時に標準ライブラリが返す)
+- 相対パスで、ソケットのディレクトリはあるのに、パスの長さのせいで realpath を引けない時 (cwd が PATH_MAX を超える等。errno は OS と、実パスの引き方 (libc の realpath か、言語の自前の実装か) で違う。実測 2026-11-22: libc の realpath は macOS で `ERANGE`。Go の `Getwd` + `EvalSymlinks` は Linux で `ENAMETOOLONG`、macOS で `EINVAL`、FreeBSD で `ENOMEM`。Linux の glibc の realpath と Python の `os.path.realpath` は成功して PATH_MAX を超える実パスを返すので、その実パスを `stat` して `ENAMETOOLONG` になる時も、引けなかった物として同じに扱う。各実装は、その言語と OS でパスの長さのせいで出る errno を、まとめて 1 か所で判定する) は、エラーにせず、経路が使えない物として 5 に進む。この時は経路を 1 つも試していないので `skipped` は空 (元の相対パスが標準ライブラリに渡す長さ以下なら `route` は `standard` で `CwdRelative`、超えるなら `ENAMETOOLONG` で `route` は無し)。それ以外の失敗 (`ENOENT`・`ENOTDIR`・`EACCES` 等) は、そのエラーを返す
+- 5 で相対のまま標準ライブラリに渡した時の診断は、`route` が `standard`、`skipped` は 4 で使えなかった経路だけで、`standard` は入れない (最後に通った経路なので)。相対のまま渡したことは `Spelling` の `CwdRelative` で分かる
+- cwd が PATH_MAX を超えていて 5 で相対のまま標準ライブラリに渡す時、届くのは既定の bind だけ。`bind_ex` は、bind したソケットのファイルの実パスを引けず覚えられないので、エラーを返す ([`remove`](#remove) の「覚えられなければ」と同じ扱い)
+- 絶対パスの候補を標準ライブラリに渡す時は、`Options.base` を確かめない (B を使わない。標準ライブラリに渡す長さ以下の絶対パスで base を見ないのと同じ)。候補が収まらずに経路に進んだ時は、今のとおり base を確かめ、外れたらそのエラーを返す (相対パスでも 5 に落とさない。base のエラーは「経路が使えない」ではない)
+- アドレスを返す口を差し替える言語 (Python・TypeScript) は、渡されたのが絶対パスなら、実パスの候補で標準ライブラリに渡した時も、渡されたパスを返す
+- アドレスを返す口を差し替える言語 (Python・TypeScript) は、相対パスで bind した時、渡した相対の文字列でなく、絶対にした形を返す (候補を標準ライブラリに渡した時はその候補。経路に進んだ時は実パスの候補の形、作れなければ `$PWD` の候補の形)。渡した相対パスのまま返すのは 5 の時だけ
+- 標準ライブラリと違う所 (カーネルが返すアドレスが絶対パスになる、深い cwd では短い相対パスでも置き場に物ができる等) は「[長いパスで標準ライブラリと違う点](#長いパスで標準ライブラリと違う点)」
 
 ## 長いパスの経路と試す順番
 
-標準に渡す長さを超えるパス (bind と resolve の相対パスは、絶対パスの候補が収まらない物。[相対パスを絶対パスにする](#相対パスを絶対パスにする)) は、次の順に経路を試し、最初に使えた経路で bind / connect する。各経路の作り方は [SPEC-routes-ja.md](SPEC-routes-ja.md#経路)、どこまで届くかは [届く範囲の表](../pages/reach/README-ja.md)。
+標準ライブラリに渡す長さを超えるパス (bind と resolve の相対パスは、絶対パスの候補が収まらない物。[相対パスを絶対パスにする](#相対パスを絶対パスにする)) は、次の順に経路を試し、最初に使えた経路で bind / connect する。各経路の作り方は [SPEC-routes-ja.md](SPEC-routes-ja.md#経路)、どこまで届くかは [届く範囲の表](../pages/reach/README-ja.md)。
 
 - 最後がファイル名でないパス (`dir/`、`dir/.`、`dir/..`、`..`) は、何も作らずに引数の誤り
 - ソケットのディレクトリを先に引く。無ければ `ENOENT`、ディレクトリでなければ `ENOTDIR` (長さの判定や B・D・E を作るより前)
-- bind と resolve で、標準に渡す長さを超える絶対パスは、ソケットのディレクトリを引いた後、経路を試す前に実パスの候補を見る。収まればそれを標準に渡す
+- bind と resolve で、標準ライブラリに渡す長さを超える絶対パスは、ソケットのディレクトリを引いた後、経路を試す前に実パスの候補を見る。収まればそれを標準ライブラリに渡す
 - 経路はパスを字句で畳まない (`..` や `.` を文字列の上で消さない)。`a/sym/..` はカーネルでは symlink の先の親を指すので、ディレクトリは OS に引かせる (open・realpath(3))。字句で畳むのは `$PWD` の候補だけで、畳んだディレクトリが元と同じ物と確かめてから使う
 - どの経路も、呼び出し元のプロセスの cwd も呼び出し元のスレッドの cwd も変えない
 - fork はしない (bind・connect とも)。fork でしか届かなかった場面と fork の手法は [fork-cwd](../pages/fork-cwd-ja.md)
@@ -349,7 +349,7 @@ bind と resolve の手順:
 
 | 名前 | 中身 | 操作 |
 |---|---|---|
-| `standard` | 標準にそのまま渡す | bind、connect |
+| `standard` | 標準ライブラリにそのまま渡す | bind、connect |
 | `link-dir` | ソケットのディレクトリを指す E を通す `B/D/E/<ファイル名>` | bind |
 | `link-file` | ソケットのファイルを指す E を通す `B/D/E` (既定の connect は B の実パスの `B/E`) | bind、connect |
 | `thread-cwd` | 使い捨てのスレッドの cwd を D に移し、すぐ消す E を通す `E/<ファイル名>` | bind |
@@ -364,12 +364,12 @@ bind と resolve の手順:
 
 | 順 | 経路 | B の綴り | 綴り | 使う時 | `Spelling` |
 |---|---|---|---|---|---|
-| 1 | `standard` | | 元の絶対パスか、絶対パスの候補 | 元の絶対パスが標準に渡す長さ以下か、候補が収まる | `Original` |
+| 1 | `standard` | | 元の絶対パスか、絶対パスの候補 | 元の絶対パスが標準ライブラリに渡す長さ以下か、候補が収まる | `Original` |
 | 2 | `link-dir` | procB | `B/D/E/<ファイル名>` | `/proc` を使えて収まる (`usable_cross_uid` の時は使わない) | `Linked` |
 | 3 | `link-dir` | 実パス | 同 | 収まる | `Linked` |
 | 4 | `link-file` | 実パス | `B/D/E` | bind が最後の要素の symlink を辿る OS | `Linked` |
 | 5 | `thread-cwd` (FreeBSD は `at`) | | `E/<ファイル名>` | Linux / Android・Apple の OS (`at` は FreeBSD) | `Dangling` |
-| 6 | `standard` | | 元の相対パス | 元のパスが相対パスで標準に渡す長さ以下 ([相対パスを絶対パスにする](#相対パスを絶対パスにする) の 5) | `CwdRelative` |
+| 6 | `standard` | | 元の相対パス | 元のパスが相対パスで標準ライブラリに渡す長さ以下 ([相対パスを絶対パスにする](#相対パスを絶対パスにする) の 5) | `CwdRelative` |
 | 7 | `ENAMETOOLONG` | | | | |
 
 - 綴りを残すので、生きている間は `getsockname` の綴りで消す上のライブラリと DGRAM の返信が元のパスと同じに働く。thread-cwd・at は resolve の綴りが収まらない時の後ろ
@@ -397,31 +397,31 @@ bind と resolve の手順:
 | FreeBSD | at-direct |
 | NetBSD / OpenBSD / illumos / その他の Unix | relative |
 
-- connect 系は相対パスを絶対にしない ([相対パスを絶対パスにする](#相対パスを絶対パスにする))。標準に渡す長さ以下の相対パスは、相対のまま 1 で標準に渡す
+- connect 系は相対パスを絶対にしない ([相対パスを絶対パスにする](#相対パスを絶対パスにする))。標準ライブラリに渡す長さ以下の相対パスは、相対のまま 1 で標準ライブラリに渡す
 - connect の綴りは相手に残らない (connect した側のソケットは bind されない) ので、E を残さない。CLI の 1 回だけの connect は普通 2 で終わり、置き場に書けない sandbox でも届く
 - relative と widened は、置き場を通す経路より遠くまで届く場面がある
 - 3 を使える OS は Linux / Android・Apple の OS ([thread-cwd-direct](SPEC-routes-ja.md#thread-cwd-direct))
 - DGRAM の connect も同じ順
 
-## 長いパスで標準と違う点
+## 長いパスで標準ライブラリと違う点
 
-bind と resolve は相対パスを絶対パスにするので ([相対パスを絶対パスにする](#相対パスを絶対パスにする))、短い相対パスでも標準と違う点がある (表の「相対パス:」の行)。
+bind と resolve は相対パスを絶対パスにするので ([相対パスを絶対パスにする](#相対パスを絶対パスにする))、短い相対パスでも標準ライブラリと違う点がある (表の「相対パス:」の行)。
 
 | 点 | 内容 |
 |---|---|
 | 相対パス: カーネルが返すアドレス | 相対パスで bind すると、短くても、bind した側の `getsockname`、そこへ connect した側の `getpeername`、`ss`・`lsof` 等に出るアドレスが、渡した相対パスでなく絶対パス (絶対パスの候補か経路の綴り) になる。アドレスの文字列を渡した相対パスと比べるコードは合わない |
-| 相対パス: 深い cwd | 絶対にすると標準に渡す長さを超える相対パスは、標準なら何も作らずに済む短さでも経路に回り、置き場に B・D・E ができる |
-| 相対パス: 候補を作った後の cwd の変更 | 絶対パスの候補を作ってから bind するまでの間に cwd が変わると、候補を作った時点の cwd の所に作る (標準の相対パスの bind は bind の時点の cwd) |
-| カーネルが返すアドレス | bind した側の `getsockname` と、そこへ connect した側の `getpeername` は元のパスでなく bind の綴りを返す。後で使えるかは `Spelling` で分かる。標準の型でアドレスを返す口を差し替えられる言語 (Python・TypeScript) は元のパスを返す。illumos では connect した側の `getpeername` が、bind した綴りでなく connect に渡した綴りを返す (sockat-rs の CI で実測 2026-11-19) |
+| 相対パス: 深い cwd | 絶対にすると標準ライブラリに渡す長さを超える相対パスは、標準ライブラリなら何も作らずに済む短さでも経路に回り、置き場に B・D・E ができる |
+| 相対パス: 候補を作った後の cwd の変更 | 絶対パスの候補を作ってから bind するまでの間に cwd が変わると、候補を作った時点の cwd の所に作る (標準ライブラリの相対パスの bind は bind の時点の cwd) |
+| カーネルが返すアドレス | bind した側の `getsockname` と、そこへ connect した側の `getpeername` は元のパスでなく bind の綴りを返す。後で使えるかは `Spelling` で分かる。標準ライブラリの型でアドレスを返す口を差し替えられる言語 (Python・TypeScript) は元のパスを返す。illumos では connect した側の `getpeername` が、bind した綴りでなく connect に渡した綴りを返す (sockat-rs の CI で実測 2026-11-19) |
 | 運用の道具での見え方 | `ss -x`・`lsof`・`/proc/net/unix` 等に出るアドレスが bind の綴りになる。link-dir と thread-cwd・at はファイル名が綴りの最後に残る。link-file の綴りにはファイル名が出ない |
-| listener を閉じた時 | 既定の bind (Go の `Listen` 等) は標準と同じにする。閉じる時にアドレスの綴りで unlink する標準 (Go の `UnixListener.Close`) では、link-dir の綴りは途中の E を辿って元のパスのファイルを消す (標準と同じ)。link-file の綴りは unlink が最後の symlink を辿らないので E 自体が消え、ソケットのファイルは残る (標準と違う。各言語の README に書く)。`Dangling` の綴りは unlink させない (Go は `SetUnlinkOnClose(false)`)。`_ex` の bind は、どの綴りでも閉じた時に消さない。消すのは `SocketFile` の `remove()` だけ (綴りで消すと、置き換わったファイルを見分けずに消すため) |
+| listener を閉じた時 | 既定の bind (Go の `Listen` 等) は標準ライブラリと同じにする。閉じる時にアドレスの綴りで unlink する標準ライブラリ (Go の `UnixListener.Close`) では、link-dir の綴りは途中の E を辿って元のパスのファイルを消す (標準ライブラリと同じ)。link-file の綴りは unlink が最後の symlink を辿らないので E 自体が消え、ソケットのファイルは残る (標準ライブラリと違う。各言語の README に書く)。`Dangling` の綴りは unlink させない (Go は `SetUnlinkOnClose(false)`)。`_ex` の bind は、どの綴りでも閉じた時に消さない。消すのは `SocketFile` の `remove()` だけ (綴りで消すと、置き換わったファイルを見分けずに消すため) |
 | ディレクトリを先に引く | link-dir と thread-cwd・at の E はソケットのディレクトリの realpath を指し、proc-direct・at-direct・thread-cwd-direct はディレクトリを引いてからファイル名で渡す。その間の rename や symlink の張り替えは反映されない |
 | 他のスレッドの chdir | relative は、間に cwd が変わったままなら一般のエラー。変えて戻した場合は見えない |
 | 状態がアプリの置き場の外に増える | B・D・E が `/tmp`・`$XDG_RUNTIME_DIR`・`$TMPDIR` に残る。既定の `bind` の E と死んだプロセスの D は OS の掃除まで残る ([置き場に残る物](#置き場に残る物)) |
 | 生きている D が消されうる環境 | systemd v242 より古い Linux と、B が macOS の `$TMPDIR` にある時 ([置き場に残る物](#置き場に残る物))。綴りが辿れなくなるだけ |
 | `PrivateTmp` の相手 | 相手の `/tmp` が隔離されていると、`/tmp` を通る綴りを相手は辿れない。Linux では procB を先に使うので、まず起きない。辿れるかは `usable_with_private_tmp` で分かる |
 
-- 先頭以外の NUL は短いパスでも引数の誤り。標準が NUL で黙って切り詰める言語 (Go 等) では、リファレンスの「標準と違う点」に書く
+- 先頭以外の NUL は短いパスでも引数の誤り。標準ライブラリが NUL で黙って切り詰める言語 (Go 等) では、リファレンスの「標準ライブラリと違う点」に書く
 
 ## 使ってはいけない書き方
 
@@ -432,7 +432,7 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 | `Spelling` を見ずに、カーネルが返す綴り (`getsockname`、listener のアドレス等) でソケットのファイルを unlink / stat する | link-file の綴りでは E が消えるだけでファイルは残る。`Dangling` の綴りはどこにも届かない | 元のパスを持っておいて使う。`remove()` |
 | `cleanup` の後やプロセスが終わった後に、古い綴りを使う | 片付けた後の `/tmp` の B は、他人が同じ名前で作り直しうる。procB の綴りはプロセスが終われば辿れない | 綴りは `until` の間だけ使う |
 | 相対パスで bind し、cwd を変えた後に、渡した相対パスの文字列で消す | 別の場所のファイルに当たる (sockat が絶対にするのはカーネルに渡す綴りで、利用者が持つ文字列は相対のまま。`CwdRelative` の時はカーネルの綴りも相対) | `remove()`。自分で絶対パスにする時は、`..` を字句で畳む関数を使わない (`a/sym/..` が別のディレクトリになる) |
-| listener を閉じればソケットのファイルが消えると当てにする | 長いパスでは綴りしだいで消えない (「[長いパスで標準と違う点](#長いパスで標準と違う点)」)。`bind_ex` の listener は閉じても消さない | `remove()` か、元のパスで消す |
+| listener を閉じればソケットのファイルが消えると当てにする | 長いパスでは綴りしだいで消えない (「[長いパスで標準ライブラリと違う点](#長いパスで標準ライブラリと違う点)」)。`bind_ex` の listener は閉じても消さない | `remove()` か、元のパスで消す |
 | `remove()` で listener も閉じると当てにする | `remove()` はファイルを消すだけ | listener は自分で閉じる |
 | listener を閉じた後に `remove()` を呼ぶ | 閉じた後に作り直された別のファイルを見分けられないことがある ([`remove`](#remove)) | listener を閉じる前に呼ぶ |
 | `procB` の綴りや `usable_cross_uid` が false の綴りを別の uid の相手に辿らせる | 辿れない | `Options.usable_cross_uid` を指定し、結果の `Spelling` を確かめる |
@@ -447,7 +447,7 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 | bind 先に既にファイルがある | `EADDRINUSE` |
 | 誰も listen していない / 誰も持たないソケットファイル | `ECONNREFUSED` (DGRAM の connect は illumos で `EDESTADDRREQ`。sockat-go の CI で実測 2026-11-21) |
 | backlog が満杯 | Linux はブロックしない connect で `EAGAIN` (ブロックする connect は待つ)、macOS は `ECONNREFUSED` |
-| どの経路も使えない (綴りが収まらない、手段が無い) | `ENAMETOOLONG` (bind と resolve で、標準に渡す長さ以下の相対パスは相対のまま標準に渡す) |
+| どの経路も使えない (綴りが収まらない、手段が無い) | `ENAMETOOLONG` (bind と resolve で、標準ライブラリに渡す長さ以下の相対パスは相対のまま標準ライブラリに渡す) |
 | `resolve_for_bind` で、thread-cwd・at でしか届かない長さ | `ENAMETOOLONG` |
 | `resolve_for_connect` で、link-file を使えない (B を作れない、綴りが収まらない) | `ENAMETOOLONG` |
 | `Options.base` が相対パス、NUL を含む、または最後がファイル名でない (`dir/`・`..`・`/`)。パスの長さによらず、abstract の名前の判定より前に検査する (先頭以外の NUL と同じく引数の形の検査) | 引数の誤り |
@@ -455,40 +455,40 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 | `Options.base` の場所がディレクトリでも symlink でもない | `ENOTDIR` |
 | `Options.base` までの途中のディレクトリが無い | `ENOENT` |
 | `Options.base` の持ち主・権限の確かめに外れた (`usable_cross_uid` と一緒の bind 系の、途中と base 自身が other に x を持つかを含む) | `EPERM` |
-| 標準に渡す長さを超えるパスで、名前で終わらない | 引数の誤り |
+| 標準ライブラリに渡す長さを超えるパスで、名前で終わらない | 引数の誤り |
 | 先頭以外に NUL を含むパス (長さによらない) | 引数の誤り |
-| 空のパス | 引数の誤り (`Options.base` の形の検査の後、abstract の判定より前。Linux の標準は空のパスの bind を名前の無い abstract のアドレスへの autobind にする) |
+| 空のパス | 引数の誤り (`Options.base` の形の検査の後、abstract の判定より前。Linux では標準ライブラリが空のパスの bind を名前の無い abstract のアドレスへの autobind にする) |
 | relative の途中で cwd が変わった | 一般のエラー |
 
 - ディレクトリを先に引くので、`ENOENT` と `ENOTDIR` はどの OS でも長さの判定より前に決まる
 - bind と resolve で、相対パスのソケットのディレクトリが無い時は、短くても長いパスと同じに `ENOENT` (`route` は無い)。絶対パスの候補を作れず、経路に進んでソケットのディレクトリを引いた所で決まる
 - `Options.base` のエラーでは自動の置き場に落とさない
 - OS のエラーは、その言語の作法で errno を取り出せる形で返す
-- OS が返すエラーは書き換えずに返すので、errno は OS で違いうる。試験は errno を決め打ちせず、同じ OS で標準が短いパスの同じ操作に返す errno と比べる
-- 標準自身が OS のエラーを別の errno に換える時 (Node の listen が無いディレクトリに `EACCES` を返す等) は、標準に渡した綴り (標準に渡す長さ以下のパス、絶対パスの候補) の失敗は標準のまま、標準に渡さなかったパスはこの表の errno を返す。試験はその errno をこの表と比べる
+- OS が返すエラーは書き換えずに返すので、errno は OS で違いうる。試験は errno を決め打ちせず、同じ OS で標準ライブラリが短いパスの同じ操作に返す errno と比べる
+- 標準ライブラリ自身が OS のエラーを別の errno に換える時 (Node の listen が無いディレクトリに `EACCES` を返す等) は、標準ライブラリに渡した綴り (標準ライブラリに渡す長さ以下のパス、絶対パスの候補) の失敗は標準ライブラリの errno のまま、標準ライブラリに渡さなかったパスはこの表の errno を返す。試験はその errno をこの表と比べる
 - 「引数の誤り」「一般のエラー」をどの型で表すかは各実装が決める
 
 ## 各実装に求めること
 
 - この仕様の経路と順番に従う ([SPEC-routes-ja.md](SPEC-routes-ja.md))。その言語で作れない経路は飛ばし (使えない経路として次へ進み、`_ex` の `skipped` に理由付きで入れる)、リファレンスに OS × 経路の表で明示する
 - 言語によらない適合試験 ([docs/design/conformance.md](design/conformance.md)) の試験用 CLI を用意する
-- 自前で作ったソケットを標準の型に取り込む言語では、widened で connect したソケットを取り込んでも、取り込みやアドレスの取得で落ちないか確かめる。落ちるなら widened を作れない経路として飛ばす
+- 自前で作ったソケットを標準ライブラリの型に取り込む言語では、widened で connect したソケットを取り込んでも、取り込みやアドレスの取得で落ちないか確かめる。落ちるなら widened を作れない経路として飛ばす
 - 経路は公開 API に出さない。試験はパッケージの中から各経路を直接呼んで強制する
 - 環境を読む部分 (置き場の候補、`/proc` の場所、Apple の OS で広げた sockaddr を受け付けるか、スレッドの cwd を使えるか) は試験から差し替えられるようにする
 - リファレンスにこの仕様へのリンクを置く (README からは、末尾の技術説明を通して辿れる)。仕様と食い違う振る舞いを入れる時は、先にこの仕様を直す
-- 利用者向けの説明 (各言語のマニュアルとリファレンス) は、言語によらない話を写さず、この仕様と pages の該当の節へリンクする。リンクする節: 「[長いパスで標準と違う点](#長いパスで標準と違う点)」「[使ってはいけない書き方](#使ってはいけない書き方)」「[置き場に残る物](#置き場に残る物)」「[`sweep`](#sweep)」。各言語の文書に書くのは、その言語での名前と型の対応、その言語での具体的な形と推奨コード、その言語に固有の注意 (標準ライブラリや runtime の不具合・制約) だけ。固有の注意はハブの [言語ごとの注意](../pages/langs-ja.md) に 1 行で載せる
-- 各言語の README の冒頭 (何に困っている人の物か、その言語の標準が出すエラー、その言語での書き換え前後、インストール方法) は、リンクで済ませずその言語の例で書く。写さないのは、その先の説明
+- 利用者向けの説明 (各言語のマニュアルとリファレンス) は、言語によらない話を写さず、この仕様と pages の該当の節へリンクする。リンクする節: 「[長いパスで標準ライブラリと違う点](#長いパスで標準ライブラリと違う点)」「[使ってはいけない書き方](#使ってはいけない書き方)」「[置き場に残る物](#置き場に残る物)」「[`sweep`](#sweep)」。各言語の文書に書くのは、その言語での名前と型の対応、その言語での具体的な形と推奨コード、その言語に固有の注意 (標準ライブラリや runtime の不具合・制約) だけ。固有の注意はハブの [言語ごとの注意](../pages/langs-ja.md) に 1 行で載せる
+- 各言語の README の冒頭 (何に困っている人の物か、その言語の標準ライブラリが出すエラー、その言語での書き換え前後、インストール方法) は、リンクで済ませずその言語の例で書く。写さないのは、その先の説明
 - 各言語の文書は、パスをそろえる (ハブから張るため): マニュアルのトップ `docs/MANUAL-ja.md`・`docs/MANUAL.md` (したいことの並びだけ。順は bind、connect、DGRAM、SEQPACKET、resolve)、場面ごとの使い方 `docs/manual/bind-ja.md`・`connect-ja.md`・`datagram-ja.md`・`seqpacket-ja.md`・`resolve-ja.md` と英語の `.md` (場面ごとの見出しと典型的なサンプルコード。その言語に無い物は置かない。SEQPACKET は専用の関数が無いので、短い案内と resolve のページへのリンクだけにする。案内には、どちらの resolve を使うかを書く: 待ち受ける (bind する) 側は `resolve_for_bind`、つなぐ (connect する) 側は `resolve_for_connect`)、リファレンス `docs/REFERENCE-ja.md`・`docs/REFERENCE.md` (使い方でない物: 関数と型の一覧、`Options`、`Spelling`、エラー、使ってはいけない書き方、固有の注意、OS × 経路の表)
 
 ## 実装が確かめる試験の観点
 
 | 観点 | 確かめること |
 |---|---|
-| 短いパスの境界 | 標準に渡す長さちょうどは標準にそのまま渡り、1 バイト長いと経路に回る (標準自身で境界を確かめる) |
-| 相対パスの bind と resolve | 短い相対パスは絶対パスの候補で標準に渡り `Original`。symlink を通した cwd では、実パスの候補と `$PWD` の候補のどちらか収まる方で標準に渡る。`$PWD` が `.` と違う時は `$PWD` の候補を使わない。`..` を含む相対パスで、畳んだディレクトリが元と違う時 (`a/sym/..`) はその候補を使わない。深い cwd の短い相対パスは経路に回る。どの経路も使えない時は相対のまま標準に渡り `CwdRelative`。絶対パスの候補で bind して失敗したら、もう 1 つの候補や相対パスで試し直さない。相対パスで bind した後に cwd を変えても、`remove()` が bind したファイルを消す |
-| 長い絶対パスの実パスの候補 | 実パスなら収まる長い絶対パス (symlink を通す) は、置き場に何も作らず標準に渡る (`Original`) |
-| connect 系の相対パス | 相対パスを絶対にせず、標準に渡す長さ以下なら相対のまま標準に渡る (置き場に何も作らない) |
-| `ForConnect` の `spelling` | 標準に渡す長さ以下の絶対パスと絶対パスの候補は `Original`、link-file の綴りは `Linked` (`removable` は false)。procB の綴りは `until` が `Process` |
+| 短いパスの境界 | 標準ライブラリに渡す長さちょうどは標準ライブラリにそのまま渡り、1 バイト長いと経路に回る (標準ライブラリ自身で境界を確かめる) |
+| 相対パスの bind と resolve | 短い相対パスは絶対パスの候補で標準ライブラリに渡り `Original`。symlink を通した cwd では、実パスの候補と `$PWD` の候補のどちらか収まる方で標準ライブラリに渡る。`$PWD` が `.` と違う時は `$PWD` の候補を使わない。`..` を含む相対パスで、畳んだディレクトリが元と違う時 (`a/sym/..`) はその候補を使わない。深い cwd の短い相対パスは経路に回る。どの経路も使えない時は相対のまま標準ライブラリに渡り `CwdRelative`。絶対パスの候補で bind して失敗したら、もう 1 つの候補や相対パスで試し直さない。相対パスで bind した後に cwd を変えても、`remove()` が bind したファイルを消す |
+| 長い絶対パスの実パスの候補 | 実パスなら収まる長い絶対パス (symlink を通す) は、置き場に何も作らず標準ライブラリに渡る (`Original`) |
+| connect 系の相対パス | 相対パスを絶対にせず、標準ライブラリに渡す長さ以下なら相対のまま標準ライブラリに渡る (置き場に何も作らない) |
+| `ForConnect` の `spelling` | 標準ライブラリに渡す長さ以下の絶対パスと絶対パスの候補は `Original`、link-file の綴りは `Linked` (`removable` は false)。procB の綴りは `until` が `Process` |
 | 綴りが当たる所 | 綴りを unlink / stat しても無関係なファイル (cwd の同名ファイル、fd の番号を使い回させた別のディレクトリの同名ファイル) に当たらない |
 | B の確認 | B までの途中の確認で外れた置き場を使わない。置き場 1〜3 の既定の名前の B が既にあって確かめに外れたら (占拠)、その置き場に何も作らず次の置き場へ進み、B を使う経路が使えなかった時の `reason` で占拠と分かる。`Options.base` が外れたらエラー |
 | 並行 | 並行する多数の bind / connect で B・D の作成と既定の bind の E の使い回しが競合しない |
@@ -505,7 +505,7 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 | relative と cwd | relative の途中で cwd が変わったら一般のエラー |
 | macOS | connect 系で 253 バイトのパスが widened で通る。bind は widened を使わない |
 | ブロックしない connect | backlog が満杯で待たずに失敗する |
-| 名前で終わらないパス、先頭以外の NUL | 何も作らずに引数の誤り。NUL は短いパスでも。先頭が NUL (abstract) は標準に渡る |
+| 名前で終わらないパス、先頭以外の NUL | 何も作らずに引数の誤り。NUL は短いパスでも。先頭が NUL (abstract) は標準ライブラリに渡る |
 | カーネルが返すアドレス | 長いパスでも取得で落ちない。差し替えられる言語では、listener・accept したソケット・connect したソケットの各口が元のパスを返し、その言語の代表的な上のライブラリ (Python の asyncio の `start_unix_server(sock=...)` 等) が引数を足さずに短いパスと同じに動く |
 
 - 経路は OS で違うので、少なくとも macOS と Linux で回す。他の Unix は CI の VM で回す

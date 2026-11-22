@@ -19,8 +19,8 @@
 
 | API | すること |
 |---|---|
-| `bind(path)` | 長いパスでも bind して、listen 済みの標準の listener を返す |
-| `connect(path)` | 長いパスでも connect して、標準の stream を返す |
+| `bind(path)` | 長いパスでも bind して、listen 済みの標準ライブラリの listener を返す |
+| `connect(path)` | 長いパスでも connect して、標準ライブラリの stream を返す |
 | `connect_nonblocking(path)` | 待たずに connect する (async ランタイム向け) |
 | `datagram::bind(path)`<br>`datagram::unbound()`<br>`datagram::connect(&sock, path)` | DGRAM のソケットを bind / connect する |
 | `bind_ex(path, options)`<br>`connect_ex(path, options)` 等 | 上と同じことをして、ソケットのファイルを消す口と、どう届いたかの情報も返す |

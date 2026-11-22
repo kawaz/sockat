@@ -10,7 +10,7 @@ How sockat makes a short path in place of a long one. This page lines up the tec
 /home/u/.cache/example-app/worktrees/feature-login/.tmp/test-0f3a9c/daemon.sock
 ```
 
-A Unix domain socket address (`sockaddr_un`) carries the path in a fixed-size field called `sun_path`. Leaving room for the NUL, it holds 107 bytes on Linux and 103 bytes on macOS and the BSDs. This page calls this the "sockaddr length". A path deep down like the one above goes over it, and the standard library refuses before the bind / connect (Rust's `path must be shorter than SUN_LEN`, Python's `AF_UNIX path too long`, etc.). Some standards, like Node.js 22 on Linux, silently truncate it to 108 bytes and create the socket somewhere else.
+A Unix domain socket address (`sockaddr_un`) carries the path in a fixed-size field called `sun_path`. Leaving room for the NUL, it holds 107 bytes on Linux and 103 bytes on macOS and the BSDs. This page calls this the "sockaddr length". A path deep down like the one above goes over it, and the standard library refuses before the bind / connect (Rust's `path must be shorter than SUN_LEN`, Python's `AF_UNIX path too long`, etc.). Some standard libraries, like that of Node.js 22 on Linux, silently truncate it to 108 bytes and create the socket somewhere else.
 
 The limit is on the length of the path string handed to the kernel, not on the depth of the directory. Hand it a short string that points to the same place, and a socket deep down is reached.
 
@@ -46,7 +46,7 @@ Drawbacks:
 
 - A thread's cwd cannot be used on Linux under a seccomp filter (docker's default, systemd's `SystemCallFilter=`). Some filters kill the process with SIGSYS on the mere call of `unshare`, so you have to check first whether one is in place
 - `pthread_fchdir_np` is a private API of libSystem and may go away in the future
-- Starting a thread has a cost. In a study for the TypeScript implementation, starting a throwaway Worker took about 9 ms per call, while a standard connect with a spelling through a symlink took 0.1 ms
+- Starting a thread has a cost. In a study for the TypeScript implementation, starting a throwaway Worker took about 9 ms per call, while a connect through the standard library with a spelling through a symlink took 0.1 ms
 - fork has side effects on the whole process: the child holds copies of every fd, the parent gets `SIGCHLD`, `pthread_atfork` handlers run, another thread's `waitpid(-1)` may reap the child, on connect the peer pid the other side sees is that of the exited child, etc. In Go the runtime does not work in a forked child, so it cannot be used
 - On bind, the spelling the kernel remembers is just the file name ([next section](#bind-and-connect-differ))
 
@@ -74,7 +74,7 @@ Open the socket's directory, hold the fd, and spell through that fd in `/proc`.
 
 - OSes: Linux / Android with `/proc`
 - Reach: a file name up to about 90 bytes (it varies with the fd's digits)
-- Pros: needs no write and no thread. crun, conmon, podman, systemd's `connect_unix_path` and Bun's standard (Linux) use this form for long paths
+- Pros: needs no write and no thread. crun, conmon, podman, systemd's `connect_unix_path` and Bun's standard library (Linux) use this form for long paths
 - Cons: you have to be ready for environments where the PID namespace and the `/proc` mount do not match. sockat uses it only when `/proc/self/fd/<fd>` stat'ed has the same `(st_dev, st_ino)` as `fstat` of the fd. On bind, the spelling points somewhere else after the fd is closed
 
 ### Placing a symlink
@@ -170,7 +170,7 @@ The spelling is resolved again later, in another context. A spelling that would 
 | a path relative to the cwd | hits another place when the cwd changes |
 | widened sockaddr | the address is cut in the middle, and the reading side breaks |
 
-It is the upper library, not the user's code, that removes the file, so the user has no way to avoid it. There are real uses of these forms. Bun's standard, for a bind at a long path, binds with `/proc/self/fd/<fd>/<file name>` on Linux and then closes the fd, and binds with just the file name on macOS. crun and conmon also bind with `/proc/self/fd/<fd>/<name>` of an fd they close later.
+It is the upper library, not the user's code, that removes the file, so the user has no way to avoid it. There are real uses of these forms. Bun's standard library, for a bind at a long path, binds with `/proc/self/fd/<fd>/<file name>` on Linux and then closes the fd, and binds with just the file name on macOS. crun and conmon also bind with `/proc/self/fd/<fd>/<name>` of an fd they close later.
 
 The opposite form also exists: bind through a symlink with a random name and remove it at once within the call. It does not hit an unrelated file later, but since the spelling reaches nothing, upper libraries that remove by the `getsockname` spelling, DGRAM replies and operational tools do not reach the original path. That a reply does not reach a DGRAM sender bound to a long path has been confirmed by measurement.
 
@@ -217,7 +217,7 @@ How the techniques of the previous section map to the names inside sockat. The n
 
 | Technique | Name inside sockat | Used for |
 |---|---|---|
-| Hand the original path to the standard unchanged | `standard` | bind, connect |
+| Hand the original path to the standard library unchanged | `standard` | bind, connect |
 | Symlink to the directory (through B, D, E) | `link-dir` | bind |
 | Symlink to the file (through B, D, E) | `link-file` | bind, connect |
 | A thread's cwd (through D and an E removed at once) | `thread-cwd` | bind |
@@ -233,7 +233,7 @@ How the techniques of the previous section map to the names inside sockat. The n
 
 | Order | Route | Spelling | Used when |
 |---|---|---|---|
-| 1 | `standard` | the original path | up to the standard length |
+| 1 | `standard` | the original path | up to the standard library length |
 | 2 | `link-dir` | `/proc/<pid>/fd/<B's fd>/D/E/<file name>` | on Linux, `/proc` is usable and it fits |
 | 3 | `link-dir` | `<B's real path>/D/E/<file name>` | it fits |
 | 4 | `link-file` | `<B's real path>/D/E` | OSes whose bind follows a symlink |
@@ -328,7 +328,7 @@ Why not remove automatically:
 | Idea | Why not |
 |---|---|
 | bind / connect in a forked child | the side effects (fd copies, `SIGCHLD`, `pthread_atfork`, another thread's `waitpid(-1)`, on connect the pid the peer sees) reach the whole process, and more users do not want them than do. If the parent does the listen of a bind, the side effects visible to the peer go away, but the invisible ones stay. Placed after thread-cwd-direct and link-file, it would only be used where neither threads nor B can be used |
-| use the widened sockaddr for bind | the address is cut in the middle, which breaks the standards of CPython and Go |
+| use the widened sockaddr for bind | the address is cut in the middle, which breaks the standard libraries of CPython and Go |
 | no random name in a bind's spelling (`/proc/self/fd/<fd>/<file name>`, just the file name) | resolved later it hits an unrelated file. The upper library removes it, and the user cannot avoid it |
 | clean up a bind's spelling within the call | upper libraries that remove by the `getsockname` spelling, DGRAM replies and operational tools do not reach the original path |
 | open B, hold it by fd, then remove it and use it only through the fd in `/proc` (leaving nothing in the base) | nothing can be created inside a removed directory (`ENOENT`, measured) |

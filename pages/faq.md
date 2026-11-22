@@ -16,7 +16,7 @@ No. If you can choose the socket's path, putting it somewhere short is best. soc
 - You connect / send to a path the other side chose (passed in an environment variable such as `NOTIFY_SOCKET`)
 - A library uses the path its caller passed as is
 
-### What differs from the standard for a long path?
+### What differs from the standard library for a long path?
 
 The spelling the kernel keeps (`getsockname`, the listener's address) is not the original path but a spelling through D and the symlink E inside the base B. While the spelling lives it points to the same place as the original path, but depending on its kind, removing by it may leave the file, or it may reach nothing. Whether the spelling can be used later is told by the `Spelling` that `_ex` returns. Remove the file by the original path or with `remove()` ([Patterns not to use in the SPEC](../docs/SPEC.md#patterns-not-to-use)).
 
@@ -112,4 +112,4 @@ Before closing the listener. After it is closed, a different file recreated at t
 
 ### Is it dangerous that others can recreate a spelling after the base is cleaned up?
 
-The standard is the same: once the file at the original path is removed, anyone who can write to that directory can recreate the same path. Do not use an old spelling or path after cleanup.
+The standard library is the same: once the file at the original path is removed, anyone who can write to that directory can recreate the same path. Do not use an old spelling or path after cleanup.

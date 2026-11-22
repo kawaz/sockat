@@ -14,7 +14,7 @@ Whether sockat reaches a long path, by which route, and if not, why, for each co
 - Every combination is computed. Rows with the same result (reached, route, spelling, reason, basis) that differ in the value of one condition only are merged into one row, repeatedly until nothing merges
 - The file name, and the shorter of the original and the relative path, are split into bands at the lengths where some route's spelling starts or stops fitting. Within a band the result does not change (gen.py checks both ends of each band)
 - A condition that is "any" in every row of a table gets no column; it is listed above the table under "Conditions with no effect"
-- Base lengths are typical values (the bases table under "Conditions"). The directory is assumed deep enough that the path is over the standard length; the whole path's length has no effect up to PATH_MAX
+- Base lengths are typical values (the bases table under "Conditions"). The directory is assumed deep enough that the path is over the standard library length; the whole path's length has no effect up to PATH_MAX
 - Languages are split only where a route they cannot build (lacks) changes the result
 
 ## Estimates and measurements
