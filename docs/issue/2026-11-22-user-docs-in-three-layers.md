@@ -56,6 +56,7 @@ origin: "自リポ TODO"
 - [ ] Q&A (`pages/faq`) は、ネタを溜めるメモとして今のまま置く (kawaz 2026-11-22。構成を考える時に直す)。載せる予定のネタ: CLI の「通したのに短くならない・長くなった」([DR-0018](../decisions/DR-0018-cli-resolve-with-reused-hashed-link.md))
 - [x] CLI の公開 (ライブラリ 0.6.0 と sockat-cli 0.1.0 を同じ release で出す) の前に、ハブに CLI の利用マニュアルを書く (書いた。公開まで README 等からは張らない。公開の時に、実物の出力と合っているかを見直す): `pages/cli-ja.md` と `pages/cli.md`。CLI の `--help` の末尾が `pages/cli.md#environment` を指しているので、環境変数の節の見出しは英語が `Environment`、日本語が「環境変数」
 - [x] CLI の公開 (sockat-rs 0.6.1) に合わせた追記を出す: README (日英) の CLI の節、`pages/cli` の入れ方 (Homebrew `kawaz/tap/sockat`、`cargo install sockat-cli`、リリースのページの実行ファイル)、`pages/reference` の CLI の行、`pages/manual` の表、`pages/langs` の Rust の行の付け替え
-- [ ] DR-0019 が決まったら、README の「短いパスは今までどおり標準にそのまま渡す」の言い方を見直す
+- [x] README の「短いパスは今までどおり…そのまま渡します」は、DR-0019 の後も言い直さない (kawaz 2026-11-22、RM-Q1 = b。「そのまま」を外すと意味が変わる)
+- [ ] 文書の語彙を、会話を知らない読者が読んで自然な日本語にする (kawaz 2026-11-22): 「標準」だけで標準ライブラリを指す書き方をやめ、「標準ライブラリ」と書く (README は直した。残りは `pages/`、SPEC、`docs/design/`、各言語のリポ)。作業の中で通じていた略し方 (std の直訳) を文書に持ち込まない
 - [ ] 各言語が文書を組み直した版を push する時に、ハブのリンクを付け替える: `pages/langs` (日英) の各言語の行をその言語の REFERENCE のアンカーへ (Rust は `docs/REFERENCE-ja.md#rust-に固有の注意`・`docs/REFERENCE.md#caveats-specific-to-rust`。他の言語は知らせを待つ)、`pages/fork-cwd` の Go の言及、`pages/reference` の Python・TypeScript の行。そろったら `pages/manual` を「したいこと × 言語」の表にする
 - [ ] pages/ の公開の経路 (GitHub Pages) と、言語を選べる入口・検索から入るランディングページ

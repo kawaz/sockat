@@ -11,7 +11,7 @@ Unix domain socket のパスが長すぎて bind / connect できない。sockat
 | Go | `listen unix /…/app.sock: bind: invalid argument` | [sockat-go](https://github.com/kawaz/sockat-go) |
 | Node.js / Bun | `Error: listen EINVAL: invalid argument /…/app.sock` | [sockat-ts](https://github.com/kawaz/sockat-ts) |
 
-標準の bind / connect を sockat に置き換えるだけで、長いパスでもそのまま動きます。Rust の例です (他の言語も同じ形で、表のリンク先にあります)。
+標準ライブラリの bind / connect を sockat に置き換えるだけで、長いパスでもそのまま動きます。Rust の例です (他の言語も同じ形で、表のリンク先にあります)。
 
 ```rust
 // let listener = UnixListener::bind(&path)?;
@@ -21,7 +21,7 @@ let listener = sockat::bind(&path)?;
 let stream = sockat::connect(&path)?;
 ```
 
-返ってくるのは標準と同じ型で、短いパスは今までどおり標準にそのまま渡します。長いパスの時だけ、sockat が同じ場所を指す短い道を裏で用意してつなぎます。パスを短くする工夫も、OS ごとの上限も、気にしなくて構いません。
+返ってくるのは標準ライブラリと同じ型で、短いパスは今までどおり標準ライブラリにそのまま渡します。長いパスの時だけ、sockat が同じ場所を指す短い道を裏で用意してつなぎます。パスを短くする工夫も、OS ごとの上限も、気にしなくて構いません。
 
 ## CLI もあります
 
