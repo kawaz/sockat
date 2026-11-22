@@ -23,6 +23,25 @@ let stream = sockat::connect(&path)?;
 
 返ってくるのは標準と同じ型で、短いパスは今までどおり標準にそのまま渡します。長いパスの時だけ、sockat が同じ場所を指す短い道を裏で用意してつなぎます。パスを短くする工夫も、OS ごとの上限も、気にしなくて構いません。
 
+## CLI もあります
+
+アプリに組み込む前のお試しに便利です。
+
+```console
+$ sockat /very/long/…/app.sock
+/private/tmp/sockat-501/f21ddd85c65f/app.sock
+
+$ sockat --json /very/long/…/app.sock
+{
+  "path": "/private/tmp/sockat-501/f21ddd85c65f/app.sock",
+  "bytes": 45,
+  "limit": 103,
+  …
+}
+```
+
+入れ方と使い方は [sockat コマンド](./pages/cli-ja.md) にあります。
+
 ## もっと詳しく
 
 - [利用マニュアル](./pages/manual-ja.md)

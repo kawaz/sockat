@@ -11,6 +11,8 @@ The details of the functions and types are in each language's API reference.
 | Go | [pkg.go.dev](https://pkg.go.dev/github.com/kawaz/sockat-go) |
 | JavaScript / TypeScript | [sockat-ts reference](https://github.com/kawaz/sockat-ts/blob/main/docs/REFERENCE.md) |
 
+For the command line, see [the sockat command](./cli.md).
+
 ## What APIs there are
 
 These are the APIs. The names are the Rust ones; the other languages use names that follow their own conventions.

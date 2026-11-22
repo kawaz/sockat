@@ -11,6 +11,8 @@
 | Go | [pkg.go.dev](https://pkg.go.dev/github.com/kawaz/sockat-go) |
 | JavaScript / TypeScript | [sockat-ts のリファレンス](https://github.com/kawaz/sockat-ts/blob/main/docs/REFERENCE-ja.md) |
 
+コマンドラインで使う時は [sockat コマンド](./cli-ja.md) を見てください。
+
 ## どんな API があるか
 
 次の API があります。名前は Rust の物で、他の言語はその言語の慣習の名前です。

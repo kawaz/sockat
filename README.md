@@ -23,6 +23,25 @@ let stream = sockat::connect(&path)?;
 
 You get back the same types as the standard, and short paths go to the standard unchanged, as before. Only for a long path does sockat quietly set up a short way to the same place and connect through it. You don't need to shorten paths yourself or care about each OS's limit.
 
+## There is a CLI too
+
+Handy for trying sockat out before embedding it in your app.
+
+```console
+$ sockat /very/long/…/app.sock
+/private/tmp/sockat-501/f21ddd85c65f/app.sock
+
+$ sockat --json /very/long/…/app.sock
+{
+  "path": "/private/tmp/sockat-501/f21ddd85c65f/app.sock",
+  "bytes": 45,
+  "limit": 103,
+  …
+}
+```
+
+How to install and use it is in [the sockat command](./pages/cli.md).
+
 ## More
 
 - [User manual](./pages/manual.md)

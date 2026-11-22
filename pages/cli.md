@@ -7,10 +7,16 @@ A command that turns a Unix domain socket path that is too long into a path to t
 ## Install
 
 ```sh
+brew install kawaz/tap/sockat
+```
+
+or:
+
+```sh
 cargo install sockat-cli
 ```
 
-The command is named `sockat`.
+Prebuilt binaries per OS are on the [releases page](https://github.com/kawaz/sockat-rs/releases). The command is named `sockat`.
 
 ## Hand the path to another command
 
