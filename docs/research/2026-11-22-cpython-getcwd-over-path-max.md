@@ -1,7 +1,7 @@
 # CPython の os.getcwd が、PATH_MAX を超える cwd で引き直しを止めない件 (本家へ報告するための下調べ)
 
 - Date: 2026-11-22
-- Status: Concluded (CPython に公開の issue で報告した: [gh-162441](https://github.com/python/cpython/issues/162441)、2026-11-23、kawaz の名前で。非公開の窓口には出していない。illumos には報告していない。sockat-py の深い cwd の試験は、illumos で `os.getcwd` を通らない作りにし、子プロセスのメモリに上限を掛けた)
+- Status: Concluded (CPython に公開の issue で報告した: [gh-162441](https://github.com/python/cpython/issues/162441)、2026-11-23、kawaz の名前で。非公開の窓口には出していない。illumos にも、元の原因 (cwd の文字列を覚えた後は `getcwd` が大きさによらず `ERANGE` を返す) を報告した: [illumos #18799](https://www.illumos.org/issues/18799)、2026-11-23、kawaz の名前で、分類は kernel。同じ現象の既存の報告は無かった (tracker・メーリングリスト・OmniOS と SmartOS の GitHub を検索)。sockat-py の深い cwd の試験は、illumos で `os.getcwd` を通らない作りにし、子プロセスのメモリに上限を掛けた)
 
 ## 動機
 
