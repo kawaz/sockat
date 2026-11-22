@@ -47,3 +47,12 @@ SEQPACKET の直接のラッパーになる API (`seqpacket::`) は、無くて�
 - `socket_file()` は bind の後・listener を閉じる前に呼ぶ。bind の後で `socket_file()` 自体が失敗すると、ソケットのファイルと E が両方残る
 - SEQPACKET で `getsockname` が bind の綴りを返すことは、確かめていない
 - 動かして確かめたのは Linux だけ (docker 3 種)。BSD と illumos は確かめていない
+
+### sockat-py が Linux の docker で動かして分かったこと (2026-11-22)
+
+- resolve の綴りは link-dir か link-file だけなので、`resolve_for_bind` は既定の bind より届く範囲が狭い。Linux ではファイル名がおよそ 80 バイトを超えると `ENAMETOOLONG` (境目は pid の桁で動く)。同じパスを stream の `sockat.ex.bind` は thread-cwd で bind できた。SEQPACKET 専用の関数を作るなら、thread-cwd の経路が要る
+- 自分で作った標準のソケットなので、アドレスを元のパスで返す subclass は効かない (`getsockname` は bind の綴りを返す)
+- つないだ側の `getpeername` は、自分が connect に使った綴りでなく、相手が bind した綴りを返す (accept 側の `getsockname` も同じ)
+- `cleanup` の後に、その綴りで connect し直すと `ENOENT` (つなぎ直す間は綴りを持ち続ける)
+- stream の `sockat.connect` で SEQPACKET の listener につなぐと `EPROTOTYPE`
+- macOS は `socket.socket(AF_UNIX, SOCK_SEQPACKET)` が `EPROTONOSUPPORT`
