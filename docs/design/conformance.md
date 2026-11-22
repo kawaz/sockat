@@ -8,7 +8,7 @@
 |---|---|---|
 | 場面の表 | ハブの `conformance/cases.json` | 何を試すか (操作、パスの形、前もって作る物) |
 | 流すスクリプト | ハブの `conformance/run.py` | 場面ごとに環境を作り、各言語の CLI を起こし、結果を集めて比べる |
-| 言語の一覧 | ハブの `conformance/langs.json` | 各言語の CLI の起こし方。`cwd` はリポの場所 (`cmd` の `{repo}` と、`/` を含む相対パスの `cmd[0]` の基準。CLI の cwd ではない)、`cmd` は起こすコマンド (まだ無ければ `null` で「未実装」)、`build` は CLI を作るコマンド (`just conformance` が流す前に各言語のリポで走らせる。`--no-build` で止める)、`lacks` はその言語が作らない経路の名前の並び (各言語の README の OS × 経路の表と同じ。比べ方を分けるのに使う)、`needs` は起こすのに要る物とその理由 (`{"proc": "理由の文"}`。キーは場面の `linux` の欄の名前で、今は `proc` だけ。知らないキーは langs.json の誤りとして止める。場面の `linux` で `proc` が false の時、`needs` に `proc` がある言語はその場面で起こさず、結果は「対象外」)、`linux` は Linux のコンテナでの起こし方 ([コンテナの作り方](#コンテナの作り方)) |
+| 言語の一覧 | ハブの `conformance/langs.json` | 各言語の CLI の起こし方。`cwd` はリポの場所 (`cmd` の `{repo}` と、`/` を含む相対パスの `cmd[0]` の基準。CLI の cwd ではない)、`cmd` は起こすコマンド (まだ無ければ `null` で「未実装」)、`build` は CLI を作るコマンド (`just conformance` が流す前に各言語のリポで走らせる。`--no-build` で止める)、`lacks` はその言語が作らない経路の名前の並び (各言語のマニュアルの OS × 経路の表と同じ。比べ方を分けるのに使う)、`needs` は起こすのに要る物とその理由 (`{"proc": "理由の文"}`。キーは場面の `linux` の欄の名前で、今は `proc` だけ。知らないキーは langs.json の誤りとして止める。場面の `linux` で `proc` が false の時、`needs` に `proc` がある言語はその場面で起こさず、結果は「対象外」)、`linux` は Linux のコンテナでの起こし方 ([コンテナの作り方](#コンテナの作り方)) |
 | 試験用 CLI | 各言語のリポ | 1 回の bind / connect を `_ex` で試し、結果を JSON で出す。公開しない |
 | Linux の条件 | ハブの `conformance/linux/` | 経路を強制する場面で使う seccomp の profile ([経路を強制する場面](#経路を強制する場面)) |
 

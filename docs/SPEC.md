@@ -374,11 +374,11 @@ Routes needing neither a write nor a thread come first; routes that start a thre
 | Environments where a live D can be removed | Linux with systemd older than v242, and B in macOS's `$TMPDIR` ([What stays in the base](#what-stays-in-the-base)). The spelling only stops being followable |
 | A peer with `PrivateTmp` | when the peer's `/tmp` is isolated, it cannot follow a spelling through `/tmp`. On Linux procB is used first, so this rarely happens. `usable_with_private_tmp` tells whether it can follow |
 
-- NUL anywhere but at the start is an invalid argument even for a short path. A language whose standard silently truncates at NUL (Go, etc.) says so under "differs from the standard" in its README
+- NUL anywhere but at the start is an invalid argument even for a short path. A language whose standard silently truncates at NUL (Go, etc.) says so under "differs from the standard" in its manual
 
 ## Patterns not to use
 
-Patterns that, when using sockat, remove an unrelated file or fail to remove the file. This section is the source for warnings to users; other sections and each language's docs point here. Each language's README / manual links to this section and gives only the concrete form in that language (e.g. Go's `os.Remove(l.Addr().String())`) and recommended code that avoids it (run as a test).
+Patterns that, when using sockat, remove an unrelated file or fail to remove the file. This section is the source for warnings to users; other sections and each language's docs point here. Each language's manual links to this section and gives only the concrete form in that language (e.g. Go's `os.Remove(l.Addr().String())`) and recommended code that avoids it (run as a test).
 
 | Pattern | Why not | Instead |
 |---|---|---|
@@ -422,13 +422,13 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 
 ## What each implementation must do
 
-- Follow the routes and order of this specification ([SPEC-routes.md](SPEC-routes.md)). A route that cannot be built in the language is skipped (treated as unusable and the next is tried, and put into `_ex`'s `skipped` with the reason), and the README states it in an OS × route table
+- Follow the routes and order of this specification ([SPEC-routes.md](SPEC-routes.md)). A route that cannot be built in the language is skipped (treated as unusable and the next is tried, and put into `_ex`'s `skipped` with the reason), and the manual states it in an OS × route table
 - Provide the test CLI of the language-independent conformance test ([docs/design/conformance.md](design/conformance.md), Japanese)
 - In a language that adopts its own socket into the standard type, check that adopting a socket connected via widened, and reading its address, do not crash. If they crash, skip widened as a route that cannot be built
 - Routes are not exposed in the public API. Tests force each route by calling it directly from inside the package
 - The parts that read the environment (the base candidates, where `/proc` is, whether Apple OSes accept a widened sockaddr, whether the thread cwd can be used) can be replaced from tests
-- The README and manual link to this specification. Before adding behavior that disagrees with it, fix this specification first
-- The user-facing docs (each language's README / manual) do not copy what is common to all languages; they link to the sections of this specification and pages: "[What differs from the standard for a long path](#what-differs-from-the-standard-for-a-long-path)", "[Patterns not to use](#patterns-not-to-use)", "[What stays in the base](#what-stays-in-the-base)", "[`sweep`](#sweep)". A language's docs hold only the names and types in that language, the concrete forms and recommended code in that language, and the caveats specific to that language (bugs and limits of its standard library or runtime). Each specific caveat gets one line in the hub's [per-language caveats](../pages/langs.md)
+- The manual links to this specification (from the README it is reached through "How it works" at the end). Before adding behavior that disagrees with it, fix this specification first
+- The user-facing docs (each language's manual) do not copy what is common to all languages; they link to the sections of this specification and pages: "[What differs from the standard for a long path](#what-differs-from-the-standard-for-a-long-path)", "[Patterns not to use](#patterns-not-to-use)", "[What stays in the base](#what-stays-in-the-base)", "[`sweep`](#sweep)". A language's docs hold only the names and types in that language, the concrete forms and recommended code in that language, and the caveats specific to that language (bugs and limits of its standard library or runtime). Each specific caveat gets one line in the hub's [per-language caveats](../pages/langs.md)
 - The opening of each language's README (who it is for, the error that language's standard library gives, the before / after in that language, how to install) is written with that language's own examples, not replaced by a link. What is not copied is the explanation beyond it
 
 ## What implementations test
