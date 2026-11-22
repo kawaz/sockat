@@ -29,7 +29,7 @@ blocked_by: resolve-and-persistent-base
 
 ## SEQPACKET を resolve で使う形 (2026-11-22、各言語のマニュアルのページを書く中で確かめた)
 
-専用の関数 (`seqpacket::`) を決める前に、今ある resolve で SEQPACKET を使う形を、各言語のマニュアル (`docs/manual/seqpacket`) に載せた。そこで分かったことを、専用の関数を決める時の材料として残す。
+SEQPACKET の直接のラッパーになる API (`seqpacket::`) は、無くてよい (kawaz 2026-11-22)。マニュアルで「resolve で作ったパスを使えばよい」と案内すれば、利用者は困らない。下は、各言語が resolve で SEQPACKET を動かして確かめたことの記録 (後で専用の関数を考える時が来たら、材料になる)。
 
 ### 使い方の形 (sockat-rs。他の言語もこの形にそろえる)
 
