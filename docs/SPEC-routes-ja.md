@@ -8,7 +8,7 @@
 
 - ディレクトリの開き方 (ソケットのディレクトリ等): Apple の OS は `O_SEARCH` (カーネルが `EISDIR` / `EINVAL` を返したら `O_RDONLY`)、Linux / Android は `O_PATH | O_DIRECTORY`、他は `O_RDONLY | O_DIRECTORY`
 - bind と resolve は、相対パスを受け取ったら、ソケットのディレクトリを引くより前に絶対パスの候補を作る ([絶対パスの候補の作り方](#絶対パスの候補の作り方))。収まる候補を標準に渡した時は、ここから下の手順には来ない
-- 経路に進む時は、最初にソケットのディレクトリを `stat` で引き、realpath を取る。無ければ `ENOENT`、ディレクトリでなければ `ENOTDIR`、realpath を引けなければそのエラー (どれも長さの判定や B・D・E を作るより前)。相対パスの bind と resolve で realpath が `ENAMETOOLONG` の時だけは、経路が使えない物として扱う ([SPEC の「相対パスを絶対パスにする」](SPEC-ja.md#相対パスを絶対パスにする))
+- 経路に進む時は、最初にソケットのディレクトリを `stat` で引き、realpath を取る。無ければ `ENOENT`、ディレクトリでなければ `ENOTDIR`、realpath を引けなければそのエラー (どれも長さの判定や B・D・E を作るより前)。相対パスの bind と resolve で、パスの長さのせいで realpath を引けない時 (`ENAMETOOLONG`・`ERANGE`) だけは、経路が使えない物として扱う ([SPEC の「相対パスを絶対パスにする」](SPEC-ja.md#相対パスを絶対パスにする))
 - bind と resolve で、標準に渡す長さを超える絶対パスは、ここで取った realpath にファイル名を付けた実パスの候補を、経路を試す前に見る。収まればそれを標準に渡す ([絶対パスの候補の作り方](#絶対パスの候補の作り方))
 - ソケットのディレクトリの fd が要る経路 ([proc-direct](#proc-direct)、[at-direct](#at-direct)、[thread-cwd-direct](#thread-cwd-direct)) だけがそれを開き、開けなければその経路は使えない (他の OS の `O_RDONLY` は読み取り権限の無いディレクトリを開けない)
 - 呼び出し元がソケットを作る。ブロックしない connect ではその前にソケットを非ブロッキングにする。bind の後の listen は呼び出し元がする

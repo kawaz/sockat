@@ -324,7 +324,7 @@ bind と resolve の手順:
 - `CwdRelative` が返るのは 5 の場面だけ。cwd がとても深い (絶対パスが PATH_MAX を超える。Linux 4096、macOS 1024) と、実パスの候補も `$PWD` の候補も作れないか収まらず、4 か 5 に進む
 - `/proc/self/cwd/…` のような、絶対パスだが cwd に依る綴りには触らない (相対パスだけが対象)
 - 名前で終わらない相対パス (`dir/`・`..` 等) で標準に渡す長さ以下の物は、絶対にせず、相対のまま標準に渡す (ファイル名が無く、候補を作れない。標準が返すエラーをそのまま返す)。resolve は標準を呼ばないので、そのまま返して `CwdRelative` にする (誤りは、利用者がその綴りを標準に渡した時に標準が返す)
-- 相対パスで、ソケットのディレクトリはあるのに realpath を `ENAMETOOLONG` で引けない時 (cwd が PATH_MAX を超える等) は、エラーにせず、経路が使えない物として 5 に進む。この時は経路を 1 つも試していないので `skipped` は空 (元の相対パスが標準に渡す長さ以下なら `route` は `standard` で `CwdRelative`、超えるなら `ENAMETOOLONG` で `route` は無し)。それ以外の失敗 (`ENOENT`・`ENOTDIR`・`EACCES` 等) は、そのエラーを返す
+- 相対パスで、ソケットのディレクトリはあるのに、パスの長さのせいで realpath を引けない時 (cwd が PATH_MAX を超える等。errno は `ENAMETOOLONG` か `ERANGE`。macOS の realpath は `ERANGE` を返す。sockat-rs の実測 2026-11-22) は、エラーにせず、経路が使えない物として 5 に進む。この時は経路を 1 つも試していないので `skipped` は空 (元の相対パスが標準に渡す長さ以下なら `route` は `standard` で `CwdRelative`、超えるなら `ENAMETOOLONG` で `route` は無し)。それ以外の失敗 (`ENOENT`・`ENOTDIR`・`EACCES` 等) は、そのエラーを返す
 - 5 で相対のまま標準に渡した時の診断は、`route` が `standard`、`skipped` は 4 で使えなかった経路だけで、`standard` は入れない (最後に通った経路なので)。相対のまま渡したことは `Spelling` の `CwdRelative` で分かる
 - 絶対パスの候補を標準に渡す時は、`Options.base` を確かめない (B を使わない。標準に渡す長さ以下の絶対パスで base を見ないのと同じ)。候補が収まらずに経路に進んだ時は、今のとおり base を確かめ、外れたらそのエラーを返す (相対パスでも 5 に落とさない。base のエラーは「経路が使えない」ではない)
 - アドレスを返す口を差し替える言語 (Python・TypeScript) は、渡されたのが絶対パスなら、実パスの候補で標準に渡した時も、渡されたパスを返す
