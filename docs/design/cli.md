@@ -114,16 +114,24 @@ sockat --help | --help-all | --version
 ファイル名が長くて、ソケットのディレクトリを指す綴りに収まらない時は、ソケットのファイルを指す綴りを出す (kawaz 裁定 2026-11-22、CL-Q1 = b)。
 
 - `--for` の指定が無ければ、connect 用の綴りとして出し、終了コードは 0
-- bind が symlink を辿らない OS (Linux 等) では、この綴りで bind すると失敗する。標準エラーに、bind には勧めない旨の警告を 1 行出す。標準出力は綴りだけのまま
-- `--json` の時は標準エラーに出さず、`for` を `["connect"]` にして、`warnings` に同じ文を入れる
-- bind が symlink を辿る OS (macOS・NetBSD) では bind にも使えるので、警告は出さない (`for` は `["bind", "connect"]`)
-- `--for connect` を指定した時は警告を出さない。`--for bind` を指定して、この OS で bind に使える綴りを作れない時は、終了コード 1 のエラー
+- この綴りは、どの OS でも bind には勧めない。標準エラーに、その旨と理由の警告を 1 行出す。標準出力は綴りだけのまま
+
+| OS | bind に勧めない理由 | `for` |
+|---|---|---|
+| bind が symlink を辿らない OS (Linux 等) | この綴りで bind すると失敗する | `["connect"]` |
+| bind が symlink を辿る OS (macOS・NetBSD) | bind はできるが、この綴りで unlink しても symlink が消えるだけで、ソケットのファイルが残る (片付けのつもりで消しても消えない) | `["bind", "connect"]` |
+
+- `--json` の時は標準エラーに出さず、`warnings` に同じ文を入れる
+- `--for connect` を指定した時は警告を出さない (connect には、どの OS でもそのまま使える)
+- `--for bind` を指定した時: bind が symlink を辿る OS では綴りを出し、unlink しても消えない旨の警告を出す。辿らない OS では終了コード 1 のエラー
 
 ```console
 $ sockat /very/long/…/nnnnnnnn…nnnn.sock
 /tmp/sockat-1000/9c41d7e2a0b3
 sockat: warning: this path is for connect; not recommended for bind (bind does not follow the symlink on this OS)
 ```
+
+macOS と NetBSD の警告は、理由の所が「unlinking this path removes only the symlink, not the socket file」になる。
 
 ## `sweep`
 
