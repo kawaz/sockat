@@ -478,7 +478,7 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 - リファレンスにこの仕様へのリンクを置く (README からは、末尾の技術説明を通して辿れる)。仕様と食い違う振る舞いを入れる時は、先にこの仕様を直す
 - 利用者向けの説明 (各言語のマニュアルとリファレンス) は、言語によらない話を写さず、この仕様と pages の該当の節へリンクする。リンクする節: 「[長いパスで標準と違う点](#長いパスで標準と違う点)」「[使ってはいけない書き方](#使ってはいけない書き方)」「[置き場に残る物](#置き場に残る物)」「[`sweep`](#sweep)」。各言語の文書に書くのは、その言語での名前と型の対応、その言語での具体的な形と推奨コード、その言語に固有の注意 (標準ライブラリや runtime の不具合・制約) だけ。固有の注意はハブの [言語ごとの注意](../pages/langs-ja.md) に 1 行で載せる
 - 各言語の README の冒頭 (何に困っている人の物か、その言語の標準が出すエラー、その言語での書き換え前後、入れ方) は、リンクで済ませずその言語の例で書く。写さないのは、その先の説明
-- 各言語の文書は、パスをそろえる (ハブから張るため): マニュアルのトップ `docs/MANUAL-ja.md`・`docs/MANUAL.md` (したいことの並びだけ。順は bind、connect、DGRAM、SEQPACKET、resolve)、場面ごとの使い方 `docs/manual/bind-ja.md`・`connect-ja.md`・`datagram-ja.md`・`seqpacket-ja.md`・`resolve-ja.md` と英語の `.md` (場面ごとの見出しと典型的なサンプルコード。その言語に無い物は置かない。SEQPACKET は専用の関数が無いので、resolve で作ったパスを使えばよいという短い案内と、resolve のページへのリンクだけにする)、リファレンス `docs/REFERENCE-ja.md`・`docs/REFERENCE.md` (使い方でない物: 関数と型の一覧、`Options`、`Spelling`、エラー、使ってはいけない書き方、固有の注意、OS × 経路の表)
+- 各言語の文書は、パスをそろえる (ハブから張るため): マニュアルのトップ `docs/MANUAL-ja.md`・`docs/MANUAL.md` (したいことの並びだけ。順は bind、connect、DGRAM、SEQPACKET、resolve)、場面ごとの使い方 `docs/manual/bind-ja.md`・`connect-ja.md`・`datagram-ja.md`・`seqpacket-ja.md`・`resolve-ja.md` と英語の `.md` (場面ごとの見出しと典型的なサンプルコード。その言語に無い物は置かない。SEQPACKET は専用の関数が無いので、短い案内と resolve のページへのリンクだけにする。案内には、どちらの resolve を使うかを書く: 待ち受ける (bind する) 側は `resolve_for_bind`、つなぐ (connect する) 側は `resolve_for_connect`)、リファレンス `docs/REFERENCE-ja.md`・`docs/REFERENCE.md` (使い方でない物: 関数と型の一覧、`Options`、`Spelling`、エラー、使ってはいけない書き方、固有の注意、OS × 経路の表)
 
 ## 実装が確かめる試験の観点
 
