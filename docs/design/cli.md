@@ -131,7 +131,7 @@ $ sockat /very/long/…/nnnnnnnn…nnnn.sock
 sockat: warning: this path is for connect; not recommended for bind (bind does not follow the symlink on this OS)
 ```
 
-macOS と NetBSD の警告は、理由の所が「unlinking this path removes only the symlink, not the socket file」になる。
+macOS と NetBSD の警告は、理由の所が「unlinking this path removes only the symlink, not the socket file」になる。`--for bind` を指定した時の警告は「unlinking this path removes only the symlink, not the socket file (remove the socket by its original path)」。
 
 ## `sweep`
 
