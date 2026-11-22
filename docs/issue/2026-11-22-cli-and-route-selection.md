@@ -101,5 +101,6 @@ CLI は綴りを出して終わるので、D の flock を持つプロセスが�
 ### その他
 
 - 用途の値: 短い綴りの作り方は「その場所にソケットを作る (bind)」と「既にあるソケットに届く (connect)」の 2 種類。sendto は connect と同じ綴り、返信を受ける DGRAM の送り手の bind は bind と同じ綴り
-- CLI をどのリポ・どの言語で作るか (ハブにはライブラリのコードを置かない)。全部の経路を作っていて fork も書ける Rust (sockat-rs) が候補。CLI の依存をライブラリの利用者に足さないよう、ライブラリの crate と分ける
+- CLI は Rust で作る (kawaz 2026-11-22。他の言語では作れない経路がある)。置き場所は sockat-rs。CLI の依存をライブラリの利用者に足さないよう、crate の分け方は sockat-rs で決める
+- ここまでの決定と統括の案は [DR-0018](../decisions/DR-0018-cli-resolve-with-reused-hashed-link.md) (提案) にまとめた
 - 片付けの口 (利用者が今すぐ消したい時の `cleanup` に当たるサブコマンド)
