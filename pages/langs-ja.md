@@ -23,4 +23,4 @@
 | TypeScript | Linux で `/proc` が見えないと Bun 自体が起動しない (Node は動く) | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/REFERENCE-ja.md#どこから届かなくなるか) |
 | TypeScript | `bindEx` の listener は、閉じると標準ライブラリと同じく綴りで unlink する (Node も Bun も止める口が無い)。相対のまま標準ライブラリに渡した時 (どの形でも届かない時) だけは、閉じた時点の cwd で同じ名前を unlink する | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/REFERENCE-ja.md#spec-から外れる点) |
 | TypeScript | DGRAM・SEQPACKET が無い (Node と Bun の標準ライブラリに無い) | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/REFERENCE-ja.md#spec-から外れる点) |
-| TypeScript | node:net は数値に読める文字列を TCP のポートと読むので、相対のまま標準ライブラリに渡す時 (connect と、どの形でも届かない時の bind) は `./` を付けて渡す | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/REFERENCE-ja.md#標準との対応) |
+| TypeScript | node:net は数値に読める文字列を TCP のポートと読むので、相対のまま標準ライブラリに渡す時 (connect と、どの形でも届かない時の bind) は `./` を付けて渡す | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/REFERENCE-ja.md#標準ライブラリとの対応) |
