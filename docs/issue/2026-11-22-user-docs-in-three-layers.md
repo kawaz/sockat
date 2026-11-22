@@ -46,8 +46,9 @@ origin: "自リポ TODO"
   - その先は、トピックごとのページ。bind・connect 等それぞれの利用の場面ごとに、典型的なサンプルコードを見せる
   - ハブの利用マニュアルは、各言語へのリンクを並べてそちらへ誘導する。概要は置いてよい。各言語版と同じ構成で、言語によらない概念の説明として書いておくのもあり (kawaz 2026-11-22)
   - 各言語のマニュアルの形 (統括。ハブから安定して張れるよう、4 言語でパスをそろえる):
-    - `docs/MANUAL-ja.md`・`docs/MANUAL.md`: トップ。したいことの並び (bind、connect、resolve、DGRAM) だけ
-    - `docs/manual/bind-ja.md`・`connect-ja.md`・`resolve-ja.md`・`datagram-ja.md` (と英語の `.md`): 場面ごとの見出しと、典型的なサンプルコード。説明は要る時だけ 1 文
+    - `docs/MANUAL-ja.md`・`docs/MANUAL.md`: トップ。したいことの並びだけ。順は bind、connect、SEQPACKET、DGRAM、resolve (kawaz 2026-11-22)
+    - `docs/manual/bind-ja.md`・`connect-ja.md`・`seqpacket-ja.md`・`datagram-ja.md`・`resolve-ja.md` (と英語の `.md`): 場面ごとの見出しと、典型的なサンプルコード。説明は要る時だけ 1 文
+    - SEQPACKET は専用の関数がまだ無いので、resolve でパスを作って自分で作ったソケットに渡す形を載せる。どちらの resolve をどう使うかは、各言語が動かして確かめながら決め、形をそろえる (kawaz 2026-11-22。Rust・Python・Go に依頼済み。TypeScript は標準に無いので対象外)
     - `docs/REFERENCE-ja.md`・`docs/REFERENCE.md`: 使い方でない物 (関数と型の一覧、`Options`、`Spelling`、エラー、使ってはいけない書き方、その言語に固有の注意、OS × 経路の表、仕様へのリンク)。API の文書が別にある言語 (docs.rs、pkg.go.dev) は、先頭でそこへ張る
   - ハブのトップは、各言語がそろったら「したいこと × 言語」の表にする。それまでは言語の表だけにする (「できること」の紹介は消した)
 - [ ] リファレンスに CLI のことも載せる。CLI の利用マニュアルはハブに置き、そこへ張る (kawaz 2026-11-22。CLI を公開する時に)
