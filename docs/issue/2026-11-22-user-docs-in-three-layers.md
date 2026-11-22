@@ -56,4 +56,5 @@ origin: "自リポ TODO"
 - [x] CLI の公開 (ライブラリ 0.6.0 と sockat-cli 0.1.0 を同じ release で出す) の前に、ハブに CLI の利用マニュアルを書く (書いた。公開まで README 等からは張らない。公開の時に、実物の出力と合っているかを見直す): `pages/cli-ja.md` と `pages/cli.md`。CLI の `--help` の末尾が `pages/cli.md#environment` を指しているので、環境変数の節の見出しは英語が `Environment`、日本語が「環境変数」
 - [ ] CLI を公開したら、ハブと sockat-rs の README に「CLI もあります。アプリに組み込む前のお試しに便利です」の節 (`sockat <パス>` と `sockat --json <パス>` の例つき) を足し、リファレンスに CLI の行を足す
 - [ ] DR-0019 が決まったら、README の「短いパスは今までどおり標準にそのまま渡す」の言い方を見直す
+- [ ] 各言語が文書を組み直した版を push する時に、ハブのリンクを付け替える: `pages/langs` (日英) の各言語の行をその言語の REFERENCE のアンカーへ (Rust は `docs/REFERENCE-ja.md#rust-に固有の注意`・`docs/REFERENCE.md#caveats-specific-to-rust`。他の言語は知らせを待つ)、`pages/fork-cwd` の Go の言及、`pages/reference` の Python・TypeScript の行。そろったら `pages/manual` を「したいこと × 言語」の表にする
 - [ ] pages/ の公開の経路 (GitHub Pages) と、言語を選べる入口・検索から入るランディングページ
