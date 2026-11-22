@@ -44,7 +44,7 @@ sockat --help | --help-all | --version
 | オプション | 中身 |
 |---|---|
 | `--json` | 綴りだけでなく、長さや作り方を JSON で出す |
-| `--for <bind\|connect>` | 短い綴りの使い道。要るのは、ファイル名が長くてソケットのファイルを指す綴りに回る時だけ。sendto は `connect`、返信を受けるために bind する送り手は `bind` |
+| `--for <bind\|connect>` | 綴りの使い道。普段は指定しなくてよい (ソケットのディレクトリを指す綴りは、どの使い道にも使える)。効くのは、ファイル名が長くてソケットのファイルを指す綴りに回る時だけ。指定が無ければ connect 用の綴りを出す。`--for bind` は bind に使える綴りだけを求め、この OS で作れなければエラーにする。sendto は `connect`、返信を受けるために bind する送り手は `bind` |
 | `--base <ディレクトリ>` | 置き場 (B そのもののパス) を指定する。確かめはライブラリの `Options.base` と同じ |
 
 ### 進んだオプション (`--help-all`)
@@ -85,6 +85,7 @@ sockat --help | --help-all | --version
 | `route` | 作り方の名前 (`standard`: 渡されたパスのまま、`link-dir`: ソケットのディレクトリを指す E を通す、`link-file`: ソケットのファイルを指す E を通す)。診断用で、名前を約束しない |
 | `link`・`target` | 使った E のパスと、それが指す先。`standard` の時は無い |
 | `for` | この綴りを使える使い道 (`bind`・`connect`) |
+| `warnings` | 注意の文の並び (無ければ空)。`--json` の時は、標準エラーに出す警告をここに入れる |
 
 - 項目は足すことがある。読む側は知らない項目を無視する
 
@@ -108,10 +109,20 @@ sockat --help | --help-all | --version
 - 出す綴りは、いつも sockaddr に入る長さ以下 (出す前に確かめる)。元のパスが収まっていれば、そのまま出す。短さは競わない
 - `--help` 等の文言は「短くする」でなく「上限に収まるパスにする」で書く
 
+### ファイル名が長い時
+
+ファイル名が長くて、ソケットのディレクトリを指す綴りに収まらない時は、ソケットのファイルを指す綴りを出す (kawaz 裁定 2026-11-22、CL-Q1 = b)。
+
+- `--for` の指定が無ければ、connect 用の綴りとして出し、終了コードは 0
+- bind が symlink を辿らない OS (Linux 等) では、この綴りで bind すると失敗する。標準エラーに、bind には勧めない旨の警告を 1 行出す。標準出力は綴りだけのまま
+- `--json` の時は標準エラーに出さず、`for` を `["connect"]` にして、`warnings` に同じ文を入れる
+- bind が symlink を辿る OS (macOS・NetBSD) では bind にも使えるので、警告は出さない (`for` は `["bind", "connect"]`)
+- `--for connect` を指定した時は警告を出さない。`--for bind` を指定して、この OS で bind に使える綴りを作れない時は、終了コード 1 のエラー
+
 ```console
 $ sockat /very/long/…/nnnnnnnn…nnnn.sock
-sockat: the file name is too long for a path that works for both bind and connect (89 bytes; up to 77 here)
-  pass --for connect or --for bind to get a path for that use
+/tmp/sockat-1000/9c41d7e2a0b3
+sockat: warning: this path is for connect; not recommended for bind (bind does not follow the symlink on this OS)
 ```
 
 ## `sweep`

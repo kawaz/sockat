@@ -20,5 +20,5 @@ Status は各 DR ファイルの `Status:` 行が正本。ここに載るのは�
 | [DR-0004](DR-0004-standard-length-per-language.md) | ✅ 実装済 | 標準に渡す長さはその言語の標準が受け付ける長さ。経路の綴りの条件は sockaddr に入る長さ (`sun_path` − 1) |
 | [DR-0006](DR-0006-nul-is-invalid-at-any-length.md) | ✅ 実装済 | 先頭以外に NUL を含むパスは長さによらず引数の誤り。先頭が NUL (abstract) は対象外 |
 | [DR-0017](DR-0017-resolve-through-persistent-base.md) | ✅ 実装済 | 長いパスを、置き場 B (利用者ごと)・D (プロセスごと)・E (resolve ごと) の消さない symlink を通る短い綴りに resolve して bind / connect する。既定の bind も綴りを残す。収まらなければ thread-cwd / at。fork と最終手段は無く、bind の綴りの性質は `Spelling` |
-| [DR-0018](DR-0018-cli-resolve-with-reused-hashed-link.md) | 💭 提案 | 短い綴りを作る CLI `sockat` を Rust で作る。既定の `resolve` はソケットのディレクトリを指すハッシュの名前の E を B の直下で使い回す (D を作らず、片付け不要)。手法の名指しは CLI の進んだオプションだけに置き、ライブラリには足さない |
-| [DR-0019](DR-0019-absolutize-relative-path-on-bind.md) | 💭 提案 | bind と resolve は、相対パスを cwd で絶対パスにしてから扱う (カーネルが覚える綴りを相対にしない)。届かない時だけ相対のまま標準に渡す。connect は変えない |
+| [DR-0018](DR-0018-cli-resolve-with-reused-hashed-link.md) | 🚧 進行中 | 短い綴りを作る CLI `sockat` を Rust で作る。既定の `resolve` はソケットのディレクトリを指すハッシュの名前の E を B の直下で使い回す (D を作らず、片付け不要)。手法の名指しは CLI の進んだオプションだけに置き、ライブラリには足さない |
+| [DR-0019](DR-0019-absolutize-relative-path-on-bind.md) | ⬜ 未実装 | bind と resolve は、相対パスを絶対パスにしてから扱う (実パスと `$PWD` からの綴りの候補が収まればそれを標準に渡し、収まらなければ置き場を通す。長い絶対パスも先に実パスを試す)。届かない時だけ相対のまま標準に渡す。connect と送信の宛先は変えない。`resolve_for_connect` も綴りの性質を返す |
