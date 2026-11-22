@@ -24,6 +24,8 @@ let client = sockat::datagram::unbound()?;
 sockat::datagram::connect(&client, &path)?;
 ```
 
+深い場所で bind した送り手にも、受け手からの返信が届きます。絶対パスを渡して bind すれば、受け手に見える送り手のアドレスが、上限に収まる絶対パスになるためです (標準だけでは、絶対パスは長すぎて bind できず、相対パスで bind すると受け手は返信できません)。
+
 TypeScript には DGRAM がありません (Node.js と Bun の標準に無いため)。
 
 ## 短いパスだけを作る

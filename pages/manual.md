@@ -24,6 +24,8 @@ let client = sockat::datagram::unbound()?;
 sockat::datagram::connect(&client, &path)?;
 ```
 
+A sender bound in a deep place still gets replies. Bind with the absolute path, and the sender address the receiver sees becomes an absolute path that fits the limit (with the standard alone, the absolute path is too long to bind, and a sender bound by a relative path cannot be replied to).
+
 TypeScript has no DGRAM (the Node.js and Bun standards have none).
 
 ## Get just the short path
