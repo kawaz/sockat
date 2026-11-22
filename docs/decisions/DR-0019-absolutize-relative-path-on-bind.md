@@ -27,7 +27,7 @@
 |---|---|
 | bind 系 (`bind`・`bind_ex`・`datagram::bind`・`datagram::bind_ex`) | 絶対パスにしてから扱う |
 | resolve (`resolve_for_bind`・`resolve_for_connect`) | 絶対パスにしてから扱う (返した綴りは、後で cwd が変わった後にも使われうる) |
-| connect 系 (`connect`・`connect_nonblocking`・`datagram::connect` と各 `_ex`) | 変えない (connect の綴りは相手に残らない。相対のまま渡すのが一番手数が少ない) |
+| connect 系 (`connect`・`connect_nonblocking`・`datagram::connect` と各 `_ex`) と、送信の宛先 (`datagram::send_to`) | 変えない (綴りは相手に残らず、つないだ・送った後は cwd の変化も関係ない。相対のまま渡せば置き場に何も作らない) |
 
 ### 絶対パスの作り方と、その後
 
@@ -88,7 +88,7 @@
 
 - kawaz (2026-11-22): 相対パスを絶対にする方向に変える
 - kawaz (2026-11-22): 絶対パスの候補は実パスと `$PWD` からの綴りの 2 つ。`../` を畳んだ綴りは元と同じ所を指すと確かめてから候補にする。収まればそれを使い、収まらなければ sockat の作る綴りに進む
-- kawaz (2026-11-22、RP-Q2 = a): connect のように、つないだ後に相手のことや cwd の変化を気にしなくてよい操作は、置き場に何も作らない相対パスのまま使う。絶対にするのは bind 系と resolve だけ
+- kawaz (2026-11-22、RP-Q2 = a): connect のように、つないだ後に相手のことや cwd の変化を気にしなくてよい操作は、置き場に何も作らない相対パスのまま使う。絶対にするのは bind 系と resolve だけ。送信の宛先 (`send_to`) も connect と同じ扱い
 - 統括の案 (裁定待ち): 5 の、届かない時は相対のまま標準に渡す形 ([QUESTIONS](../QUESTIONS.md) の RP-Q1)。候補は実パスを先に見る
 
 ## 関連
