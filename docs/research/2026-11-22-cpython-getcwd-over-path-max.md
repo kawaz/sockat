@@ -1,7 +1,7 @@
 # CPython の os.getcwd が、PATH_MAX を超える cwd で引き直しを止めない件 (本家へ報告するための下調べ)
 
 - Date: 2026-11-22
-- Status: Concluded (この回の調査。報告を出すかどうか・どの形で出すかは持ち主が決める。報告そのものはしていない)
+- Status: Concluded (CPython にも illumos にも報告しない。kawaz 2026-11-22: 実測で当たるのは illumos だけなので。代わりに、当たる試験を illumos で skip する。7 節の窓口の判断と 10 節の下書きは使わない)
 
 ## 動機
 
