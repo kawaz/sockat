@@ -65,11 +65,11 @@
 
 - resolve は、長いパスを、元のパスと同じ所を指し続ける短い綴りに言い換えて返す。綴りが生きている間は、`getsockname` の綴りで消す上のライブラリ、DGRAM の返信、運用の道具が元のパスと同じに働く
 - 綴りはただのパスなので、ソケットの型 (stream / DGRAM / SEQPACKET) と操作 (bind / connect / `send_to`) を問わず、利用者が std に渡して使える
-- 標準に渡す長さ以下のパスはそのまま返す (絶対パスは `Original`、相対パスは `CwdRelative`)
+- 標準に渡す長さ以下の絶対パスはそのまま返す (`Original`)。相対パスは cwd で絶対パスにしてから扱い、長い絶対パスも経路の前に実パスの候補を見る ([DR-0019](DR-0019-absolutize-relative-path-on-bind.md))
 - 綴りは `B/D/E/<ファイル名>` (link-dir) か `B/D/E` (link-file)
 - resolve は用途で 2 つに分ける (`resolve_for_bind` / `resolve_for_connect`)。bind は `link-file` を Linux 等で使えず `link-dir` を先に選び、connect は `link-file` を選ぶ (ファイル名の長さによらない)
 - `resolve_for_bind` の `link-file` は、bind が symlink を辿ると実測した OS (macOS・NetBSD) だけで使う。未確認の OS では `link-dir` だけ (resolve の時点では bind しないので、辿るかを見分けられない)。既定の `bind` と `bind_ex` は実行時に見分ける (「link-file と、bind が symlink を辿る OS」)
-- `resolve_for_connect` は、標準に渡す長さ以下ならそのまま、長ければ `link-file` (B の綴りは procB か実パス) の綴りを返す。B を作れない等で `link-file` を使えなければ `ENAMETOOLONG` (その時も既定の `connect` を使えば、書き込みの要らない経路と thread-cwd-direct を試せる)
+- `resolve_for_connect` は、標準に渡す長さ以下の絶対パスならそのまま (相対パスと長い絶対パスは、先に [DR-0019](DR-0019-absolutize-relative-path-on-bind.md) の絶対パスの候補を見る)、長ければ `link-file` (B の綴りは procB か実パス) の綴りを返す。B を作れない等で `link-file` を使えなければ `ENAMETOOLONG` (その時も既定の `connect` を使えば、書き込みの要らない経路と thread-cwd-direct を試せる)
 - resolve は path を返すだけなので、thread-cwd・at でしか届かない長さでは `ENAMETOOLONG`。それも届かせたい人は `bind` / `connect` を使う
 - 既定の `bind` は内部で resolve を使い、resolve で済まない長さには thread-cwd・at で届かせる。既定の `connect` は D を作らない (「既定の bind は綴りを残し、既定の connect は残さない」)
 - 消す (`remove`) と片付ける (`cleanup` は E を片付ける。B と D は sockat が片付けない) は自動で行わない。どれも 1 回だけ働き、2 回目以降は何もしない (`remove` は resolve した綴りの物を 1 回だけ消す、の意味の冪等)
@@ -258,7 +258,7 @@ resolve の綴りが収まらない時の bind。
 - connect の綴りは相手に残らない (connect した側のソケットは bind されない) ので、E を残す必要が無い。書き込みもスレッドも要らない経路が速く、relative や widened は置き場を通す経路より遠くまで届く場面がある
 - relative は途中で cwd が変わると一般のエラーになる (事後に確かめるので、別の所へ届くことは無い)
 - thread-cwd-direct の届くファイル名は sockaddr に入る長さ
-- connect の綴りの性質は返さない
+- connect 系は綴りの性質を返さない (`resolve_for_connect` は返す。[DR-0019](DR-0019-absolutize-relative-path-on-bind.md))
 - DGRAM の connect は stream の connect と同じ順
 
 ### fork をしない (RS-Q2、kawaz 裁定 2026-11-20)
@@ -270,13 +270,13 @@ resolve の綴りが収まらない時の bind。
 
 ### 綴りの性質 `Spelling` (RS-Q1、kawaz 裁定 2026-11-20: S1)
 
-bind の綴りの性質を 1 つの値で返す。利用者が知りたいのは「この綴りを後で使えるか」の 1 点で、性質は互いに排他な種類 + 種類ごとの属性になるため。connect の綴りは相手に残らないので返さない。
+bind と resolve の綴りの性質を 1 つの値で返す。利用者が知りたいのは「この綴りを後で使えるか」の 1 点で、性質は互いに排他な種類 + 種類ごとの属性になるため。connect 系の綴りは相手に残らないので返さない (`resolve_for_connect` の `ForConnect` は返す。[DR-0019](DR-0019-absolutize-relative-path-on-bind.md))。
 
 ```rust
 #[non_exhaustive]
 pub enum Spelling {
-    Original,     // 元の絶対パス
-    CwdRelative,  // 元の相対パス (cwd を変えると別の所を指す)
+    Original,     // 元の絶対パスか、相対パスを絶対にした綴り (DR-0019)
+    CwdRelative,  // 元の相対パス (cwd を変えると別の所を指す。どの経路も使えない時だけ。DR-0019)
     Linked {
         removable: bool,               // 綴りで unlink すると実体が消えるか (link-dir: true、link-file: false)
         until: Until,                  // Process (procB) / Cleanup (実パス)
@@ -287,7 +287,7 @@ pub enum Spelling {
 }
 ```
 
-- `CwdRelative` は sockat が経路で失わせたものでなく標準が元から持つ危険だが、知らせる (kawaz 裁定 2026-11-19)
+- `CwdRelative` は sockat が経路で失わせたものでなく標準が元から持つ危険だが、知らせる (kawaz 裁定 2026-11-19)。相対パスは絶対パスにしてから扱うので、返るのはどの経路も使えず相対のまま標準に渡した時だけ ([DR-0019](DR-0019-absolutize-relative-path-on-bind.md))
 - 「標準にそのまま渡したか」の bool は持たない (`spelling == Original` か `route == "standard"` で分かる)
 - `usable_with_private_tmp` の「/tmp・/var/tmp を通る」は、要素単位で `/tmp`・`/var/tmp` であるか、それらの realpath の下にあること。procB の綴りは `/tmp` を通らないのでいつも true
 - abstract の名前 (Linux / Android で先頭が NUL) の `Spelling` は `Original`
@@ -332,7 +332,7 @@ sockat::seqpacket::bind(path) / connect(path) / connect_nonblocking(path) と各
 
 // resolve (std に自分で渡す人向け)
 sockat::resolve_for_bind(path, Options) -> Result<ForBind, ExError>       // path / spelling / cleanup() / socket_file() / 診断 (remove は持たない)
-sockat::resolve_for_connect(path, Options) -> Result<ForConnect, ExError> // path / cleanup() / 診断 (route・skipped。base は持たない)
+sockat::resolve_for_connect(path, Options) -> Result<ForConnect, ExError> // path / spelling / cleanup() / 診断 (route・skipped。base は持たない)
 
 // 置き場 B を片付ける
 sockat::sweep() -> io::Result<()>              // 呼んだ時だけ、置き場 1〜3 の既定の名前の B の中の、持ち主の死んだ D (ロックの外れた D) を消す
@@ -358,7 +358,7 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 - `remove` はファイルを消すだけで、listener を閉じない。閉じるのは利用者 (Rust は listener を move するので、閉じる対象を持てない。渡した先のライブラリが閉じた後の二重の close も起きない)
 - bind したソケットのファイルの realpath と `(st_dev, st_ino)` を覚え、そのパスの `(st_dev, st_ino)` が同じ時だけ消す
 - 置き換えの見分けは `(st_dev, st_ino)` だけで行い、約束するのは listener を開いている間の置き換えまで。閉じた後に消して作り直された物は、番号をすぐ使い回すファイルシステム (ext4、BSD の UFS / FFS) で見分けられない。`remove` は listener を閉じる前に呼ぶよう勧める (kawaz 裁定 2026-11-19。実測は [findings](../findings/2026-11-19-inode-reuse-after-close.md))
-- 相対パスの時は、パスを何も引く前と、bind と覚えるための realpath の両方の後でプロセスの cwd の `(st_dev, st_ino)` を比べ、違えば覚えられない時と同じに扱う (間の cwd の変更で、元の cwd の無関係なファイルを覚えて消さないため。sockat-go の指摘 2026-11-19)
+- 綴りが `CwdRelative` の時 (相対のまま標準に渡した時。[DR-0019](DR-0019-absolutize-relative-path-on-bind.md)) は、パスを何も引く前と、bind と覚えるための realpath の両方の後でプロセスの cwd の `(st_dev, st_ino)` を比べ、違えば覚えられない時と同じに扱う (間の cwd の変更で、元の cwd の無関係なファイルを覚えて消さないため。sockat-go の指摘 2026-11-19)
 - bind の後、元のパスの最後の要素が symlink なら (macOS・NetBSD では標準の bind が辿り、その先にソケットを作る)、辿った先の実パスと `(st_dev, st_ino)` を覚える。`remove` が利用者の symlink を消さないため。最後の要素が symlink でない時も含め、覚える物がソケットでなければ覚えられない扱い (`bind_ex` は listener を閉じ E を片付けてエラー、`socket_file()` はエラー。bind の直後に置き換わった物を覚えると `remove` がそれを消すため) (統括)
 - `remove()` が失敗した時も `cleanup` まで行い、remove のエラーを返す
 - listener を閉じた時: 既定の bind (Go の `Listen`) は標準と同じにする。閉じる時に綴りで unlink する標準 (Go) では、link-dir の綴りは途中の E を辿って実体を消し (標準と同じ)、link-file の綴りは unlink が最後の symlink を辿らないので E 自体が消えてソケットのファイルは残る (標準と違う。README に書く)。`Dangling` の綴りは unlink させない (Go は `SetUnlinkOnClose(false)`)。`_ex` の bind は、どの綴りでも閉じた時に消さない。消すのは `SocketFile` の `remove()` だけ (綴りで消すと、置き換わったファイルを見分けずに消すため)
@@ -486,8 +486,8 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
   - 不採用理由: 元のパスの最後の要素に bind の前から置かれていた symlink を辿るのは標準の bind の性質で、sockat の責務外 (kawaz 2026-11-19)
 - 案 AB: link-file で bind したソケットの fd の `fstat` と元のパスの `lstat` の `(st_dev, st_ino)` を照らし合わせて確かめる
   - 不採用理由: ソケットの fd の `fstat` はソケットのファイルの inode を返さない (macOS で `st_dev` が -1、inode も一致しない。[findings](../findings/2026-11-19-bind-through-file-symlink.md) で実測)
-- 案 AC: 相対パスの `bind_ex` を入口で絶対パスにする
-  - 不採用理由: 短い相対パスが標準と違う経路に回り振る舞いが変わる
+- 案 AC: 相対パスを入口で絶対パスにする
+  - [DR-0019](DR-0019-absolutize-relative-path-on-bind.md) で決める (bind 系と resolve は絶対パスにし、connect 系はしない)
 - 案 AD: B の綴りを procB → dirB (`$XDG_RUNTIME_DIR` と `$TMPDIR` の実パスの短い方の B) → tmpB (`/tmp` の B) の順に、別々の B で試す
   - 不採用理由: `/proc` の無い macOS で `$TMPDIR` の B が `/tmp` の B より先に使われ、実体の置き場の順の理由 (`$TMPDIR` は生きている D も消しうる) とぶつかる。1 つのプロセスが複数の B と D を持つ
 - 案 AE: thread-cwd・at に、呼び出しごとのディレクトリ (置き場を `${TMPDIR:-/tmp}` → `/tmp` → ソケットのディレクトリの順に試す) と、その中の symlink を作って呼び出しの最後に消す
@@ -530,3 +530,4 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 - [届く範囲の表](../../pages/reach/README-ja.md)、[fork-cwd](../../pages/fork-cwd-ja.md)
 - 裁定: kawaz (2026-11-21: AS-Q1 = a (死んだ D を自動では消さない)、RV-Q1 = a (占拠された B で次の置き場へ進む)、RV-Q2 = a (既定の bind の link-dir の E を使い回す)。2026-11-19: connect の順、thread-cwd・at、`remove` の約束の範囲、`CwdRelative`、link-file の責務外。2026-11-20: RS-Q1 = S1、RS-Q2 = fork をしない、RS-Q3 = F1、RS-Q4 = a、B と D。2026-11-21: B の作り方)。統括 (2026-11-21: B をプロセスごとに 1 つ、`usable_cross_uid` を満たせない時は thread-cwd / at、既定の connect は D を作らない、thread-cwd・at は D を基準にする、D と E の mode。同日の SPEC の書き直しで: `resolve_for_bind` の link-file は実測した OS だけ、`skipped` は名前ごとに 1 件、`base` を持つのは B を通る綴りだけ、`Options.base` は B そのもので複数の B を持ちうる、`Options.base` のエラーの種類、link-dir の E は realpath、D の作り方と `sweep()` の見分け方、`resolve_for_connect` の返す物、既定の connect の link-file は実パスの `B/E`、thread-cwd-direct の届く長さ、DGRAM の connect の順。診断の `base` の値 `given` (`Options.base` の B、綴りの形によらない)、link-dir・link-file で bind に失敗した時は E を消してからエラーを返す、`ForBind` は `remove` を持たず bind の後に `SocketFile` を受け取る口を持つ、置き場の realpath と `usable_with_private_tmp`、connect 系は `usable_cross_uid` を見ない、B・D・E の名前と乱数、既にある B の mode と `usable_cross_uid` の B 自身の x、空・相対パスの `$TMPDIR` / `$XDG_RUNTIME_DIR`、`ForConnect` は `base` を持たない、`sweep()` の対象と `sweep_base`、既定の connect が作った B をプロセスの B にする、D を作った後の `lstat` の確かめ、置き場 4 の B はディレクトリごと・収まらないと分かれば B を作らない。sockat-go の問いへの答えで: Go の DGRAM は `DialUnixgram`、Go の消す口は `*SocketFile` の `Remove()` / `Cleanup()`、listener を閉じた時の扱い (既定の bind は標準と同じ、`_ex` は消さない)、`skipped` は呼び出しの順の行に並ぶ経路だけ、`/proc` を使えるかの確かめ、D と B の作り方 (0700 → 確かめ → 0711、umask で開けなければ消して次へ)、procB の `usable_with_private_tmp` はいつも true、`usable_cross_uid` で thread-cwd・at に進む時の D の置き場、`sweep` の対象外の B が残ること、`Options.base` の相対パスと名前で終わらないパスは引数の誤り、`remove()` が失敗した時も `cleanup`、abstract の `Spelling`、「/tmp を通る」の定義、`sweep` が触らない物、「他人が書けない」は group も含む。同日の決定で: `remove` と `ForBind` の `socket_file()` は bind の後に元のパスの最後の要素の symlink を辿った先の実パスと `(st_dev, st_ino)` を覚え、辿った先がソケットでなければ覚えられない扱い、`sweep` / `sweep_base` は B の直下の D の形の名前のディレクトリだけを対象にする、E の片付けが失敗しても呼び出しの成否も元のエラーも変えずに黙る)
 - [DR-0003](DR-0003-single-connect-when-standard-never-blocks.md)、[DR-0004](DR-0004-standard-length-per-language.md)、[DR-0006](DR-0006-nul-is-invalid-at-any-length.md)
+- 相対パスの扱い (bind 系と resolve は絶対パスにしてから扱う、`ForConnect` の `spelling`): [DR-0019](DR-0019-absolutize-relative-path-on-bind.md)

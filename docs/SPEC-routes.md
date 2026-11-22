@@ -7,7 +7,9 @@ How the routes are built, for each language's implementers. The promise to users
 ## Common
 
 - How a directory is opened (the socket's directory, etc.): `O_SEARCH` on Apple OSes (`O_RDONLY` if the kernel answers `EISDIR` / `EINVAL`), `O_PATH | O_DIRECTORY` on Linux / Android, `O_RDONLY | O_DIRECTORY` elsewhere
-- The socket's directory is looked up first with `stat`, and its realpath is taken. When it is missing, `ENOENT`; when it is not a directory, `ENOTDIR`; when the realpath cannot be taken, that error (all before the length is judged or B / D / E is created)
+- On receiving a relative path, bind and resolve build the absolute candidates before looking up the socket's directory ([Building the absolute candidates](#building-the-absolute-candidates)). When a candidate that fits is handed to the standard, the steps below are not reached
+- When going on to the routes, the socket's directory is looked up first with `stat`, and its realpath is taken. When it is missing, `ENOENT`; when it is not a directory, `ENOTDIR`; when the realpath cannot be taken, that error (all before the length is judged or B / D / E is created). Only for a bind or resolve with a relative path whose realpath fails with `ENAMETOOLONG` are the routes treated as unusable instead ([SPEC, "Making a relative path absolute"](SPEC.md#making-a-relative-path-absolute))
+- In bind and resolve, for an absolute path over the standard length, the real-path candidate (the realpath taken here with the file name appended) is looked at before any route is tried. When it fits, it is handed to the standard ([Building the absolute candidates](#building-the-absolute-candidates))
 - Only the routes that need an fd of the socket's directory ([proc-direct](#proc-direct), [at-direct](#at-direct), [thread-cwd-direct](#thread-cwd-direct)) open it, and when it cannot be opened that route is unusable (`O_RDONLY` on other OSes cannot open a directory without read permission)
 - The caller creates the socket. For a non-blocking connect the socket is made non-blocking before that. The listen after a bind is done by the caller
 - No route changes the calling process's cwd or the calling thread's cwd
@@ -114,10 +116,10 @@ The sections follow the order of the table in [the SPEC's Route names](SPEC.md#r
 
 ### standard
 
-- How: hand the path to the standard unchanged ([the SPEC's Short paths](SPEC.md#short-paths))
-- Used when: the path is up to the standard length. First for both bind and connect
-- Reach: the whole path up to the standard length
-- Spelling properties: `Original` for an absolute path, `CwdRelative` for a relative one
+- How: hand the path to the standard unchanged ([the SPEC's Short paths](SPEC.md#short-paths)). In bind and resolve, when the original path is relative or an absolute path over the standard length, hand the absolute candidate that fits ([Building the absolute candidates](#building-the-absolute-candidates))
+- Used when: the spelling handed is up to the standard length. First for both bind and connect. In bind and resolve, also last, for a relative path up to the standard length when no route can be used (5 of [the SPEC's Making a relative path absolute](SPEC.md#making-a-relative-path-absolute))
+- Reach: the whole spelling handed up to the standard length
+- Spelling properties: `Original` for an absolute path and an absolute candidate, `CwdRelative` when handed as relative
 
 ### link-dir
 
@@ -236,6 +238,31 @@ Used by [thread-cwd](#thread-cwd) and [thread-cwd-direct](#thread-cwd-direct).
 - A failure of the `fchdir` after `unshare` (`EACCES` etc.) is returned as a real failure
 - `pthread_fchdir_np` is a private libSystem API (the `__pthread_fchdir` syscall). It is looked up at run time, and when it is missing the next route is tried
 
+## Building the absolute candidates
+
+Used by [the SPEC's Making a relative path absolute](SPEC.md#making-a-relative-path-absolute). Bind and resolve build both on receiving a relative path, and only the real-path candidate on receiving an absolute path over the standard length. It goes the other way from [Building the relative path](#building-the-relative-path) (connect's relative, which strips the cwd from an absolute path), and checks by `(st_dev, st_ino)` in the same way.
+
+| Candidate | How it is built | Check |
+|---|---|---|
+| the real-path candidate | make the socket's directory (what precedes the last component of the original path; `.` for a relative path without `/`) a real path with realpath(3) (following symlinks), and join `/` and the file name | not needed (realpath is the OS's own lookup) |
+| the `$PWD` candidate (only for a relative path) | the steps below | 1 and 3 of the steps below |
+
+Steps of the `$PWD` candidate:
+
+1. Do not build it when `$PWD` is missing or not an absolute path, or when the `(st_dev, st_ino)` from `stat` of `$PWD` differs from `stat` of `.` (`$PWD` is an inherited environment variable and may not have been updated after the cwd changed)
+2. Join `$PWD` and the relative path with `/`, split it into components and fold it lexically: drop empty components and `.`, and drop each `..` together with the component before it (`..` at the root stays the root)
+3. `stat` the directory of the folded spelling (what precedes the last component), and do not build it when its `(st_dev, st_ino)` differs from the directory of the original relative path (looked up from the cwd). The kernel takes `a/sym/..` to be the parent of the symlink's target, so folding lexically can give another directory
+
+How they are used:
+
+- The real-path candidate is looked at first. When it is up to the standard length it is used, and the `$PWD` candidate need not be built. Lengths are compared in bytes
+- A candidate that cannot be built (realpath or `stat` fails, the cwd is over PATH_MAX, `$PWD` fails the check) is not a failure; that candidate just does not exist. No error is returned, and it goes on to the next candidate or to the routes. When the socket's directory is missing there is no candidate either, and it becomes `ENOENT` where the routes look up the socket's directory
+- A candidate is not a route, so no candidate name goes into `skipped`. When a candidate is handed to the standard, `route` is `standard` and `skipped` is empty (even for an absolute path over the standard length)
+- When a bind with a candidate handed to the standard fails, that error is returned. Neither the other candidate, the routes, nor the original relative path is tried again ([How a failing route is treated](#how-a-failing-route-is-treated))
+- Joining, folding and comparing are done on bytes (the path is not converted into a string type; a name that is not UTF-8 is kept as it is)
+- Many of the languages' functions that join or normalize paths silently fold `..` lexically (Go's `filepath.Join` and `filepath.Abs`, Python's `os.path.abspath` and `os.path.normpath`, Node's `path.resolve` and `path.join`; measured 2026-11-22). When the `$PWD` candidate is built with them, the check of 3 is still not skipped. For the real-path candidate, do not make the path absolute with them before realpath (`a/sym/..` would be folded first and realpath would look up another directory)
+- The real-path candidate points to the real directory at the time realpath was taken. A later rename of the directory or a symlink swap is not reflected (as with link-dir's E)
+
 ## Building the relative path
 
 Used by [relative](#relative).
@@ -247,7 +274,7 @@ Used by [relative](#relative).
 
 ## How a failing route is treated
 
-- When a route actually binds / connects and fails (`ENOENT`, `EADDRINUSE`, `ECONNREFUSED`, etc.), that error is returned and the next route is not tried
+- When a route actually binds / connects and fails (`ENOENT`, `EADDRINUSE`, `ECONNREFUSED`, etc.), that error is returned and the next route is not tried. The same when a bind with an absolute candidate handed to the standard fails: neither the other candidate, the routes, nor the original relative path is tried again
 - Then the E made in that call is removed before returning (link-dir, link-file, thread-cwd, at; and the default connect's link-file). The default bind's link-dir E is kept, including one made in that call (another concurrent default bind may be reusing the same E, and a kept E is used by the next bind; since it is not removed, no lock serializing default binds is needed). D and B are kept too
 - When removing the E fails, it stays silent and changes neither the result of the call nor the original error (a successful connect is not turned into a failure; the original error is not replaced by the removal's). The `cleanup()` the user calls is different and returns the failure as an error ([SPEC `remove` and `cleanup`](SPEC.md#remove-and-cleanup))
 - It goes on to the next only when the route itself is unusable (each route's "unusable when")

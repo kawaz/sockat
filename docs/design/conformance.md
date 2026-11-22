@@ -8,7 +8,7 @@
 |---|---|---|
 | 場面の表 | ハブの `conformance/cases.json` | 何を試すか (操作、パスの形、前もって作る物) |
 | 流すスクリプト | ハブの `conformance/run.py` | 場面ごとに環境を作り、各言語の CLI を起こし、結果を集めて比べる |
-| 言語の一覧 | ハブの `conformance/langs.json` | 各言語の CLI の起こし方。`cwd` はリポの場所 (`cmd` の `{repo}` と、`/` を含む相対パスの `cmd[0]` の基準。CLI の cwd ではない)、`cmd` は起こすコマンド (まだ無ければ `null` で「未実装」)、`build` は CLI を作るコマンド (`just conformance` が流す前に各言語のリポで走らせる。`--no-build` で止める)、`lacks` はその言語が作らない経路の名前の並び (各言語のマニュアルの OS × 経路の表と同じ。比べ方を分けるのに使う)、`needs` は起こすのに要る物とその理由 (`{"proc": "理由の文"}`。キーは場面の `linux` の欄の名前で、今は `proc` だけ。知らないキーは langs.json の誤りとして止める。場面の `linux` で `proc` が false の時、`needs` に `proc` がある言語はその場面で起こさず、結果は「対象外」)、`linux` は Linux のコンテナでの起こし方 ([コンテナの作り方](#コンテナの作り方)) |
+| 言語の一覧 | ハブの `conformance/langs.json` | 各言語の CLI の起こし方。`cwd` はリポの場所 (`cmd` の `{repo}` と、`/` を含む相対パスの `cmd[0]` の基準。CLI の cwd ではない)、`cmd` は起こすコマンド (まだ無ければ `null` で「未実装」)、`build` は CLI を作るコマンド (`just conformance` が流す前に各言語のリポで走らせる。`--no-build` で止める)、`lacks` はその言語が作らない経路の名前の並び (各言語のリファレンスの OS × 経路の表と同じ。比べ方を分けるのに使う)、`needs` は起こすのに要る物とその理由 (`{"proc": "理由の文"}`。キーは場面の `linux` の欄の名前で、今は `proc` だけ。知らないキーは langs.json の誤りとして止める。場面の `linux` で `proc` が false の時、`needs` に `proc` がある言語はその場面で起こさず、結果は「対象外」)、`linux` は Linux のコンテナでの起こし方 ([コンテナの作り方](#コンテナの作り方)) |
 | 試験用 CLI | 各言語のリポ | 1 回の bind / connect を `_ex` で試し、結果を JSON で出す。公開しない |
 | Linux の条件 | ハブの `conformance/linux/` | 経路を強制する場面で使う seccomp の profile ([経路を強制する場面](#経路を強制する場面)) |
 
@@ -128,10 +128,11 @@ CLI の出力に加えて、CLI が終わった後に:
 - `{root}` はスクリプトが場面ごとに作る空のディレクトリ (`$TMPDIR` の下)。`{long}` は `{root}` の下の、パス全体が 150 バイト以上になる深いディレクトリ。`{short}` は `/tmp/sockat-conformance-<8 桁>` に作る `{root}` を指す symlink (`$TMPDIR` が深い環境でも短い絶対パスを作るため。毎回消す)。`TMPDIR` と `XDG_RUNTIME_DIR` は場面ごとの空のディレクトリ (0700) で、`{tmpdir}`・`{xdg}` で書ける
 - 場面の名前は英語の kebab-case
 - `usable_cross_uid` と `base` は書いた時だけ CLI の入力に渡す (`base` は placeholder を置き換えて)。省略時は入力に入れない (CLI の既定)
-- `setup` はスクリプトが CLI を起こす前にすること。`"動詞 パス"` の文字列で、動詞は `mkdir` (途中も作る)・`touch`・`listen` (待ち受けのソケット)・`stale-socket` (bind してすぐ閉じた、誰も listen していないソケット)。シェルには渡さない
+- `cwd` は CLI を起こす cwd。`{short}` を通すと symlink を通した cwd になる。`pwd` は CLI の環境変数 `PWD` に入れる値 (絶対パスか placeholder で始めたパス)。省略時は `cwd` と同じ綴り。`$PWD` が `.` と違う時を試すのに使う
+- `setup` はスクリプトが CLI を起こす前にすること。`"動詞 パス"` の文字列で、動詞は `mkdir` (途中も作る)・`touch`・`listen` (待ち受けのソケット)・`stale-socket` (bind してすぐ閉じた、誰も listen していないソケット)・`symlink` (`symlink <指す先> <置く場所>`。`ln -s` と同じ順)。シェルには渡さない
 - `expect` は全言語・全環境で変わらない値だけを書く
 - `expect` に書かなくても、全場面で次を期待する: `residue` が空、bind が通ったら元のパスにソケットがある、connect が通ったら `x` が届く、失敗と connect では `spelling` が `null`、connect では `base` が `null` で `left` が空 (D を作らず、B の直下の E は connect の後に消す)、失敗した bind では `left` に E が無い (実際に bind して失敗した経路は作った E を消してからエラーを返す。初めての bind でできた D は残ってよいので、`left` を空とは期待しない)。経路を試す前の失敗 (ディレクトリが無い、途中がファイル、引数の誤り) は `route` が `null` で `skipped` が空
-- 値が 1 つに決まらないが満たすべき決まりも全場面で確かめる: 通った bind の `spelling` が `Linked` なら `left` に E が 1 つ (CLI は `cleanup` を呼ばないので綴りの E が残る)、`Original`・`CwdRelative`・`Dangling` なら `left` に E が無い。`usable_cross_uid` を渡した bind の `spelling` が `Linked` なら、その `usable_cross_uid` が true (満たさない綴りに落とさない)
+- 値が 1 つに決まらないが満たすべき決まりも全場面で確かめる: 通った bind の `spelling` が `Linked` なら `left` に E が 1 つ (CLI は `cleanup` を呼ばないので綴りの E が残る)、`Original`・`CwdRelative`・`Dangling` なら `left` に E が無い。`usable_cross_uid` を渡した bind の `spelling` が `Linked` なら、その `usable_cross_uid` が true (満たさない綴りに落とさない)。手元で流す場面 (`linux` の無い場面) の通った bind の `spelling` は `CwdRelative` でない (相対パスは絶対にして扱い、`CwdRelative` はどの経路も使えない時だけ。手元では経路が使える。[SPEC の相対パスを絶対パスにする](../SPEC-ja.md#相対パスを絶対パスにする))
 - 環境で変わる値 (`route`・`base`・`spelling` 等) は言語どうしの比較だけで見る
 
 最初の場面 (経路を強制しなくても作れるもの):
@@ -139,7 +140,12 @@ CLI の出力に加えて、CLI が終わった後に:
 | 場面 | 確かめること |
 |---|---|
 | 短い絶対パスの bind | `route` が `standard`、`spelling` が `Original`、`left` が空 |
-| 短い相対パスの bind | `spelling` が `CwdRelative` |
+| 短い相対パスの bind (cwd は `{short}`) | 絶対パスの候補で標準に渡る。`route` が `standard`、`spelling` が `Original`、`left` が空 |
+| `..` を含む短い相対パスの bind (cwd は `{short}` の下 5 段、パスは `../../../../../s.sock`) | `$PWD` の候補は、畳まないと収まらず、畳むと収まる。`route` が `standard`、`spelling` が `Original` |
+| 深い cwd (`{long}`) の短い相対パスの bind | 絶対にすると長いので経路に回る。通る、ソケットが元のパスにある (`spelling` は環境で変わるので、言語どうしの比べと `CwdRelative` でない決まりで見る) |
+| `$PWD` が cwd と違う、深い cwd の短い相対パスの bind (`pwd` は `{short}`) | `$PWD` の候補を使わず経路に回る。ソケットが元のパスにある (`$PWD` の所に作らない) |
+| ディレクトリが無い短い相対パスの bind | `ENOENT`、`route` が `null`、`skipped` が空 (絶対パスの候補を作れず、経路に進んでディレクトリを引いた所で決まる) |
+| 深い cwd の短い相対パスへの connect | 絶対にせず相対のまま標準に渡る。`route` が `standard`、`skipped` が空、`x` が届く |
 | 長い絶対パスの bind | 通る、ソケットが元のパスにある |
 | 長いパスでディレクトリが無い | `ENOENT`、`route` が `null`、`skipped` が空 |
 | 長いパスの途中がファイル | `ENOTDIR` |
@@ -221,11 +227,13 @@ docker の seccomp の実測 (2026-11-20、OrbStack の docker 29.8.2、arm64):
 
 ### 強制の場面
 
-パスは `{long}/s.sock` (ファイル名 93・100 の場面はその長さのファイル名)、cwd は `{root}` (`relative` が収まらない)。seccomp を書いていない行は `unconfined`。
+パスは `{long}/s.sock` (ファイル名 93・100 の場面はその長さのファイル名)、cwd は `{root}` (`relative` が収まらない)。seccomp を書いていない行は `unconfined`。`symlink-` の 2 つの場面は条件を強制しないが、`{root}` の実パスが短い所 (コンテナの `/work` の下) が要るので、コンテナで流す (手元の `$TMPDIR` は深いことがある)。
 
 | 場面 | 条件 | 確かめること |
 |---|---|---|
 | linux-long-bind | 無し (`unconfined`) | 比べの基準 |
+| symlink-cwd-relative-bind | 無し (`unconfined`)。cwd は `{long}/l` (`{root}` を指す symlink)、パスは `s.sock` | `$PWD` の候補は収まらず、実パスの候補 (`/work` の下で短い) が収まる。`route` が `standard`、`spelling` が `Original` |
+| symlink-long-absolute-bind | 無し (`unconfined`)。パスは `{long}/l/s.sock` (`l` は `{root}` を指す symlink) | 長い絶対パスでも、実パスの候補が収まれば標準に渡る。`route` が `standard`、`spelling` が `Original`、`left` が空 |
 | no-thread-cwd-bind | `default` | スレッドの cwd を使えない bind |
 | no-thread-cwd-bind-kill-unshare | `kill-unshare` | 同じ。`unshare` を呼ばない |
 | no-proc-bind | `/proc` 無し | `/proc` を使えない bind |

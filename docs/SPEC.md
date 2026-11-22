@@ -18,6 +18,7 @@ How sockat behaves, independent of the language (the promise to users and to tho
 | sockaddr length | the length of `sun_path` − 1 byte (leaving room for the NUL). The longest spelling a sockaddr that is not widened carries |
 | original path | the path the user passed |
 | directory / file name | what precedes the last component of the original path, and the last component. The socket's directory is the former |
+| absolute candidate | an absolute path that points to the same place as the original path and does not depend on the cwd. There are the real-path candidate (the realpath of the socket's directory + the file name) and the `$PWD` candidate (the relative path joined to `$PWD` with `..` and `.` folded, checked to be the same directory as the original; only for a relative path) ([Making a relative path absolute](#making-a-relative-path-absolute)) |
 | spelling | the path string handed to the kernel. The kernel remembers a bind's spelling and returns it from `getsockname` / `getpeername` |
 | route | a way to build another spelling of the same place as the original path and bind / connect with it. The names are in "[Route names](#route-names)" |
 | try | check whether a route can be used, and if so bind / connect with its spelling. If not, go on to the next route |
@@ -29,7 +30,7 @@ How sockat behaves, independent of the language (the promise to users and to tho
 | procB | spelling B as `/proc/<pid>/fd/<B's fd>`. Only processes of the same uid can follow it, and it cannot be followed after the process exits |
 | real-path spelling | spelling B by its real path |
 | resolve | turning a long path into a short spelling through B / D / E and returning it ([resolve](#resolve)) |
-| spelling properties | whether a bind's spelling can be used later. Returned as `Spelling` ([Spelling properties: `Spelling`](#spelling-properties-spelling)). `Dangling` is a spelling that contains an E already removed, and reaches nothing |
+| spelling properties | whether the spelling of a bind or a resolve can be used later. Returned as `Spelling` ([Spelling properties: `Spelling`](#spelling-properties-spelling)). `Dangling` is a spelling that contains an E already removed, and reaches nothing |
 | fails the checks | does not pass the owner and permission checks of a base, B or `Options.base` (a real directory, owned by oneself or root, not writable by others) |
 | the connect variants | `connect`, `connect_nonblocking`, and the `_ex` of each |
 | `/proc` usable | checked differently where it is used (against a mismatch between the PID namespace and the `/proc` mount).<br>Choosing the connect row (the proc-direct row or the relative row of [Connect order](#connect-order)): `/proc/self/fd/<fd>` stat'ed with an fd opened on `/` has the same `(st_dev, st_ino)` as `fstat` of that fd. Apart from this, proc-direct makes the same check with the socket's directory's fd of that connect, and is unusable when they differ ([proc-direct](SPEC-routes.md#proc-direct))<br>Using procB (including the estimate of the spelling's length): `/proc/<pid>/fd/<B's fd>` stat'ed has the same `(st_dev, st_ino)` as `fstat` of B's fd ([Spelling forms](SPEC-routes.md#spelling-forms)) |
@@ -103,10 +104,10 @@ Shown with the Rust names.
 | `Connected<S>` | `socket` (the standard type), diagnostics (`route`, `skipped`) |
 | `Report` | diagnostics (`route`, `skipped`) |
 | `ForBind` | `path` (the spelling), `spelling`, `cleanup()`, `socket_file()` (a call made after the bind that receives a `SocketFile`; [`SocketFile` of `ForBind`](#socketfile-of-forbind)), diagnostics. It has no `remove()` |
-| `ForConnect` | `path` (the spelling), `cleanup()`, diagnostics (`route`, `skipped`). It has no call that receives a `SocketFile` (the type prevents removing by mistake) |
+| `ForConnect` | `path` (the spelling), `spelling`, `cleanup()`, diagnostics (`route`, `skipped`). It has no call that receives a `SocketFile` (the type prevents removing by mistake) |
 
 - `remove()` and `cleanup()` are in "[Cleanup](#cleanup)"
-- The properties of a connect's spelling are not returned (a connect's spelling does not stay with the peer)
+- The connect variants (`Connected`, `Report`) do not return the spelling's properties (a connect's spelling does not stay with the peer and is used only within that call). `ForConnect` does return them (the user may keep a resolved spelling and use it for a long time; [Spelling properties: `Spelling`](#spelling-properties-spelling))
 - There is no bool for "was it handed to the standard unchanged" (`spelling == Original` or `route == "standard"` tells)
 - Field and type names follow each language's conventions
 
@@ -131,7 +132,7 @@ On success `_ex` and resolve return the following.
 |---|---|
 | `route` | the name of the route taken |
 | `base` | the spelling of the B a bind used (`proc`, `sockdir`, `runtime`, `tmpdir`, `tmp`, `given`; what the values mean is in [Spelling forms](SPEC-routes.md#spelling-forms)). It has a value only when the spelling goes through B (link-dir, link-file), and none otherwise (standard, thread-cwd, at). `Connected`, `Report` and `ForConnect` have none |
-| `skipped` | the routes tried and found unusable, in the order tried. Each element is `{ name: the route name, reason: why it was unusable }`. For a long path `standard` is included |
+| `skipped` | the routes tried and found unusable, in the order tried. Each element is `{ name: the route name, reason: why it was unusable }`. When it goes on to the routes (a path over the standard length, and a relative path whose absolute candidates do not fit) `standard` is included |
 
 - `skipped` has one element per route name. Trying link-dir with procB and with the real path is still one element, with the `reason` of the last try. Not using procB because of `usable_cross_uid` is not skipping a route, so nothing is added
 - When a call skips a base among 1 to 3 because the B with the default name already exists there and fails the checks (occupied), the occupation is added to the `reason` why a route that uses B could not be used (the spelling does not fit, etc.) ([Building B](SPEC-routes.md#building-b)). It does not appear in calls after an earlier call has come to hold the B in the next base
@@ -145,16 +146,18 @@ On success `_ex` and resolve return the following.
 
 ## resolve
 
-It turns a long path into a short spelling that keeps pointing to the same place as the original path and returns it. While the spelling lives, upper libraries that remove by the `getsockname` spelling, DGRAM replies and operational tools work as with the original path. The spelling is just a path, so the user can hand it to the standard library whatever the socket type (stream / DGRAM / SEQPACKET) and operation (bind / connect / `send_to`).
+It turns a long path into a short spelling that keeps pointing to the same place as the original path and returns it. While the spelling lives, upper libraries that remove by the `getsockname` spelling, DGRAM replies and operational tools work as with the original path. The spelling is just a path, so the user can hand it to the standard library whatever the socket type (stream / DGRAM / SEQPACKET) and operation (bind / connect / `send_to`). A returned spelling may be used later after the cwd has changed, so a relative path is made absolute before it is handled ([Making a relative path absolute](#making-a-relative-path-absolute)).
 
 | | `resolve_for_bind` | `resolve_for_connect` |
 |---|---|---|
 | Spelling | `B/D/E/<file name>` (link-dir) first, then `B/D/E` (link-file) | `B/D/E` (link-file), whatever the file name's length |
 | Where link-file is used | only on the OSes measured to follow a symlink on bind (macOS, NetBSD). On OSes not yet checked, link-dir only (resolve does not bind, so whether bind follows cannot be told) | every OS (connect always follows a symlink in the last component) |
-| Returns | `ForBind` (`spelling`, `cleanup()`, `socket_file()`) | `ForConnect` (`cleanup()`) |
+| Returns | `ForBind` (`spelling`, `cleanup()`, `socket_file()`) | `ForConnect` (`spelling`, `cleanup()`) |
 | When it cannot | `ENAMETOOLONG` (a length only thread-cwd / at reaches) | `ENAMETOOLONG` (link-file cannot be used, e.g. B cannot be created) |
 
-- A path up to the standard length is returned unchanged (`Original` for an absolute path, `CwdRelative` for a relative one)
+- An absolute path up to the standard length is returned unchanged (`Original`)
+- For a relative path and an absolute path over the standard length, an absolute candidate that fits is returned when there is one (`Original`; nothing is created in the base)
+- For a relative path where none of the spellings above can be used, the original relative path is returned unchanged if it is up to the standard length (`CwdRelative`); if it is longer, `ENAMETOOLONG`
 - resolve only returns a spelling, so those who want the `ENAMETOOLONG` cases reached too use `bind` / `connect`. The default `bind` can try thread-cwd / at, and the default `connect` the routes needing no write and thread-cwd-direct
 - resolve spells B as procB or the real path, chosen as for the default bind ([Spelling forms](SPEC-routes.md#spelling-forms))
 - resolve does not list B on each call (so as not to add steps to resolve)
@@ -163,7 +166,7 @@ It turns a long path into a short spelling that keeps pointing to the same place
 
 ## Spelling properties: `Spelling`
 
-Whether a bind's spelling can be used later is returned as one value (`spelling` of `Bound` and `ForBind`).
+Whether the spelling of a bind or a resolve can be used later is returned as one value (`spelling` of `Bound`, `ForBind` and `ForConnect`).
 
 ```rust
 #[non_exhaustive]
@@ -177,8 +180,8 @@ pub enum Spelling {
 
 | Value | Spelling | Route |
 |---|---|---|
-| `Original` | the original absolute path | standard |
-| `CwdRelative` | the original relative path. It points elsewhere after the cwd changes (a hazard the standard already has, but it is reported) | standard |
+| `Original` | the original absolute path, or an absolute candidate (independent of the cwd) | standard |
+| `CwdRelative` | the original relative path. It points elsewhere after the cwd changes (a hazard the standard already has, but it is reported). Only when no route could be used even with the relative path made absolute (5 of [Making a relative path absolute](#making-a-relative-path-absolute)) | standard |
 | `Linked` | goes through B / D / E and points to the same place as the original path | link-dir, link-file |
 | `Dangling` | contains an E already cleaned up. Reaches nothing | thread-cwd, at |
 
@@ -191,7 +194,8 @@ Attributes of `Linked`:
 | `usable_cross_uid` | whether a peer of another uid can follow it | false for procB (same uid and same PID namespace only; root can follow). For a real-path spelling, true when every directory on the way to B and B itself give x to other (B in `/tmp`), otherwise false (`/run/user/<uid>` and macOS's `$TMPDIR` are 0700, and so is an existing B that is 0700) |
 | `usable_with_private_tmp` | whether the peer can follow it even when either side has its `/tmp` isolated (systemd's `PrivateTmp`, etc.) | always true for a procB spelling (the spelling does not pass through `/tmp`). For a spelling with B's real path, false when either the path of B's base before realpath or the spelling (the real path) passes through `/tmp` or `/var/tmp` (B in macOS's `/tmp` is false even though its spelling is `/private/tmp`), true when neither does. "Passes through" means that, component by component, it is `/tmp` or `/var/tmp`, or is under the realpath of either. A peer in a wholly different mount namespace (a container, etc.) is not covered |
 
-- A connect's spelling does not stay with the peer, so its properties are not returned
+- The connect variants (`connect_ex` etc.) do not return the spelling's properties (a connect's spelling does not stay with the peer and is used only within that call). `resolve_for_connect` does return them. The user may keep the returned spelling and use it for a long time, so it tells that a spelling left relative cannot be used after the cwd changes (`CwdRelative`) and that a procB spelling can be followed only while the process lives (`until`) ([DR-0019](decisions/DR-0019-absolutize-relative-path-on-bind.md), Japanese)
+- The `spelling` of `ForConnect` is one of `Original`, `CwdRelative` and `Linked` (a link-file spelling; `removable` is false). The attributes of `Linked` have the same definitions as for a bind's spelling and tell the actual properties of the spelling (`resolve_for_connect` does not look at `Options.usable_cross_uid`, so it does not choose a B that meets `usable_cross_uid`)
 
 ## Cleanup
 
@@ -212,9 +216,9 @@ Attributes of `Linked`:
 - `remove` only removes the file and does not close the listener. The user closes it
 - It remembers the realpath and `(st_dev, st_ino)` of the bound socket file and removes it only when that path still has the same `(st_dev, st_ino)`
   - It remembers them right after the bind succeeds (before returning the listener). If they cannot be remembered, it closes the listener, cleans up the E it made, leaves the socket file, and returns an error (it does not hand back a `remove()` that cannot remove anything as a success; nothing could be checked, so removing could remove a replaced file)
-  - For a relative path, compare the process's cwd `(st_dev, st_ino)` before anything about the path is looked up and after both the bind and the realpath taken for remembering; if they differ, treat it like the case where they cannot be remembered (so that a cwd change in between does not make it remember and remove an unrelated file under the old cwd. A change and change back is not seen)
+  - When the spelling is `CwdRelative` (no route could be used and the relative path was handed to the standard as is), compare the process's cwd `(st_dev, st_ino)` before anything about the path is looked up and after both the bind and the realpath taken for remembering; if they differ, treat it like the case where they cannot be remembered (so that a cwd change in between does not make it remember and remove an unrelated file under the old cwd. A change and change back is not seen). When the relative path was made absolute and bound, the realpath remembered does not depend on the cwd, so this comparison is not made
   - After the bind, when the last element of the original path is a symlink (on macOS and NetBSD the standard bind follows a last symlink and creates the socket at its target), it remembers the realpath and `(st_dev, st_ino)` of what it led to (so that `remove` does not remove the user's symlink). Whether or not the last element is a symlink, when what it would remember is not a socket, it is treated like the case where they cannot be remembered (`bind_ex` closes the listener, cleans up the E and returns an error; remembering what replaced the file right after the bind would make `remove` remove that)
-  - Where to remember: link-dir, thread-cwd and at remember the real directory the route created the socket in (the realpath E points to, the D moved to) with the file name (the original path is not resolved again, so that what was created is remembered even if a symlink on the way is switched between building the route and after the bind). standard and link-file resolve the realpath of the original path after the bind
+  - Where to remember: link-dir, thread-cwd and at remember the real directory the route created the socket in (the realpath E points to, the D moved to) with the file name (the original path is not resolved again, so that what was created is remembered even if a symlink on the way is switched between building the route and after the bind). standard resolves, after the bind, the realpath of the spelling handed to the standard (the original path or an absolute candidate). link-file resolves, after the bind, the realpath of what E points to (the original path, with the cwd prepended for a relative path)
   - The path argument is turned into a string once at the entry, and that value is used for remembering, binding and returning alike
 - It succeeds when the file is already gone and when it has been replaced by another file and is left alone. It fails when the check cannot be made (`lstat` fails with something other than `ENOENT` / `ENOTDIR`) and when the removal itself fails
 - Even when it fails, it goes on to `cleanup`, and returns the error of removing the file
@@ -235,7 +239,7 @@ At resolve time nothing is bound, so `ForBind` cannot remember the socket file's
 - At the call it follows the spelling all the way, including a symlink at the last element of the original path (the standard bind follows it on macOS and NetBSD), and remembers the realpath and `(st_dev, st_ino)` of the socket file it ends at (so that `remove` does not remove the user's symlink). When it cannot follow it (before the bind, no file), it is an error. When what it ends at is not a socket (an unrelated file that was at the original path before the bind, etc.), it is an error
 - The returned `SocketFile` works like the one of `Bound` ([`remove`](#remove)). Its `cleanup()` cleans up once the same E as `cleanup()` of `ForBind`
 - Call it after the bind and before closing the listener. A replacement between the bind and the call cannot be told apart
-- When the spelling is `CwdRelative`, the process cwd's `(st_dev, st_ino)` at resolve time and at the call are compared, and a difference is an error
+- When the spelling is `CwdRelative` (no spelling could be used and the relative path was returned as is), the process cwd's `(st_dev, st_ino)` at resolve time and at the call are compared, and a difference is an error
 
 ### What stays in the base
 
@@ -278,11 +282,11 @@ The OS's temporary-directory cleaning ([research](research/2026-11-20-tmp-cleane
 
 ## Short paths
 
-A path up to the standard length is handed to the standard unchanged. Nothing is added and no environment variable is read. A longer path goes to the routes ([DR-0004](decisions/DR-0004-standard-length-per-language.md), Japanese).
+An absolute path up to the standard length is handed to the standard unchanged. Nothing is added and no environment variable is read. A longer path goes to the routes ([DR-0004](decisions/DR-0004-standard-length-per-language.md), Japanese). A relative path is made absolute before it is split by length for bind and resolve, and is split by length as it is for the connect variants and `send_to` ([Making a relative path absolute](#making-a-relative-path-absolute)).
 
 - A path containing NUL anywhere but at the start is never handed to the standard, whatever its length; it is an invalid-argument error ([DR-0006](decisions/DR-0006-nul-is-invalid-at-any-length.md), Japanese)
 - An empty path is an invalid-argument error
-- A spelling the standard does not read as a path (Node's node:net takes a string that reads as a number to be a TCP port) is handed to the standard with `./` in front, which names the same file. The same goes for the relative spelling of a route. `Spelling` stays `CwdRelative`
+- Among the spellings handed to the standard as relative ones, one the standard does not read as a path (Node's node:net takes a string that reads as a number to be a TCP port; Go's standard on illumos rewrites a leading `@` into an abstract name) is handed to the standard with `./` in front, which names the same file. A relative path is handed as it is for the connect variants and `send_to`, and for bind and resolve in case 5 of [Making a relative path absolute](#making-a-relative-path-absolute). The same goes for the relative spelling of a route (relative). For bind and resolve, `Spelling` stays `CwdRelative`
 - On Linux / Android a path starting with NUL (abstract namespace) is out of scope and is handed to the standard unchanged, whatever its length. A language's own abstract notation (Go's `@` etc.) likewise. The `Spelling` of `_ex` and resolve is `Original`
 - On OSes without an abstract namespace, a path starting with NUL is an invalid argument too, whatever its length
 - In a language whose standard has no non-blocking connect, a non-blocking connect alone uses the implementation's own socket, connected to the same address as the standard would
@@ -293,13 +297,46 @@ A path up to the standard length is handed to the standard unchanged. Nothing is
 | Linux / Android / illumos | 107 bytes |
 | Apple OSes / FreeBSD / NetBSD / OpenBSD | 103 bytes |
 
+## Making a relative path absolute
+
+When bound with a relative path, the spelling the kernel remembers is relative too, and once the cwd changes it points elsewhere (a standard that unlinks by the address's spelling on close, a standard that unlinks the given path in the cwd at the time of the close, and DGRAM replies then hit somewhere else or do not arrive). The operations whose spelling stays make a relative path absolute with the cwd before handling it ([DR-0019](decisions/DR-0019-absolutize-relative-path-on-bind.md), Japanese).
+
+| Operation | On receiving a relative path |
+|---|---|
+| bind (`bind`, `bind_ex`, `datagram::bind`, `datagram::bind_ex`) | make it absolute before handling it |
+| resolve (`resolve_for_bind`, `resolve_for_connect`) | make it absolute before handling it (the returned spelling may be used later after the cwd has changed) |
+| the connect variants (`connect`, `connect_nonblocking`, `datagram::connect` and each `_ex`), and the destination of a send (`datagram::send_to` and its `_ex`) | leave it as it is (the spelling does not stay with the peer, and after connecting or sending a change of the cwd does not matter. Handed as relative, nothing is created in the base) |
+
+The steps of bind and resolve:
+
+1. The form of the arguments (an empty path, NUL, the form of `Options.base`) is checked first. An abstract name is out of scope (handed to the standard unchanged, whatever its length)
+2. For a relative path, build two absolute candidates ([Building the absolute candidates in SPEC-routes](SPEC-routes.md#building-the-absolute-candidates))
+   - the real-path candidate: the socket's directory made a real path with realpath (following symlinks), with the file name appended
+   - the `$PWD` candidate: only when `$PWD` is the same thing as `.`, the relative path joined to it as a string with `..` and `.` folded lexically, checked by `(st_dev, st_ino)` that the folded directory is the same thing as the original directory
+3. When a candidate is up to the standard length, hand it to the standard (the real-path candidate is looked at first). `route` is `standard` and `Spelling` is `Original`. Nothing is created in the base
+4. When neither fits or can be built, go on to [the routes for long paths](#routes-for-long-paths-and-their-order)
+5. When no route can be used in 4, go on with the original relative path. If it is up to the standard length, hand it to the standard as relative (`Spelling` is `CwdRelative`). If it is longer, `ENAMETOOLONG` (the routes for long paths are the same as those tried in 4). This keeps every place the standard reaches reachable
+
+- For an absolute path over the standard length too, the real-path candidate is looked at before going on to the routes, and when it fits it is handed to the standard (`route` is `standard`, `Spelling` is `Original`). No `$PWD` candidate is built for an absolute path
+- Two candidates are looked at to widen the cases where the path can be handed to the standard unchanged (sometimes the real path is shorter, sometimes the `$PWD` candidate is). When one fits, nothing needs to be created in the base. They do not compete in shortness (fitting is enough)
+- It falls to 5 only when the routes themselves are unusable. When a bind is actually made with an absolute candidate or a route and fails (`EADDRINUSE`, `ENOENT`, etc.), that error is returned and neither the other candidate nor the original relative path is tried again (so as not to try the same failure twice or create something somewhere else)
+- What changes is whether the spelling the kernel remembers is relative or absolute; where the socket file is created does not change
+- `CwdRelative` is returned only in case 5. When the cwd is very deep (its absolute path is over PATH_MAX: 4096 on Linux, 1024 on macOS), neither the real-path candidate nor the `$PWD` candidate can be built or fits, and it goes on to 4 or 5
+- A spelling that is absolute but depends on the cwd, such as `/proc/self/cwd/…`, is not touched (only relative paths are covered)
+- A relative path up to the standard length that does not end in a name (`dir/`, `..`, etc.) is not made absolute; it is handed to the standard as relative (there is no file name, so no candidate can be made; the error the standard returns is returned as is)
+- For a relative path, when the socket's directory exists but its realpath fails with `ENAMETOOLONG` (the cwd is over PATH_MAX, etc.), that is not an error: the routes are treated as unusable and it goes on to 5. Any other failure (`ENOENT`, `ENOTDIR`, `EACCES`, etc.) is returned as that error
+- The diagnostics when the path is handed to the standard as relative in 5: `route` is `standard`, and `skipped` holds only the routes that were unusable in 4, without `standard` (it is the route that went through in the end). That it was handed over as relative shows in `Spelling` being `CwdRelative`
+- A language that replaces what returns the address (Python, TypeScript) returns, after a bind with a relative path, not the given relative string but the absolute form (the candidate when a candidate was handed to the standard; when it went on to the routes, the form of the real-path candidate, or of the `$PWD` candidate when that cannot be made). It returns the given relative path only in the case of 5
+- What differs from the standard (the address the kernel returns becomes absolute, a deep cwd creates things in the base even for a short relative path, etc.) is in "[What differs from the standard for a long path](#what-differs-from-the-standard-for-a-long-path)"
+
 ## Routes for long paths and their order
 
-A path over the standard length is tried on the routes in the order below and bound / connected on the first route that can be used. How each route is built is in [SPEC-routes.md](SPEC-routes.md#routes); how far it reaches is in [the reach table](../pages/reach/README.md).
+A path over the standard length (for a relative path in bind and resolve, one whose absolute candidates do not fit; [Making a relative path absolute](#making-a-relative-path-absolute)) is tried on the routes in the order below and bound / connected on the first route that can be used. How each route is built is in [SPEC-routes.md](SPEC-routes.md#routes); how far it reaches is in [the reach table](../pages/reach/README.md).
 
 - A path whose last component is not a file name (`dir/`, `dir/.`, `dir/..`, `..`) is an invalid-argument error, and nothing is created
 - The socket's directory is looked up first. When it is missing, `ENOENT`; when it is not a directory, `ENOTDIR` (before the length is judged or B / D / E is created)
-- The path is never folded lexically (`..` and `.` are not removed on the string). The kernel takes `a/sym/..` to be the parent of the symlink's target, so the directory is looked up by the OS (open, realpath(3))
+- In bind and resolve, for an absolute path over the standard length, the real-path candidate is looked at after the socket's directory is looked up and before any route is tried. When it fits, it is handed to the standard
+- The routes never fold the path lexically (`..` and `.` are not removed on the string). The kernel takes `a/sym/..` to be the parent of the symlink's target, so the directory is looked up by the OS (open, realpath(3)). Only the `$PWD` candidate is folded lexically, and it is used only after the folded directory is checked to be the same thing as the original
 - No route changes the calling process's cwd or the calling thread's cwd
 - No fork (neither for bind nor for connect). The cases only a fork reached, and the fork technique, are in [fork-cwd](../pages/fork-cwd.md)
 
@@ -324,12 +361,13 @@ A name is "means + what it is about". The suffix `-direct` is the form that pass
 
 | Order | Route | B spelled as | Spelling | Used when | `Spelling` |
 |---|---|---|---|---|---|
-| 1 | `standard` | | the original path | up to the standard length | `Original` / `CwdRelative` |
+| 1 | `standard` | | the original absolute path, or an absolute candidate | the original absolute path is up to the standard length, or a candidate fits | `Original` |
 | 2 | `link-dir` | procB | `B/D/E/<file name>` | `/proc` is usable and it fits (not with `usable_cross_uid`) | `Linked` |
 | 3 | `link-dir` | real path | same | it fits | `Linked` |
 | 4 | `link-file` | real path | `B/D/E` | OSes whose bind follows a symlink in the last component | `Linked` |
 | 5 | `thread-cwd` (`at` on FreeBSD) | | `E/<file name>` | Linux / Android, Apple OSes (`at` on FreeBSD) | `Dangling` |
-| 6 | `ENAMETOOLONG` | | | | |
+| 6 | `standard` | | the original relative path | the original path is relative and up to the standard length (5 of [Making a relative path absolute](#making-a-relative-path-absolute)) | `CwdRelative` |
+| 7 | `ENAMETOOLONG` | | | | |
 
 - The spelling is kept, so while it lives, upper libraries that remove by the `getsockname` spelling and DGRAM replies work as with the original path. thread-cwd / at come after, for when resolve's spelling does not fit
 - link-file is not tried on the OSes measured not to follow a symlink on bind (Linux / Android, FreeBSD, OpenBSD, illumos). macOS and NetBSD follow it (measured 2026-11-19, [findings](findings/2026-11-19-bind-through-file-symlink.md), Japanese). On other OSes it is tried and whether it follows is told apart at run time
@@ -356,6 +394,7 @@ Routes needing neither a write nor a thread come first; routes that start a thre
 | FreeBSD | at-direct |
 | NetBSD / OpenBSD / illumos / other Unix | relative |
 
+- The connect variants do not make a relative path absolute ([Making a relative path absolute](#making-a-relative-path-absolute)). A relative path up to the standard length is handed to the standard as relative at 1
 - A connect's spelling does not stay with the peer (the connecting socket is not bound), so no E is kept. A one-off connect from a CLI usually ends at 2, and reaches even in a sandbox with no writable base
 - relative and widened sometimes reach farther than the routes through the base
 - 3 can be used on Linux / Android and Apple OSes ([thread-cwd-direct](SPEC-routes.md#thread-cwd-direct))
@@ -363,8 +402,13 @@ Routes needing neither a write nor a thread come first; routes that start a thre
 
 ## What differs from the standard for a long path
 
+Bind and resolve make a relative path absolute ([Making a relative path absolute](#making-a-relative-path-absolute)), so even a short relative path differs from the standard in some points (the rows "Relative path:" of the table).
+
 | Point | What happens |
 |---|---|
+| Relative path: the address the kernel returns | after a bind with a relative path, even a short one, the address shown by `getsockname` on the bound side, `getpeername` on a side that connected to it, `ss`, `lsof`, etc. is not the given relative path but an absolute path (an absolute candidate or a route's spelling). Code comparing the address string with the given relative path no longer matches |
+| Relative path: a deep cwd | a relative path that is over the standard length once made absolute goes to the routes even when it is short enough for the standard to create nothing, and B / D / E are created in the base |
+| Relative path: a cwd change after the candidates are built | when the cwd changes between building the absolute candidates and the bind, the socket is created under the cwd at the time the candidates were built (a standard bind with a relative path uses the cwd at the time of the bind) |
 | The address the kernel returns | `getsockname` on the bound side, and `getpeername` on a side that connected to it, return the bind's spelling, not the original path. Whether it can be used later is told by `Spelling`. A language that can replace, within the standard type, what returns the address (Python, TypeScript) returns the original path. On illumos, the connecting side's `getpeername` returns the spelling passed to connect rather than the one bound (measured in sockat-rs's CI, 2026-11-19) |
 | How it looks in operational tools | the address shown by `ss -x`, `lsof`, `/proc/net/unix`, etc. is the bind's spelling. For link-dir and thread-cwd / at the file name stays at the end of the spelling. A link-file spelling does not show the file name |
 | When the listener is closed | the default bind (Go's `Listen`, etc.) behaves as the standard does. With a standard that unlinks by the address's spelling on close (Go's `UnixListener.Close`), a link-dir spelling follows the E in the middle and removes the file at the original path (same as the standard). With a link-file spelling the unlink does not follow the last symlink, so E itself is removed and the socket file stays (differs from the standard; each language's README says so). A `Dangling` spelling is not unlinked (Go uses `SetUnlinkOnClose(false)`). The bind of `_ex` does not remove anything on close, whatever the spelling; only `remove()` of `SocketFile` removes the file (removing by the spelling would remove a replaced file without telling it apart) |
@@ -374,17 +418,17 @@ Routes needing neither a write nor a thread come first; routes that start a thre
 | Environments where a live D can be removed | Linux with systemd older than v242, and B in macOS's `$TMPDIR` ([What stays in the base](#what-stays-in-the-base)). The spelling only stops being followable |
 | A peer with `PrivateTmp` | when the peer's `/tmp` is isolated, it cannot follow a spelling through `/tmp`. On Linux procB is used first, so this rarely happens. `usable_with_private_tmp` tells whether it can follow |
 
-- NUL anywhere but at the start is an invalid argument even for a short path. A language whose standard silently truncates at NUL (Go, etc.) says so under "differs from the standard" in its manual
+- NUL anywhere but at the start is an invalid argument even for a short path. A language whose standard silently truncates at NUL (Go, etc.) says so under "differs from the standard" in its reference
 
 ## Patterns not to use
 
-Patterns that, when using sockat, remove an unrelated file or fail to remove the file. This section is the source for warnings to users; other sections and each language's docs point here. Each language's manual links to this section and gives only the concrete form in that language (e.g. Go's `os.Remove(l.Addr().String())`) and recommended code that avoids it (run as a test).
+Patterns that, when using sockat, remove an unrelated file or fail to remove the file. This section is the source for warnings to users; other sections and each language's docs point here. Each language's reference links to this section and gives only the concrete form in that language (e.g. Go's `os.Remove(l.Addr().String())`) and recommended code that avoids it (run as a test).
 
 | Pattern | Why not | Instead |
 |---|---|---|
 | unlinking / stat-ing the socket file by the spelling the kernel returns (`getsockname`, the listener's address, etc.) without looking at `Spelling` | with a link-file spelling only E is removed and the file stays. A `Dangling` spelling reaches nothing | keep the original path and use it. `remove()` |
 | using an old spelling after `cleanup` or after the process exits | after B in `/tmp` is cleaned up, someone else can recreate the same name. A procB spelling cannot be followed after the process exits | use a spelling only within `until` |
-| binding with a relative path and removing it by that relative path after changing the cwd | it hits a file elsewhere (`CwdRelative`) | make the path absolute before binding by putting the cwd in front (do not use a function that folds `..` lexically; `a/sym/..` would become another directory). `remove()` |
+| binding with a relative path and removing it by the given relative path string after changing the cwd | it hits a file elsewhere (what sockat makes absolute is the spelling handed to the kernel; the string the user holds stays relative. With `CwdRelative` the kernel's spelling is relative too) | `remove()`. When making the path absolute yourself, do not use a function that folds `..` lexically (`a/sym/..` would become another directory) |
 | relying on closing the listener to remove the socket file | for a long path it depends on the spelling and may not be removed ("[What differs from the standard for a long path](#what-differs-from-the-standard-for-a-long-path)"). The listener of `bind_ex` never removes it on close | `remove()`, or remove by the original path |
 | relying on `remove()` to close the listener too | `remove()` only removes the file | close the listener yourself |
 | calling `remove()` after closing the listener | another file recreated after the close may not be told apart ([`remove`](#remove)) | call it before closing the listener |
@@ -400,7 +444,7 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 | a file already exists where bind would create one | `EADDRINUSE` |
 | a socket file nobody listens on / nobody holds | `ECONNREFUSED` (a DGRAM connect gets `EDESTADDRREQ` on illumos; measured in sockat-go's CI 2026-11-21) |
 | the backlog is full | Linux gives `EAGAIN` for a non-blocking connect (a blocking connect waits); macOS gives `ECONNREFUSED` |
-| no route can be used (the spelling does not fit, the means is missing) | `ENAMETOOLONG` |
+| no route can be used (the spelling does not fit, the means is missing) | `ENAMETOOLONG` (in bind and resolve, a relative path up to the standard length is handed to the standard as relative) |
 | `resolve_for_bind` at a length only thread-cwd / at reaches | `ENAMETOOLONG` |
 | `resolve_for_connect` when link-file cannot be used (B cannot be created, the spelling does not fit) | `ENAMETOOLONG` |
 | `Options.base` is a relative path, contains a NUL, or its last component is not a file name (`dir/`, `..`, `/`). Regardless of the path's length, and checked before telling whether it is an abstract name (a check of the argument's form, like a NUL not at the start) | invalid argument |
@@ -414,28 +458,34 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 | the cwd changed during relative | general error |
 
 - The directory is looked up first, so `ENOENT` and `ENOTDIR` are decided before the length on every OS
+- In bind and resolve, when the socket's directory of a relative path is missing, it is `ENOENT` even for a short path, as for a long path (`route` is none). No absolute candidate can be built, so it goes on to the routes and is decided where the socket's directory is looked up
 - An `Options.base` error does not fall back to the automatic bases
 - OS errors are returned in a form from which the errno can be read in that language's way
 - An error the OS returns is returned unchanged, so the errno can differ by OS. Tests do not hard-code the errno; they compare with the errno the standard returns for the same operation on a short path on the same OS
-- When the standard itself turns an OS error into another errno (Node's listen returns `EACCES` for a missing directory, etc.), a path up to the standard length gets the standard's errno and a longer path gets the errno of this table. Tests compare that errno with this table
+- When the standard itself turns an OS error into another errno (Node's listen returns `EACCES` for a missing directory, etc.), a failure of a spelling handed to the standard (a path up to the standard length, an absolute candidate) gets the standard's errno, and a path not handed to the standard gets the errno of this table. Tests compare that errno with this table
 - Which type represents "invalid argument" and "general error" is up to each implementation
 
 ## What each implementation must do
 
-- Follow the routes and order of this specification ([SPEC-routes.md](SPEC-routes.md)). A route that cannot be built in the language is skipped (treated as unusable and the next is tried, and put into `_ex`'s `skipped` with the reason), and the manual states it in an OS × route table
+- Follow the routes and order of this specification ([SPEC-routes.md](SPEC-routes.md)). A route that cannot be built in the language is skipped (treated as unusable and the next is tried, and put into `_ex`'s `skipped` with the reason), and the reference states it in an OS × route table
 - Provide the test CLI of the language-independent conformance test ([docs/design/conformance.md](design/conformance.md), Japanese)
 - In a language that adopts its own socket into the standard type, check that adopting a socket connected via widened, and reading its address, do not crash. If they crash, skip widened as a route that cannot be built
 - Routes are not exposed in the public API. Tests force each route by calling it directly from inside the package
 - The parts that read the environment (the base candidates, where `/proc` is, whether Apple OSes accept a widened sockaddr, whether the thread cwd can be used) can be replaced from tests
-- The manual links to this specification (from the README it is reached through "How it works" at the end). Before adding behavior that disagrees with it, fix this specification first
-- The user-facing docs (each language's manual) do not copy what is common to all languages; they link to the sections of this specification and pages: "[What differs from the standard for a long path](#what-differs-from-the-standard-for-a-long-path)", "[Patterns not to use](#patterns-not-to-use)", "[What stays in the base](#what-stays-in-the-base)", "[`sweep`](#sweep)". A language's docs hold only the names and types in that language, the concrete forms and recommended code in that language, and the caveats specific to that language (bugs and limits of its standard library or runtime). Each specific caveat gets one line in the hub's [per-language caveats](../pages/langs.md)
+- The reference links to this specification (from the README it is reached through "How it works" at the end). Before adding behavior that disagrees with it, fix this specification first
+- The user-facing docs (each language's manual and reference) do not copy what is common to all languages; they link to the sections of this specification and pages: "[What differs from the standard for a long path](#what-differs-from-the-standard-for-a-long-path)", "[Patterns not to use](#patterns-not-to-use)", "[What stays in the base](#what-stays-in-the-base)", "[`sweep`](#sweep)". A language's docs hold only the names and types in that language, the concrete forms and recommended code in that language, and the caveats specific to that language (bugs and limits of its standard library or runtime). Each specific caveat gets one line in the hub's [per-language caveats](../pages/langs.md)
 - The opening of each language's README (who it is for, the error that language's standard library gives, the before / after in that language, how to install) is written with that language's own examples, not replaced by a link. What is not copied is the explanation beyond it
+- Each language's docs use the same paths (so the hub can link to them): the top of the manual `docs/MANUAL-ja.md` / `docs/MANUAL.md` (only the list of what you want to do), usage by situation `docs/manual/bind-ja.md`, `connect-ja.md`, `resolve-ja.md`, `datagram-ja.md` and the English `.md` (a heading per situation and typical sample code; what the language lacks is left out), and the reference `docs/REFERENCE-ja.md` / `docs/REFERENCE.md` (what is not usage: the list of functions and types, `Options`, `Spelling`, errors, patterns not to use, language-specific caveats, the OS × route table)
 
 ## What implementations test
 
 | Aspect | What to check |
 |---|---|
 | The short-path boundary | a path exactly the standard length goes to the standard unchanged, and one byte longer goes to the routes (checking the boundary with the standard itself) |
+| Relative paths in bind and resolve | a short relative path goes to the standard as an absolute candidate and is `Original`. With a cwd reached through a symlink, it goes to the standard with whichever of the real-path candidate and the `$PWD` candidate fits. When `$PWD` differs from `.`, the `$PWD` candidate is not used. For a relative path with `..`, a candidate whose folded directory differs from the original (`a/sym/..`) is not used. A short relative path in a deep cwd goes to the routes. When no route can be used, it goes to the standard as relative and is `CwdRelative`. When a bind with an absolute candidate fails, neither the other candidate nor the relative path is tried again. After a bind with a relative path, `remove()` removes the bound file even if the cwd has been changed |
+| The real-path candidate of a long absolute path | a long absolute path that fits as a real path (through a symlink) goes to the standard with nothing created in the base (`Original`) |
+| Relative paths in the connect variants | a relative path is not made absolute, and when it is up to the standard length it goes to the standard as relative (nothing is created in the base) |
+| The `spelling` of `ForConnect` | `Original` for an absolute path up to the standard length and an absolute candidate, `Linked` for a link-file spelling (`removable` is false). `until` is `Process` for a procB spelling |
 | Where the spelling lands | unlinking / stat-ing the spelling does not hit an unrelated file (a same-named file in the cwd, a same-named file in another directory whose fd number was made to be reused) |
 | Checking B | a base that fails the checks on the way to B is not used. When the B with the default name in bases 1 to 3 already exists and fails the checks (occupied), nothing is created in that base and the next base is tried, and the `reason` when the routes that use B are unusable tells it was occupied. `Options.base` that fails is an error |
 | Concurrency | many concurrent binds / connects do not conflict in creating B / D or in reusing the default bind's E |

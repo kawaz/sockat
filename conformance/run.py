@@ -135,6 +135,9 @@ def load_cases():
         b = c.get("base")
         if b is not None and not (isinstance(b, str) and (b.startswith("/") or b.startswith("{"))):
             fail_usage(f"cases.json: 場面 {c['name']!r} の base は絶対パスか placeholder で始めたパス")
+        pwd = c.get("pwd")
+        if pwd is not None and not (isinstance(pwd, str) and (pwd.startswith("/") or pwd.startswith("{"))):
+            fail_usage(f"cases.json: 場面 {c['name']!r} の pwd は絶対パスか placeholder で始めたパス")
         unknown = set(c["expect"]) - set(FIELDS)
         if unknown:
             fail_usage(f"cases.json: 場面 {c['name']!r} の expect に知らない項目 {sorted(unknown)}")
@@ -274,6 +277,9 @@ class Env:
                     pass
             elif verb in ("listen", "stale-socket") and len(args) == 1:
                 self.start_helper(args[0], "listen" if verb == "listen" else "stale")
+            elif verb == "symlink" and len(args) == 2:
+                # ln -s と同じ順 (指す先、置く場所)。
+                os.symlink(args[0], args[1])
             else:
                 raise SetupError(f"知らない setup: {step!r}")
 
@@ -614,7 +620,8 @@ def run_one(case, argv, base, keep):
         child_env = dict(os.environ)
         child_env["TMPDIR"] = str(env.tmp)
         child_env["XDG_RUNTIME_DIR"] = str(env.xdg)
-        child_env["PWD"] = cwd
+        # PWD は既定で cwd と同じ綴り。場面の pwd で cwd と違う値にできる ($PWD が . と違う時を試す)。
+        child_env["PWD"] = env.subst(case["pwd"]) if case.get("pwd") is not None else cwd
         before_tree = env.tree()
         before_places = places.snapshot()
         conditions = Conditions(env, case["linux"]) if "linux" in case else None
@@ -704,6 +711,9 @@ def rule_violations(case, result):
             out["left"] = f"{sp['kind']} の bind は E を残さない"
     if case.get("usable_cross_uid") and sp is not None and sp["kind"] == "Linked" and not sp["usable_cross_uid"]:
         out["spelling"] = "usable_cross_uid を指定した bind は Linked なら usable_cross_uid が true"
+    if case["op"] == "bind" and "linux" not in case and sp is not None and sp["kind"] == "CwdRelative":
+        # 相対パスは絶対にして扱い、CwdRelative はどの経路も使えない時だけ (DR-0019)。手元の場面では経路が使える。
+        out["spelling"] = "手元の場面の bind は CwdRelative にならない (経路が使えるので、相対パスも絶対にして扱う)"
     return out
 
 

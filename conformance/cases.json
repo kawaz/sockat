@@ -11,9 +11,50 @@
     "name": "short-relative-bind",
     "op": "bind",
     "path": "s.sock",
-    "cwd": "{root}",
+    "cwd": "{short}",
     "setup": [],
-    "expect": { "ok": true, "error": null, "route": "standard", "skipped": [], "file": true, "spelling": {"kind": "CwdRelative"}, "base": null, "left": [] }
+    "expect": { "ok": true, "error": null, "route": "standard", "skipped": [], "file": true, "spelling": {"kind": "Original"}, "base": null, "left": [] }
+  },
+  {
+    "name": "dotdot-relative-bind",
+    "op": "bind",
+    "path": "../../../../../s.sock",
+    "cwd": "{short}/dddddddddddddddd/dddddddddddddddd/dddddddddddddddd/dddddddddddddddd/dddddddddddddddd",
+    "setup": ["mkdir {root}/dddddddddddddddd/dddddddddddddddd/dddddddddddddddd/dddddddddddddddd/dddddddddddddddd"],
+    "expect": { "ok": true, "error": null, "route": "standard", "skipped": [], "file": true, "spelling": {"kind": "Original"}, "base": null, "left": [] }
+  },
+  {
+    "name": "deep-cwd-relative-bind",
+    "op": "bind",
+    "path": "s.sock",
+    "cwd": "{long}",
+    "setup": ["mkdir {long}"],
+    "expect": { "ok": true, "error": null, "file": true, "residue": [] }
+  },
+  {
+    "name": "stale-pwd-relative-bind",
+    "op": "bind",
+    "path": "s.sock",
+    "cwd": "{long}",
+    "pwd": "{short}",
+    "setup": ["mkdir {long}"],
+    "expect": { "ok": true, "error": null, "file": true, "residue": [] }
+  },
+  {
+    "name": "short-relative-bind-no-directory",
+    "op": "bind",
+    "path": "none/s.sock",
+    "cwd": "{short}",
+    "setup": [],
+    "expect": { "ok": false, "error": "ENOENT", "route": null, "skipped": [], "created": [], "spelling": null, "base": null }
+  },
+  {
+    "name": "deep-cwd-relative-connect",
+    "op": "connect",
+    "path": "s.sock",
+    "cwd": "{long}",
+    "setup": ["mkdir {long}", "listen {long}/s.sock"],
+    "expect": { "ok": true, "error": null, "route": "standard", "skipped": [], "received": "x", "residue": [] }
   },
   {
     "name": "long-absolute-bind",
@@ -172,6 +213,24 @@
     "setup": ["mkdir {long}"],
     "linux": { "seccomp": "unconfined" },
     "expect": { "ok": true, "error": null, "file": true, "residue": [] }
+  },
+  {
+    "name": "symlink-cwd-relative-bind",
+    "op": "bind",
+    "path": "s.sock",
+    "cwd": "{long}/l",
+    "setup": ["mkdir {long}", "symlink {root} {long}/l"],
+    "linux": { "seccomp": "unconfined" },
+    "expect": { "ok": true, "error": null, "route": "standard", "skipped": [], "file": true, "spelling": {"kind": "Original"}, "base": null, "left": [] }
+  },
+  {
+    "name": "symlink-long-absolute-bind",
+    "op": "bind",
+    "path": "{long}/l/s.sock",
+    "cwd": "{root}",
+    "setup": ["mkdir {long}", "symlink {root} {long}/l"],
+    "linux": { "seccomp": "unconfined" },
+    "expect": { "ok": true, "error": null, "route": "standard", "skipped": [], "file": true, "spelling": {"kind": "Original"}, "base": null, "left": [] }
   },
   {
     "name": "no-thread-cwd-bind",
