@@ -81,6 +81,7 @@ td .lines { white-space: pre-line; font-size: 0.9em; }
     <label><input type="checkbox" name="thread_cwd" checked> <span data-i18n="f_thread_cwd"></span></label>
     <label><input type="checkbox" name="follows" checked> <span data-i18n="f_follows"></span></label>
     <label><input type="checkbox" name="private_tmp"> <span data-i18n="f_private_tmp"></span></label>
+    <label><input type="checkbox" name="flock_cmd" checked> <span data-i18n="f_flock_cmd"></span></label>
     <label><input type="checkbox" name="cross_uid"> <span>Options.usable_cross_uid</span></label>
   </fieldset>
   <div class="ops" id="ops"></div>
@@ -111,6 +112,7 @@ td .lines { white-space: pre-line; font-size: 0.9em; }
     "f_thread_cwd": "スレッドの cwd を使える",
     "f_follows": "bind が symlink を辿る (未確認の OS)",
     "f_private_tmp": "PrivateTmp (自分か相手が /tmp を隔離)",
+    "f_flock_cmd": "flock(1) がある (Linux の sockat-ts)",
     "loading": "読み込み中…",
     "no_rows": "この条件に合う行は無い。",
     "no_ops": "操作を 1 つ以上選ぶ。",
@@ -148,6 +150,7 @@ td .lines { white-space: pre-line; font-size: 0.9em; }
     "f_thread_cwd": "Thread cwd usable",
     "f_follows": "bind follows a symlink (OSes not checked)",
     "f_private_tmp": "PrivateTmp (either side has /tmp isolated)",
+    "f_flock_cmd": "flock(1) available (sockat-ts on Linux)",
     "loading": "Loading…",
     "no_rows": "No rows match these conditions.",
     "no_ops": "Choose at least one operation.",
@@ -171,7 +174,7 @@ td .lines { white-space: pre-line; font-size: 0.9em; }
 const form = document.getElementById("f");
 const out = document.getElementById("out");
 const opsBox = document.getElementById("ops");
-const BOOL_DIMS = ["proc", "thread_cwd", "follows", "private_tmp", "cross_uid"];
+const BOOL_DIMS = ["proc", "thread_cwd", "follows", "private_tmp", "cross_uid", "flock_cmd"];
 const PLACE_DIMS = ["xdg", "tmpdir", "tmp", "sockdir", "base"];
 const BAND_DIMS = ["filename", "relpath"];
 const BIND_OPS = new Set(["bind", "bind_ex", "resolve_for_bind"]);
@@ -388,7 +391,7 @@ function renderOp(op, s) {
   }
   const condDims = [];
   if (!s.os) condDims.push("os");
-  const order = ["lang", "filename", "relpath", "thread_cwd", "proc", "follows", "tmp", "xdg", "tmpdir", "sockdir", "base", "private_tmp", "cross_uid"];
+  const order = ["lang", "filename", "relpath", "thread_cwd", "proc", "follows", "tmp", "xdg", "tmpdir", "sockdir", "base", "private_tmp", "cross_uid", "flock_cmd"];
   const constant = [];
   for (const dim of order) {
     const keys = new Set(rows.map(([, c]) => JSON.stringify(c[dim] ?? null)));

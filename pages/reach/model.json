@@ -32,11 +32,12 @@
   "langs": [
     {"id": "rs", "label": {"ja": "Rust (sockat-rs)", "en": "Rust (sockat-rs)"}, "lacks": []},
     {"id": "py", "label": {"ja": "Python (sockat-py)", "en": "Python (sockat-py)"}, "lacks": []},
-    {"id": "go", "label": {"ja": "Go (sockat-go)", "en": "Go (sockat-go)"}, "lacks": ["widened"], "lacks_note": {"widened": "標準の型に取り込むと、相手が広げた形で bind している時に RemoteAddr() が nil になる (sockat-go の README、SPEC の「各実装に求めること」)"}},
-    {"id": "ts-node", "label": {"ja": "TypeScript・Node (sockat-ts)", "en": "TypeScript on Node (sockat-ts)"}, "lacks": ["widened", "thread-cwd", "at", "thread-cwd-direct", "at-direct"]},
-    {"id": "ts-bun", "label": {"ja": "TypeScript・Bun (sockat-ts。Linux は /proc が見えないと Bun 自体が起動しない)", "en": "TypeScript on Bun (sockat-ts; on Linux Bun itself does not start without /proc)"}, "lacks": ["widened", "thread-cwd", "at", "thread-cwd-direct", "at-direct"]}
+    {"id": "go", "label": {"ja": "Go (sockat-go)", "en": "Go (sockat-go)"}, "lacks": ["widened"], "lacks_note": {"widened": "標準の型に取り込むと、相手が広げた形で bind している時に RemoteAddr() が nil になる (sockat-go のマニュアル、SPEC の「各実装に求めること」)"}},
+    {"id": "ts-node", "label": {"ja": "TypeScript・Node (sockat-ts)", "en": "TypeScript on Node (sockat-ts)"}, "lacks": ["widened", "thread-cwd", "at", "thread-cwd-direct", "at-direct"], "d_lock": {"linux": "flock_cmd", "illumos": false}},
+    {"id": "ts-bun", "label": {"ja": "TypeScript・Bun (sockat-ts。Linux は /proc が見えないと Bun 自体が起動しない)", "en": "TypeScript on Bun (sockat-ts; on Linux Bun itself does not start without /proc)"}, "lacks": ["widened", "thread-cwd", "at", "thread-cwd-direct", "at-direct"], "d_lock": {"linux": "flock_cmd", "illumos": false}}
   ],
   "lacks_basis": "conformance/langs.json の lacks と同じ",
+  "d_lock_about": "D をロックできるか (経路の requires の D)。言語の d_lock に OS の id が無ければいつもできる。false はその OS でいつもできない。文字列は、その条件 (conditions の bool) が true の時だけできる。sockat-ts は macOS・BSD で O_SHLOCK で開き、Linux で flock(1) に fd を継がせ、illumos では手段が無い (sockat-ts の src/config.ts の lockMethodOn、2026-11-22)。rs・py・go は flock(2) を直接呼ぶ",
   "floor": {
     "pid": {"value": 7, "note": {"ja": "procB の pid の桁。Linux の pid_max の上限 4194304 (最大の pid は 4194303)", "en": "digits of procB's pid. Linux's pid_max upper bound 4194304 (the largest pid is 4194303)"}},
     "fd": {"value": 7, "note": {"ja": "B の fd の桁。Linux の fs.nr_open の既定 1048576 (最大の fd は 1048575)", "en": "digits of B's fd. Linux's fs.nr_open default 1048576 (the largest fd is 1048575)"}},
@@ -93,11 +94,12 @@
     {"id": "sockdir", "label": {"ja": "ソケットのディレクトリに書ける", "en": "Socket's directory writable"}, "kind": "place", "ops": ["connect", "resolve_for_connect"], "note": {"ja": "B の置き場の 4 番目。bind はソケットのファイルを作るので書ける前提", "en": "the fourth base for B. bind creates the socket file, so it is assumed writable"}},
     {"id": "base", "label": {"ja": "Options.base", "en": "Options.base"}, "kind": "place", "ops": ["bind_ex", "resolve_for_bind", "connect", "resolve_for_connect"], "note": {"ja": "B そのもののパス。指定すると自動の置き場を使わない。connect 系では connect_ex 系だけが取り、B の置き場として使う。usable_cross_uid と一緒の bind 系で途中と base 自身が other に x を持たなければ EPERM。途中が無い等の確かめのエラーは表に入れない", "en": "the path of B itself. When given, the automatic bases are not used. Among the connect operations only the connect_ex variants take it, as the base for B. In a bind operation with usable_cross_uid, EPERM unless the path and the base itself give other x. Errors of the other checks (a missing parent etc.) are not in the tables"}},
     {"id": "private_tmp", "label": {"ja": "PrivateTmp (自分か相手が /tmp を隔離)", "en": "PrivateTmp (either side has /tmp isolated)"}, "kind": "bool", "os": ["linux"], "ops": ["bind", "bind_ex", "resolve_for_bind"], "note": {"ja": "systemd の PrivateTmp 等。綴りを相手が辿れるかにだけ効く", "en": "systemd's PrivateTmp etc. Affects only whether the peer can follow the spelling"}},
+    {"id": "flock_cmd", "label": {"ja": "flock(1) がある", "en": "flock(1) available"}, "kind": "bool", "os": ["linux"], "ops": ["bind", "bind_ex", "resolve_for_bind", "resolve_for_connect"], "note": {"ja": "util-linux か busybox の flock コマンドが PATH にある。sockat-ts だけが D のロックに使う (他の言語は flock(2) を直接呼ぶので効かない)。無いと D を使う経路が使えない", "en": "the flock command of util-linux or busybox is on PATH. Only sockat-ts uses it to lock D (the other languages call flock(2) directly, so it has no effect on them). Without it, the routes that use D are not usable"}},
     {"id": "cross_uid", "label": {"ja": "Options.usable_cross_uid (別の uid の相手)", "en": "Options.usable_cross_uid (peer with another uid)"}, "kind": "bool", "ops": ["bind_ex", "resolve_for_bind"], "note": {"ja": "指定して別の uid の相手と通信する。B の選び方 (途中と B 自身が other に x の所だけ)、procB を使わないこと、綴りを相手が辿れるかに効く", "en": "given, talking to a peer with another uid. Affects which B is chosen (only bases whose path and B itself give other x), not using procB, and whether the peer can follow the spelling"}}
   ],
   "typical": {
-    "note": {"ja": "まとめの表の「普段の環境」。スレッドの cwd と /proc を使え、置き場は OS の既定のまま書け、Options は指定せず、PrivateTmp とも関わらない。相対パスの長さと、bind が symlink を辿るかを実測していない OS の辿るかは、どの値でも届く時だけ届くとする", "en": "the thread cwd and /proc are usable, the bases are the OS defaults and writable, no Options are given, and PrivateTmp is not involved. For the relative path's length, and for whether bind follows a symlink on OSes where it is not measured, a band counts as reached only when every value reaches"},
-    "values": {"thread_cwd": true, "proc": true, "xdg": "run-user", "tmpdir": {"apple": "default", "*": "none"}, "tmp": "writable", "sockdir": "writable", "base": "unset", "private_tmp": false, "cross_uid": false}
+    "note": {"ja": "まとめの表の「普段の環境」。スレッドの cwd と /proc を使え、置き場は OS の既定のまま書け、Options は指定せず、PrivateTmp とも関わらず、Linux では flock(1) がある。相対パスの長さと、bind が symlink を辿るかを実測していない OS の辿るかは、どの値でも届く時だけ届くとする", "en": "the thread cwd and /proc are usable, the bases are the OS defaults and writable, no Options are given, PrivateTmp is not involved, and on Linux flock(1) is available. For the relative path's length, and for whether bind follows a symlink on OSes where it is not measured, a band counts as reached only when every value reaches"},
+    "values": {"thread_cwd": true, "proc": true, "xdg": "run-user", "tmpdir": {"apple": "default", "*": "none"}, "tmp": "writable", "sockdir": "writable", "base": "unset", "private_tmp": false, "cross_uid": false, "flock_cmd": true}
   },
   "ops": [
     {"id": "bind", "label": {"ja": "既定の bind", "en": "default bind"}, "note": {"ja": "bind_ex と同じ順で、Options を取らない。綴りは残す (E はプロセスが終わるまで、D と一緒に OS の掃除で消える)", "en": "the same order as bind_ex, without Options. The spelling is kept (E stays until the process exits and goes with D in the OS's cleanup)"}},
@@ -107,21 +109,21 @@
     {"id": "resolve_for_connect", "label": {"ja": "resolve_for_connect", "en": "resolve_for_connect"}, "note": {"ja": "綴り B/D/E (link-file) を返す。cleanup まで残し、同じパスへの connect に何度も使う", "en": "returns the spelling B/D/E (link-file), kept until cleanup and reused for connects to the same path"}}
   ],
   "routes": {
-    "link-dir@procB": {"route": "link-dir", "b": "proc", "os_attr": "proc", "requires": ["proc", "!cross", "B"],
+    "link-dir@procB": {"route": "link-dir", "b": "proc", "os_attr": "proc", "requires": ["D", "proc", "!cross", "B"],
       "spelling": "/proc/<pid>/fd/<fd>/<D>/<E>/<F>", "limit": "sockaddr",
       "kind": "Linked", "removable": true, "until": "Process", "usable_cross_uid": false, "usable_with_private_tmp": true},
-    "link-dir@real": {"route": "link-dir", "b": "real", "requires": ["Breal"],
+    "link-dir@real": {"route": "link-dir", "b": "real", "requires": ["D", "Breal"],
       "spelling": "<B>/<D>/<E>/<F>", "limit": "sockaddr",
       "kind": "Linked", "removable": true, "until": "Cleanup", "usable_cross_uid": "B.traversable", "usable_with_private_tmp": "not B.under_tmp"},
-    "link-file@real": {"route": "link-file", "b": "real", "requires": ["follows", "Breal"],
+    "link-file@real": {"route": "link-file", "b": "real", "requires": ["D", "follows", "Breal"],
       "spelling": "<B>/<D>/<E>", "limit": "sockaddr",
       "kind": "Linked", "removable": false, "until": "Cleanup", "usable_cross_uid": "B.traversable", "usable_with_private_tmp": "not B.under_tmp"},
-    "link-file@real/resolve": {"route": "link-file", "b": "real", "requires": ["follows_measured", "Breal"],
+    "link-file@real/resolve": {"route": "link-file", "b": "real", "requires": ["D", "follows_measured", "Breal"],
       "spelling": "<B>/<D>/<E>", "limit": "sockaddr",
       "kind": "Linked", "removable": false, "until": "Cleanup", "usable_cross_uid": "B.traversable", "usable_with_private_tmp": "not B.under_tmp"},
-    "thread-cwd": {"route": "thread-cwd", "os_attr": "thread_cwd", "requires": ["thread_cwd", "B"],
+    "thread-cwd": {"route": "thread-cwd", "os_attr": "thread_cwd", "requires": ["D", "thread_cwd", "B"],
       "spelling": "<Er>/<F>", "limit": "sockaddr", "kind": "Dangling"},
-    "at": {"route": "at", "os": ["freebsd"], "requires": ["B"],
+    "at": {"route": "at", "os": ["freebsd"], "requires": ["D", "B"],
       "spelling": "<Er>/<F>", "limit": "sockaddr", "kind": "Dangling"},
     "proc-direct": {"route": "proc-direct", "os_attr": "proc", "requires": ["proc_row"],
       "spelling": "/proc/self/fd/<fd>/<F>", "limit": "sockaddr", "unchanged": true},
@@ -135,9 +137,9 @@
       "spelling": "<F>", "limit": "sockaddr"},
     "link-file@real/B-E": {"route": "link-file", "b": "real", "requires": ["Breal"],
       "spelling": "<B>/<Er>", "limit": "sockaddr"},
-    "link-file@procB/connect": {"route": "link-file", "b": "proc", "os_attr": "proc", "requires": ["proc", "B"],
+    "link-file@procB/connect": {"route": "link-file", "b": "proc", "os_attr": "proc", "requires": ["D", "proc", "B"],
       "spelling": "/proc/<pid>/fd/<fd>/<D>/<E>", "limit": "sockaddr"},
-    "link-file@real/connect": {"route": "link-file", "b": "real", "requires": ["Breal"],
+    "link-file@real/connect": {"route": "link-file", "b": "real", "requires": ["D", "Breal"],
       "spelling": "<B>/<D>/<E>", "limit": "sockaddr"}
   },
   "orders": {
