@@ -170,6 +170,21 @@ OK Bun.listen /tmp/se-XXXXXX/D…/D…/d/s.sock
 
 `Bun.connect` は `open` ハンドラが呼ばれ (`open`)、`OK Bun.connect`。
 
+### ファイル名が長い時の Bun と Node.js (追加の測定、macOS)
+
+ディレクトリは短く (`/tmp/se-XXXXXX`)、ファイル名を 145 バイトにしたパス (全体 160 バイト) に listen した。
+
+```text
+runtime: bun 1.4.4 | path bytes: 160 | name bytes: 145
+node:net listen -> EINVAL | listen EINVAL: invalid argument /tmp/se-X/nnn…n.sock
+Bun.listen -> EINVAL | Failed to listen at /tmp/se-X/nnn…n.sock
+runtime: node v26.13.1 | path bytes: 160 | name bytes: 145
+node:net listen -> ok
+```
+
+- Bun はファイル名が長いと断る。コードは `EINVAL` で、`node:net` を通した時の文言は Node.js と同じ `listen EINVAL: invalid argument <パス>`、`Bun.listen` は `Failed to listen at <パス>`
+- 同じパスを Node.js (libuv 1.53.0) は通す。同じコードが、ランタイムによって通ったり断られたりする
+
 ## 環境と版
 
 | 項目 | macOS | Linux (docker) |

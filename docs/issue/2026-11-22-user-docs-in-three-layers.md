@@ -22,6 +22,7 @@ origin: "自リポ TODO"
 
 - 検索から入るランディングページ (エラー文言や関数名を並べ、README へ案内する) は、pages/ の公開の経路ができてから
 - 各言語のリポの README も、1 段目はその言語の例で持つ。「言語によらない説明は写さずハブへリンクする」は 2 段目以降に限る (kawaz 2026-11-22)
+- JavaScript / TypeScript は、ランタイムによらない形で書く (kawaz 2026-11-22)。標準に長いパスを渡した結果は Node.js と Bun、同梱の libuv の版で違う (通る、`EINVAL`、黙って切り詰める。[実測](../findings/2026-11-22-std-errors-on-long-path.md)、[TypeScript 版の調査](../research/2026-11-21-typescript-port.md))。例は Node.js と Bun の両方で動く `node:net` の形 (`bind` / `connect`) を使い、売りは「どのランタイムでも同じに動く」にする
 
 ## 受け入れ条件
 
