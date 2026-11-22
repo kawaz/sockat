@@ -1,7 +1,7 @@
 # CPython の os.getcwd が、PATH_MAX を超える cwd で引き直しを止めない件 (本家へ報告するための下調べ)
 
 - Date: 2026-11-22
-- Status: Concluded (CPython にも illumos にも報告しない。kawaz 2026-11-22: 実測で当たるのは illumos だけなので。代わりに、当たる試験を illumos で skip する。7 節の窓口の判断と 10 節の下書きは使わない)
+- Status: Concluded (CPython に公開の issue で報告する。kawaz の名前で出す。非公開の窓口には出さない。kawaz 2026-11-22: 実測で当たるのは CPython の支援の対象外の illumos だけだが、2.7 で直した物が 3.x に残っている回帰なので報告する。あわせて、当たる試験を illumos で skip する。報告そのものはまだしていない)
 
 ## 動機
 
@@ -506,6 +506,26 @@ Notes:
 
 Linux, macOS, Other
 ````
+
+### 11. CPython 以外で同じ呼び直しをする実装 (ソースだけ。実機では動かしていない)
+
+illumos のように `getcwd` が大きさによらず `ERANGE` を返し続ける時に、止まらなくなる実装が他にあるかをソースで見た (2026-11-22)。「止まる」は数回の呼び出しで返ること。止まらない時の終わり方は推測。
+
+| 対象 | 版 (commit) | `ERANGE` で呼び直すか | 上限 | `ERANGE` が続いた時 |
+|---|---|---|---|---|
+| Rust `std::env::current_dir` | 1.100.0 (`0ef1bc38`) | する (倍にする) | 無い | 止まらない。確保の失敗で abort する見込み ([paths/unix.rs](https://github.com/rust-lang/rust/blob/0ef1bc386059596dada8fb65b50425aab2ea637a/library/std/src/sys/paths/unix.rs#L21-L46)) |
+| busybox `xrealloc_getcwd_or_warn` | 1_38_0 (`fc71374d`) | する (64 バイトずつ) | 無い | 止まらない (`libbb/xgetcwd.c`) |
+| libstdc++ `std::filesystem::current_path` (glibc 以外) | gcc-16.2.0 (`78d4ac73`) | する (倍にする) | 無い | 確保の失敗でエラーを返す見込み ([fs_ops.cc](https://github.com/gcc-mirror/gcc/blob/78d4ac73dd391005b895a6148cd9831e28e1208b/libstdc++-v3/src/c++17/fs_ops.cc#L735-L788)) |
+| glib `g_get_current_dir` | 2.88.4 (`802d1893`) | する (倍にする) | 実質無い | 確保の失敗で abort する見込み ([gfileutils.c](https://github.com/GNOME/glib/blob/802d1893cd5f4928991b5295263f1700311a3490/glib/gfileutils.c#L3016-L3043)) |
+| Go `os.Getwd` | go1.27.4 (`7b288102`) | しない (1024 バイトで 1 回) | — | 止まる。`..` を辿る方式に移る ([getwd.go](https://github.com/golang/go/blob/7b2881024c95a11ddb86663a616340aa3a88b67f/src/os/getwd.go#L36-L64)) |
+| Node.js `process.cwd()` (libuv `uv_cwd`) | v26.13.1 (`e9c27764`) | しない | — | 止まる (エラーを投げる。[core.c](https://github.com/libuv/libuv/blob/840404ce8ba7cc0204be52389a6cfff9f2c90fb6/src/unix/core.c#L753-L789)) |
+| Ruby `Dir.pwd` | v4.0.10 (`a704b7cd`) | build による | `getcwd(NULL, 0)` に任せる build は libc の 128 KiB。自前で倍にする build は無い | 前者は止まる ([util.c](https://github.com/ruby/ruby/blob/a704b7cd95a42cc0cf5f307137bf3aac0285b915/util.c#L526-L573)) |
+| Perl `Cwd::getcwd` | v5.44.0 (`e634cc83`) | しない (固定長で 1 回) | — | 止まる |
+| OpenJDK `user.dir` | jdk-27-ga (`815ff4dc`) | しない (固定長で 1 回) | — | 止まる |
+| bash の `pwd`、coreutils の `pwd` (gnulib `xgetcwd`) | bash `9c465866`、coreutils v9.12 (`c0f8514d`) | しない (`getcwd(NULL, 0)` を 1 回) | libc の 128 KiB | 止まる |
+
+- 上限なしで呼び直すのは CPython の他に Rust の標準ライブラリ、busybox、libstdc++、glib。元の原因 (illumos のカーネル) を直さない限り、これらも同じ場面で当たりうる
+- illumos の libc の `getcwd(NULL, 0)` は自分で倍にして呼び直し、128 KiB で打ち切る (3-1)。libc に確保を任せる実装が止まるのはこのため
 
 ## 暫定的な結論
 

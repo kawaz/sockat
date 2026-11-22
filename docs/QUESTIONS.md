@@ -21,4 +21,11 @@
 
 ## 確認待ち
 
-(なし)
+### CP-C1: CPython に出す issue の文面と、投稿してよいか
+
+決まっていること (kawaz 2026-11-22): CPython に公開の issue で報告する。kawaz の名前で出す。文面の元は [下調べ](research/2026-11-22-cpython-getcwd-over-path-max.md) の 10 節 (再現コードは 5 節、直し方の diff は 9-1 節)。CPython の main (`436d791c`、2026-11-22) で呼び直しの形が変わっていないことと、同じ報告がまだ無いことは確かめ直した。
+
+- [ ] 文面でよい。投稿してよい
+- [ ] Solaris 系の担当者 (devguide の一覧の 2 人) を本文で @ で呼ぶ (既定は呼ばない)
+- [ ] 直しの PR も出すと書いてある (「I can open a PR if this approach is acceptable」)。この 1 文を残してよい
+
