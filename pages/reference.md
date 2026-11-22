@@ -7,7 +7,7 @@ The details of the functions and types are in each language's API reference.
 | Language | API reference |
 |---|---|
 | Rust | [docs.rs/sockat](https://docs.rs/sockat) |
-| Python | [sockat-py manual](https://github.com/kawaz/sockat-py/blob/main/docs/MANUAL.md#functions) |
+| Python | [sockat-py reference](https://github.com/kawaz/sockat-py/blob/main/docs/REFERENCE.md#functions) |
 | Go | [pkg.go.dev](https://pkg.go.dev/github.com/kawaz/sockat-go) |
 | JavaScript / TypeScript | [sockat-ts manual](https://github.com/kawaz/sockat-ts/blob/main/docs/MANUAL.md#functions) |
 

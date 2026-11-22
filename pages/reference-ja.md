@@ -7,7 +7,7 @@
 | 言語 | API リファレンス |
 |---|---|
 | Rust | [docs.rs/sockat](https://docs.rs/sockat) |
-| Python | [sockat-py のマニュアル](https://github.com/kawaz/sockat-py/blob/main/docs/MANUAL-ja.md#関数の一覧) |
+| Python | [sockat-py のリファレンス](https://github.com/kawaz/sockat-py/blob/main/docs/REFERENCE-ja.md#関数の一覧) |
 | Go | [pkg.go.dev](https://pkg.go.dev/github.com/kawaz/sockat-go) |
 | JavaScript / TypeScript | [sockat-ts のマニュアル](https://github.com/kawaz/sockat-ts/blob/main/docs/MANUAL-ja.md#関数の一覧) |
 
