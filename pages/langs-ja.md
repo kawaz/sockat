@@ -18,9 +18,9 @@
 | Python | `_ex` は `sockat.ex` に置く (`socket.socket.connect_ex` と紛れるため)。`import sockat` では読み込まない | [sockat-py](https://github.com/kawaz/sockat-py/blob/main/docs/REFERENCE-ja.md#python-に固有の注意) |
 | Python | `os.path.abspath`・`normpath`・`relpath` は `..` を字句で畳む。相対パスを絶対にする時は `os.path.join(os.getcwd(), path)` | [sockat-py](https://github.com/kawaz/sockat-py/blob/main/docs/REFERENCE-ja.md#python-に固有の注意) |
 | Python | 標準の `socket` はパスを NUL で黙って切り詰める (`bind("/tmp/a\0b")` が `/tmp/a` に bind する)。sockat は先頭以外の NUL をどの長さでも `ValueError` にする | [sockat-py](https://github.com/kawaz/sockat-py/blob/main/docs/REFERENCE-ja.md#python-に固有の注意) |
-| TypeScript | native 抜きなので、スレッドの cwd・`bindat` / `connectat`・広げた sockaddr の経路が無い。`usableCrossUid` を満たせない時は `ENAMETOOLONG` | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/MANUAL-ja.md#長いパスへの届き方) |
-| TypeScript | Linux で `flock(1)` (util-linux / busybox) が無いと、長いパスの bind と resolve は `ENAMETOOLONG` (既定の connect は届く)。illumos はロックの手段が無く同じ | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/MANUAL-ja.md#長いパスへの届き方) |
-| TypeScript | Linux で `/proc` が見えないと Bun 自体が起動しない (Node は動く) | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/MANUAL-ja.md#どこから届かなくなるか) |
-| TypeScript | `bindEx` の listener は、閉じると標準と同じく綴りで unlink する (Node も Bun も止める口が無い)。短い相対パスは、閉じた時点の cwd で同じ名前を unlink する (bind の前に cwd を前に付けて絶対パスにする) | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/MANUAL-ja.md#spec-から外れる点) |
-| TypeScript | DGRAM・SEQPACKET が無い (Node と Bun の標準に無い) | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/MANUAL-ja.md#spec-から外れる点) |
-| TypeScript | node:net は数値に読める文字列を TCP のポートと読むので、`./` を付けて渡す (`Spelling` は `CwdRelative` のまま) | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/MANUAL-ja.md#使い方) |
+| TypeScript | native 抜きなので、スレッドの cwd・`bindat` / `connectat`・広げた sockaddr の経路が無い。`usableCrossUid` を満たせない時は `ENAMETOOLONG` | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/REFERENCE-ja.md#長いパスへの届き方) |
+| TypeScript | Linux で `flock(1)` (util-linux / busybox) が無いと、長いパスの bind と resolve は `ENAMETOOLONG` (既定の connect は届く)。illumos はロックの手段が無く同じ | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/REFERENCE-ja.md#長いパスへの届き方) |
+| TypeScript | Linux で `/proc` が見えないと Bun 自体が起動しない (Node は動く) | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/REFERENCE-ja.md#どこから届かなくなるか) |
+| TypeScript | `bindEx` の listener は、閉じると標準と同じく綴りで unlink する (Node も Bun も止める口が無い)。相対のまま標準に渡した時 (どの形でも届かない時) だけは、閉じた時点の cwd で同じ名前を unlink する | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/REFERENCE-ja.md#spec-から外れる点) |
+| TypeScript | DGRAM・SEQPACKET が無い (Node と Bun の標準に無い) | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/REFERENCE-ja.md#spec-から外れる点) |
+| TypeScript | node:net は数値に読める文字列を TCP のポートと読むので、相対のまま標準に渡す時 (connect と、どの形でも届かない時の bind) は `./` を付けて渡す | [sockat-ts](https://github.com/kawaz/sockat-ts/blob/main/docs/REFERENCE-ja.md#標準との対応) |
