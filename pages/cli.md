@@ -4,7 +4,7 @@
 
 A command that turns a Unix domain socket path that is too long into a path to the same socket that fits the OS limit. Use it to hand a long path to a program that cannot embed sockat, or to try sockat out before embedding it in your app.
 
-## Install
+## Installation
 
 ```sh
 brew install kawaz/tap/sockat

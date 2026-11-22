@@ -4,7 +4,7 @@
 
 長すぎる Unix domain socket のパスを、同じソケットを指し、OS の上限に収まるパスにして出すコマンドです。sockat を組み込めないプログラムに長いパスを渡す時や、アプリに組み込む前のお試しに使えます。
 
-## 入れる
+## インストール
 
 ```sh
 brew install kawaz/tap/sockat

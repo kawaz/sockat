@@ -40,7 +40,7 @@ $ sockat --json /very/long/…/app.sock
 }
 ```
 
-入れ方と使い方は [sockat コマンド](./pages/cli-ja.md) にあります。
+インストールと使い方は [sockat コマンド](./pages/cli-ja.md) にあります。
 
 ## もっと詳しく
 

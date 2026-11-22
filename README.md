@@ -40,7 +40,7 @@ $ sockat --json /very/long/…/app.sock
 }
 ```
 
-How to install and use it is in [the sockat command](./pages/cli.md).
+Installation and usage are in [the sockat command](./pages/cli.md).
 
 ## More
 
