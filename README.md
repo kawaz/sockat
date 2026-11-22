@@ -2,45 +2,32 @@
 
 > English | [日本語](./README-ja.md)
 
-Libraries that bind and connect Unix domain sockets whose path is longer than `sun_path` allows (104 bytes with the NUL on macOS and the BSDs, 108 on Linux). There is an implementation per language; this repository holds the language-independent specification and leads to each implementation.
+Your Unix domain socket path is too long to bind / connect. sockat makes that go away.
 
-## Usage
+| Language | If you see this error | sockat |
+|---|---|---|
+| Rust | `path must be shorter than SUN_LEN` | [sockat-rs](https://github.com/kawaz/sockat-rs) |
+| Python | `OSError: AF_UNIX path too long` | [sockat-py](https://github.com/kawaz/sockat-py) |
+| Go | `listen unix /…/app.sock: bind: invalid argument` | [sockat-go](https://github.com/kawaz/sockat-go) |
+| Node.js / Bun | `Error: listen EINVAL: invalid argument /…/app.sock` | [sockat-ts](https://github.com/kawaz/sockat-ts) |
 
-Replace the standard bind / connect with sockat's. The return types are the standard ones, and a short path is handed to the standard unchanged, so nothing changes for it. Shown in Rust (every language has the same shape; each repository's README has its own examples).
+Replace the standard bind / connect with sockat's, and long paths just work. Here it is in Rust (the other languages have the same shape; see the links in the table).
 
 ```rust
-// let listener = std::os::unix::net::UnixListener::bind(&path)?;
+// let listener = UnixListener::bind(&path)?;
 let listener = sockat::bind(&path)?;
 
-// let stream = std::os::unix::net::UnixStream::connect(&path)?;
+// let stream = UnixStream::connect(&path)?;
 let stream = sockat::connect(&path)?;
 ```
 
-DGRAM is the same (`sockat::datagram::bind` etc.).
+You get back the same types as the standard, and short paths go to the standard unchanged, as before. Only for a long path does sockat quietly set up a short way to the same place and connect through it. You don't need to shorten paths yourself or care about each OS's limit.
 
-## Good to know
+## More
 
-- A bind at a long path leaves a small directory and a symlink in `/tmp/sockat-<uid>/` (the OS's temporary-directory cleaning removes them). Where tests run over and over, one call of `sweep()` cleans them up
-- For a long path, the listener's address (`local_addr` / `getsockname`) is a short spelling different from the path given (Python and TypeScript return the original path when the socket's own address is asked). Remove the socket file by the original path, not by the address
-- When you need cleanup or which route was taken, use the functions with `_ex`
-
-## Implementations
-
-| Language | Repository | Package | Status |
-|---|---|---|---|
-| Rust | [kawaz/sockat-rs](https://github.com/kawaz/sockat-rs) | [`sockat`](https://crates.io/crates/sockat) on crates.io | published (0.5.1) |
-| Python | [kawaz/sockat-py](https://github.com/kawaz/sockat-py) | [`sockat`](https://pypi.org/project/sockat/) on PyPI | published (0.3.3) |
-| Go | [kawaz/sockat-go](https://github.com/kawaz/sockat-go) | [`github.com/kawaz/sockat-go`](https://pkg.go.dev/github.com/kawaz/sockat-go) | published (v0.4.4; no widened sockaddr on macOS) |
-| JavaScript / TypeScript | [kawaz/sockat-ts](https://github.com/kawaz/sockat-ts) | [`@kawaz/sockat`](https://www.npmjs.com/package/@kawaz/sockat) on npm | published (0.1.4; Node 22+ and Bun; no native code, so no thread-cwd, `bindat` / `connectat` or widened-sockaddr routes) |
-| Ruby | kawaz/sockat-rb | RubyGems | planned |
-
-## How it works and the details
-
-- [docs/SPEC.md](./docs/SPEC.md) — the language-independent specification (operations, resolve, spelling properties, cleanup, the order of routes, patterns not to use, errors, what each implementation must do)
-- [docs/SPEC-routes.md](./docs/SPEC-routes.md) — how the routes are built (building the base B, the steps of each route; for implementers)
-- [docs/decisions/](./docs/decisions/INDEX.md) — decisions on the specification and the layout (DR, Japanese). The current design is [DR-0017](./docs/decisions/DR-0017-resolve-through-persistent-base.md)
-- [docs/design/conformance.md](./docs/design/conformance.md) — the language-independent conformance tests (Japanese)
-- [pages/](./pages/) — the reach table, Q&A, [per-language caveats](./pages/langs.md)
+- [User manual](./pages/manual.md)
+- [Reference](./pages/reference.md)
+- [How it works](./pages/technical.md)
 
 ## License
 

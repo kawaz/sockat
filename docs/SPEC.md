@@ -273,7 +273,7 @@ The OS's temporary-directory cleaning ([research](research/2026-11-20-tmp-cleane
 - Inside B and D it lists by fd, and removes only after taking the exclusive lock and checking that the name's `(st_dev, st_ino)` is the same as the locked fd's
 - It covers only the directories right under B whose name has the form of a D (10 characters of the 62 alphanumerics). B (including the B of `Options.base`) is sockat's own, and the user puts nothing else there
 - A B in the socket's directory is not covered
-- It does not touch the E right under B (the default connect's). A D containing something other than a symlink is left
+- It does not touch the E right under B (the default connect's, and the ones the CLI's `resolve` places and reuses; [DR-0018](decisions/DR-0018-cli-resolve-with-reused-hashed-link.md)). A D containing something other than a symlink is left
 - It is never called automatically (B is not listed on each resolve, at the start of a process, or at exit). Where tests run over and over, the user calls it
 
 ## Short paths
@@ -429,6 +429,7 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 - The parts that read the environment (the base candidates, where `/proc` is, whether Apple OSes accept a widened sockaddr, whether the thread cwd can be used) can be replaced from tests
 - The README and manual link to this specification. Before adding behavior that disagrees with it, fix this specification first
 - The user-facing docs (each language's README / manual) do not copy what is common to all languages; they link to the sections of this specification and pages: "[What differs from the standard for a long path](#what-differs-from-the-standard-for-a-long-path)", "[Patterns not to use](#patterns-not-to-use)", "[What stays in the base](#what-stays-in-the-base)", "[`sweep`](#sweep)". A language's docs hold only the names and types in that language, the concrete forms and recommended code in that language, and the caveats specific to that language (bugs and limits of its standard library or runtime). Each specific caveat gets one line in the hub's [per-language caveats](../pages/langs.md)
+- The opening of each language's README (who it is for, the error that language's standard library gives, the before / after in that language, how to install) is written with that language's own examples, not replaced by a link. What is not copied is the explanation beyond it
 
 ## What implementations test
 
