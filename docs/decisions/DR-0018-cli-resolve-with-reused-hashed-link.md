@@ -1,6 +1,6 @@
 # DR-0018: 短い綴りを作る CLI を Rust で作る。既定の `resolve` はディレクトリを指すハッシュの名前の E を使い回し、手法の名指しは CLI だけに置く
 
-- Status: Active (部分実装: `resolve`・`sweep`・補完を sockat-rs 0.6.1 で公開。入れ方は Homebrew `kawaz/tap/sockat` と GitHub Release の実行ファイル。crates.io の sockat-cli は未公開。手法の名指しと手法を試すサブコマンドは未着手)
+- Status: Active (部分実装: `resolve`・`sweep`・補完を sockat-rs 0.6.1 で公開。入れ方は Homebrew `kawaz/tap/sockat`、crates.io の sockat-cli、GitHub Release の実行ファイル。手法の名指しと手法を試すサブコマンドは未着手)
 - Date: 2026-11-22
 
 ## Context
