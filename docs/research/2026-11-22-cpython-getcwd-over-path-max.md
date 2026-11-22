@@ -1,7 +1,7 @@
 # CPython の os.getcwd が、PATH_MAX を超える cwd で引き直しを止めない件 (本家へ報告するための下調べ)
 
 - Date: 2026-11-22
-- Status: Concluded (CPython に公開の issue で報告する。kawaz の名前で出す。非公開の窓口には出さない。kawaz 2026-11-22: 実測で当たるのは CPython の支援の対象外の illumos だけだが、2.7 で直した物が 3.x に残っている回帰なので報告する。あわせて、当たる試験を illumos で skip する。報告そのものはまだしていない)
+- Status: Concluded (CPython に公開の issue で報告した: [gh-162441](https://github.com/python/cpython/issues/162441)、2026-11-23、kawaz の名前で。非公開の窓口には出していない。illumos には報告していない。sockat-py の深い cwd の試験は、illumos で `os.getcwd` を通らない作りにし、子プロセスのメモリに上限を掛けた)
 
 ## 動機
 
@@ -444,59 +444,114 @@ call 2: ok, 5043 bytes
 - 一度も実行されない `test_getcwd_long_pathnames` (2) を直すか消すかは、別の issue にする方が査読しやすい
 - NEWS: `Misc/NEWS.d/next/Library/<日時>.gh-issue-<番号>.<nonce>.rst` を `blurb` で作る。文案: ``:func:`os.getcwd` and :func:`os.getcwdb` no longer grow their buffer until memory runs out when the C ``getcwd()`` keeps failing with :data:`~errno.ERANGE` whatever the buffer size, as illumos does for a working directory longer than ``PATH_MAX``. They now raise :exc:`OSError` instead.``
 
-### 10. 報告文の下書き (英語、公開の issue の Bug report の形)
+### 10. 出した報告 (英語、公開の issue)
 
-下書きの中の `(the script from section 5 of this document)` と `(the diff from section 9-1)` は、出す時に 5 の再現コードと 9-1 の diff をそのまま貼る。CPython の [Bug report のテンプレート](https://github.com/python/cpython/blob/1cc580249141838a520809c21cd971883b5b10cb/.github/ISSUE_TEMPLATE/bug.yml) の欄 (Bug report、CPython versions tested on、Operating systems tested on) に合わせる。出す前に、版と結果を出す時点の main で確かめ直す (テンプレートには無いが、GHSA のテンプレートの「I have verified the factual validity of everything in this report」と同じ心構えで)。
+[gh-162441](https://github.com/python/cpython/issues/162441) に出した文面。再現コードは 5 節、直し方の diff は 9-1 節と同じ物を埋めてある (ここでは埋めた所を省く)。出す前に、CPython の main (`436d791c`、2026-11-22) で呼び直しの形が変わっていないことと、同じ報告が無いことを確かめ直した。Solaris 系の担当者は本文で呼んでいない。
 
 題:
 
 ```text
-os.getcwd() grows its buffer until MemoryError when getcwd() keeps returning ERANGE (illumos, cwd longer than PATH_MAX)
+os.getcwd() in a very long working directory can allocate memory without bound and end in MemoryError
 ```
 
-Bug report:
+本文:
 
 ````markdown
 # Bug report
 
 ### Bug description:
 
-On POSIX, `os.getcwd()` / `os.getcwdb()` call the C `getcwd()` again with a buffer 1024 bytes larger every time it fails with `ERANGE`, with no limit other than `PY_SSIZE_T_MAX` (`posix_getcwd()` in `Modules/posixmodule.c`). POSIX says `ERANGE` means the buffer is too small, so this normally ends. But on illumos, in a working directory longer than `PATH_MAX` (1024), `getcwd()` can keep failing with `ERANGE` whatever the buffer size, and `os.getcwd()` then reallocates until memory runs out and raises `MemoryError`. In our CI on OmniOS r151060 (system Python 3.13.16) this took about 13 minutes and exhausted the VM's memory (traceback ending in `posixpath.realpath` -> `os.getcwd()`, then `lost sys.stderr`). Because importlib resolves the `''` entry of `sys.path` with `os.getcwd()`, even `python3 -c "import json"` started in such a directory ends the same way.
+In a very long working directory, `os.getcwd()` can allocate memory without bound and end in `MemoryError`.
 
-This is the same problem as gh-53431 (bpo-9185, Solaris and OpenBSD, 2010) and bpo-15765 (NetBSD, 2012). Those were fixed only in 2.7, by calling `getcwd()` once with a fixed `PATH_MAX + 2` buffer on those platforms. When gh-53492 (bpo-9246) added the growing loop to Python 3 in 2015, that workaround was not carried over, so Python 3 has the original behaviour again.
+I have only reproduced this on illumos, in a working directory longer than `PATH_MAX`. It is unlikely to be hit in common environments: Linux and macOS are not affected. From reading the kernel sources, though, it looks like it could also happen on NetBSD and OpenBSD.
 
-Reproducer (no dependencies; it builds the deep directory with relative `mkdir`/`chdir`, then calls `os.getcwd()` twice in a child whose address space is capped at 512 MiB; exits 1 if a call raised `MemoryError` or timed out):
+This is a regression of gh-53431 (bpo-9185): it was fixed in 2.7 only, and Python 3 has had the original behaviour again since 3.5.
+
+#### What happens
+
+- On POSIX, `os.getcwd()` / `os.getcwdb()` (`posix_getcwd()` in `Modules/posixmodule.c`) retry the C `getcwd()` with a buffer 1024 bytes larger each time it fails with `ERANGE`.
+- The only limit is `PY_SSIZE_T_MAX`.
+- POSIX says `ERANGE` means the buffer is too small, so the loop normally ends after a retry or two.
+- On illumos, in a working directory longer than `PATH_MAX` (1024), `getcwd()` can keep failing with `ERANGE` whatever the buffer size.
+- `os.getcwd()` then keeps reallocating until memory runs out, and raises `MemoryError`.
+
+#### How it showed up
+
+- In our CI on OmniOS r151060 (system Python 3.13.16), one test took about 13 minutes and exhausted the VM's memory. The traceback ended in `posixpath.realpath` -> `os.getcwd()`, followed by `lost sys.stderr`.
+- importlib resolves the `''` entry of `sys.path` with `os.getcwd()`. So even `python3 -c "import json"` started in such a directory ends the same way.
+
+#### History
+
+- gh-53431 (bpo-9185, 2010) reported the same problem on Solaris and OpenBSD. bpo-15765 (2012) reported it on NetBSD.
+- Both were fixed only in 2.7: on those platforms, `getcwd()` is called once with a fixed `PATH_MAX + 2` buffer.
+- gh-53492 (bpo-9246) added the growing loop to Python 3 in 2015. The 2.7 workaround was not carried over.
+
+#### Reproducer
+
+No dependencies. The script:
+
+1. builds a deep directory with relative `mkdir` / `chdir`, until the cwd is longer than the target length;
+2. calls `os.getcwd()` twice in a child process whose address space is capped at 512 MiB;
+3. exits 1 if a call raised `MemoryError` or timed out.
 
 <details>
 <summary>getcwd_past_path_max.py</summary>
 
 ```python
-(the script from section 5 of this document)
+(5 節の再現コード)
 ```
 
 </details>
 
 Results:
 
-- illumos (OmniOS r151060, Python 3.13.16): the first call succeeds, the second raises `MemoryError` (cwd of 1224 and 5043 bytes). Exit 1.
-- Linux (glibc), Python 3.11 / 3.13 / 3.15: both calls succeed (cwd of 4239 and 5043 bytes). Exit 0.
-- Linux (musl), Python 3.13: both calls raise `OSError(ENAMETOOLONG)`. Exit 0.
-- macOS, Python 3.11 / 3.13 / 3.15: both calls succeed (cwd of 1084 and 5104 bytes). Exit 0.
+| Platform | Python | cwd length | Result | Exit |
+|---|---|---|---|---|
+| illumos (OmniOS r151060) | 3.13.16 | 1224 and 5043 bytes | first call succeeds, second raises `MemoryError` | 1 |
+| Linux (glibc) | 3.11 / 3.13 / 3.15 | 4239 and 5043 bytes | both calls succeed | 0 |
+| Linux (musl) | 3.13 | 4239 and 5043 bytes | both calls raise `OSError(ENAMETOOLONG)` | 0 |
+| macOS | 3.11 / 3.13 / 3.15 | 1084 and 5104 bytes | both calls succeed | 0 |
 
-Why illumos does this (from the illumos-gate source, and checked on OmniOS r151060 by calling libc `getcwd()` through ctypes): the kernel's `dogetcwd()` first re-reads the cached cwd string (`u_cwd`) with `pn_get()`, which only accepts strings shorter than `MAXPATHLEN`. Once a call has succeeded with a large enough buffer, the cached cwd is longer than `MAXPATHLEN`, `pn_get()` fails with `ENAMETOOLONG` on every later call, and the `getcwd` syscall turns that into `ERANGE` whatever the buffer size, until the process changes directory. So the first `os.getcwd()` after a `chdir()` succeeds and the second one never returns. Calling libc `getcwd()` directly on OmniOS shows exactly this: right after `chdir()`, `getcwd(buf, 1 MiB)` succeeds, and the next `getcwd(buf, 1 MiB)` fails with `ERANGE`. This is an illumos bug (it contradicts both POSIX and the illumos man page), but CPython should not turn a libc bug into unbounded memory growth, as was agreed for Solaris in gh-53431. From the NetBSD and OpenBSD kernel sources, the same may happen there for a cwd longer than 4 * MAXPATHLEN, but I have not checked that on a real system.
+#### Why illumos does this
 
-A possible fix is to stop growing the buffer at a fixed size (e.g. 1 MiB) and raise the `ERANGE` from the last call as `OSError`, without any platform-specific code:
+From the illumos-gate source, and checked on OmniOS r151060 by calling libc `getcwd()` through ctypes:
+
+- The kernel's `dogetcwd()` first re-reads the cached cwd string (`u_cwd`) with `pn_get()`.
+- `pn_get()` only accepts strings shorter than `MAXPATHLEN`.
+- Once a call has succeeded with a large enough buffer, the cached cwd is longer than `MAXPATHLEN`.
+- From then on `pn_get()` fails with `ENAMETOOLONG` on every call, and the `getcwd` syscall turns that into `ERANGE` whatever the buffer size, until the process changes directory.
+
+So the first `os.getcwd()` after a `chdir()` succeeds, and the second one never returns.
+
+Calling libc `getcwd()` directly on OmniOS shows exactly this: right after `chdir()`, `getcwd(buf, 1 MiB)` succeeds, and the next `getcwd(buf, 1 MiB)` fails with `ERANGE`.
+
+This is an illumos bug: it contradicts both POSIX and the illumos man page. But CPython should not turn a libc bug into unbounded memory growth, as was agreed for Solaris in gh-53431.
+
+From the NetBSD and OpenBSD kernel sources, the same may happen there for a cwd longer than 4 * `MAXPATHLEN`. I have not checked that on a real system.
+
+#### Possible fix
+
+Stop growing the buffer at a fixed size (e.g. 1 MiB), and raise the `ERANGE` from the last call as `OSError`. No platform-specific code is needed.
 
 ```diff
-(the diff from section 9-1)
+(9-1 節の diff)
 ```
 
-With a `LD_PRELOAD` shim whose `getcwd()` always fails with `ERANGE`, the patched main raises `OSError(ERANGE)` at once instead of `MemoryError`, and a 5043-byte cwd on Linux is still returned. `test_os` passes. I have not built the patch on illumos. I can open a PR if this approach is acceptable.
+What I checked with this patch on main:
 
-Notes:
+- With an `LD_PRELOAD` shim whose `getcwd()` always fails with `ERANGE`, the patched build raises `OSError(ERANGE)` at once instead of `MemoryError`.
+- A 5043-byte cwd on Linux is still returned.
+- `test_os` passes.
+- I have not built the patch on illumos.
 
-- `test_posix.test_getcwd_long_pathnames`, which was added for bpo-9185, never runs its body: it is indented under the `return` of the `except:` clause (already noted in gh-53492 in 2013). `test_os.test_getcwd_long_path` uses absolute paths, so on a platform whose `PATH_MAX` is 1024 it stops at `ENAMETOOLONG` from `mkdir()` before the cwd gets longer than `PATH_MAX`. So no test reaches this code path on the affected platforms.
-- Solaris/OpenIndiana contacts in the devguide's "Ports and contacts" list: (mention them here if wanted)
+I can open a PR if this approach is acceptable.
+
+#### Notes on the tests
+
+No existing test reaches this code path on the affected platforms:
+
+- `test_posix.test_getcwd_long_pathnames` was added for bpo-9185, but its body never runs. It is indented under the `return` of the `except:` clause (already noted in gh-53492 in 2013).
+- `test_os.test_getcwd_long_path` uses absolute paths. On a platform whose `PATH_MAX` is 1024, it stops at `ENAMETOOLONG` from `mkdir()` before the cwd gets longer than `PATH_MAX`.
 
 ### CPython versions tested on:
 
