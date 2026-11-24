@@ -26,7 +26,7 @@ origin: "自リポ TODO"
 - [x] 需要を調べる ([docs/research/2026-11-19-datagram-and-seqpacket.md](../research/2026-11-19-datagram-and-seqpacket.md))
 - [x] SEQPACKET の API の形を決める: 専用の関数を置かず、resolve の綴りを使う (kawaz 2026-11-22。下の「SEQPACKET を resolve で使う形」。SPEC の「公開する操作」と DR-0017 に書いた)
 - [ ] `datagram::send_to` / `send_to_ex` を作るか (SPEC の関数の表に載っているが、どの言語にも無い。各言語のリファレンスは、SPEC で未確定なので無いと書いている)。持ち主の裁定待ち ([QUESTIONS](../QUESTIONS.md) の DG-Q1)
-- [ ] 長いパスに bind した DGRAM の送り手への返信が届かない場面 (`cleanup` の後、procB で別の uid) を `Spelling` でどう表すか ([SPEC の「未確定」](../SPEC-ja.md#未確定))。持ち主の裁定待ち ([QUESTIONS](../QUESTIONS.md) の DG-Q2)
+- [x] 長いパスに bind した DGRAM の送り手への返信が届くかは、今ある `Spelling` (`until`・`usable_cross_uid`・`Dangling`) で表す。返信のための項目は足さない (統括 2026-11-24。[SPEC の「公開する操作」](../SPEC-ja.md#公開する操作))
 
 ## SEQPACKET を resolve で使う形 (2026-11-22、各言語のマニュアルのページを書く中で確かめた)
 

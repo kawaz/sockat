@@ -87,6 +87,7 @@ Shown with the Rust names.
 - On failure, the default operations return the standard library's error type; `_ex` and resolve return an error type that carries diagnostics ([Diagnostics](#diagnostics))
 - For DGRAM, only the functions of the standard library's `UnixDatagram` that take a path, and `unbound` used with them, are mirrored. `pair` is not
 - A DGRAM connect tries the routes in the same order as a stream connect ([Connect order](#connect-order)). The routes of `send_to` are in "[Open questions](#open-questions)"
+- A reply to a DGRAM sender bound to a long path reaches while the spelling lives. Whether it reaches is told by the bind's `Spelling`: a `Linked` one reaches until `until`, and from another uid only when `usable_cross_uid` is true (procB for the same uid only, the real path of B in `/tmp` for another uid too). It does not reach with `Dangling`, nor after `cleanup`
 - Go's DGRAM connect is `DialUnixgram(path)` (creating the socket and connecting in one call; Go's standard library form). Those who want to connect a bound socket to a long path make the spelling with resolve and hand it to the standard library
 
 ### `Options`
@@ -514,7 +515,6 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 ## Open questions
 
 - `send_to` sends to resolve's spelling, so it does not use relative (a send cannot be taken back). What to do with a `send_to` at a length resolve cannot handle (send with thread-cwd, or `ENAMETOOLONG`)
-- A reply to a DGRAM sender bound to a long path reaches while the spelling lives (procB for the same uid, the real path of B in `/tmp` for another uid too). How `Spelling` expresses the cases where it does not reach (after `cleanup`, procB with another uid)
 - Android and the Apple OSes other than macOS are not checked at all
 - The peer credentials on NetBSD, OpenBSD and illumos are not checked
 - That a non-blocking connect does not return `EINPROGRESS` is confirmed only on Linux and macOS

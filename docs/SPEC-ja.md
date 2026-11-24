@@ -85,8 +85,9 @@ Rust の名前で示す。
 | 置き場 | `sweep_base(path)` | 無し |
 
 - 失敗は、既定の操作は標準ライブラリと同じエラーの型、`_ex` と resolve はエラーに診断を付けた型 ([診断](#診断))
-- DGRAM は 標準ライブラリの `UnixDatagram` の、パスを取る関数と、それと組で使う `unbound` だけを写す。`pair` は写さない
+- DGRAM は標準ライブラリの `UnixDatagram` の、パスを取る関数と、それと組で使う `unbound` だけを写す。`pair` は写さない
 - DGRAM の connect は stream の connect と同じ順で経路を試す ([connect の順](#connect-の順))。`send_to` の経路は「[未確定](#未確定)」
+- 長いパスに bind した DGRAM の送り手への返信は、綴りが生きている間は届く。届くかは bind の `Spelling` で分かる: `Linked` は `until` までの間届き、別の uid からは `usable_cross_uid` が真の時だけ届く (procB は同じ uid だけ、`/tmp` の B の実パスは別の uid も)。`Dangling` と、`cleanup` の後は届かない
 - Go の DGRAM の connect は `DialUnixgram(path)` (ソケットの作成と connect を 1 回で行う。Go の標準ライブラリの形)。bind したソケットを長いパスへ connect したい人は、resolve で綴りを作って標準ライブラリに渡す
 
 ### `Options`
@@ -514,7 +515,6 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 ## 未確定
 
 - `send_to` は resolve の綴りに送るので relative (送った後に取り消せない) を使わない。resolve で済まない長さの `send_to` をどうするか (thread-cwd で送る、`ENAMETOOLONG` にする)
-- 長いパスに bind した DGRAM の送り手への返信は、綴りが生きている間は届く (procB は同じ uid、`/tmp` の B の実パスは別の uid も)。届かない場面 (`cleanup` の後、procB で別の uid) を `Spelling` でどう表すか
 - Android と macOS 以外の Apple の OS は全体が未確認
 - NetBSD・OpenBSD・illumos は peer の資格情報が未確認
 - ブロックしない connect が `EINPROGRESS` を返さないことは Linux と macOS でだけ確認済み

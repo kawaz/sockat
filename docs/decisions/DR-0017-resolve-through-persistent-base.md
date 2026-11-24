@@ -514,7 +514,7 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 ## 未決
 
 - `send_to` は resolve の綴りに送るので relative (送った後に取り消せない) を使わない。resolve で済まない長さの `send_to` をどうするか (thread-cwd で送る、`ENAMETOOLONG` にする)
-- 長いパスに bind した DGRAM の送り手への返信は、綴りが生きている間は届く (procB は同じ uid、`/tmp` の B の実パスは別の uid も)。届かない場面 (`cleanup` の後、procB で別の uid) を `Spelling` でどう表すか
+- 長いパスに bind した DGRAM の送り手への返信が届くかは、今ある `Spelling` (`until`・`usable_cross_uid`・`Dangling`) で表す。返信のための項目は足さない (統括 2026-11-24。[SPEC](../SPEC-ja.md#公開する操作))
 
 ## 関連
 

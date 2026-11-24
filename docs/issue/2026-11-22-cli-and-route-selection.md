@@ -30,8 +30,8 @@ CLI は sockat-rs 0.6.2 で公開した。決まった事と裁定の記録 (CL-
 - [x] CLI が `/proc/<pid>/fd/<fd>` を自分で開いてディレクトリを掴めるかの実測 (同じ uid なら開ける。[findings](../findings/2026-11-24-cli-base-fd-and-vanished-link.md))
 - [x] 長く動くプログラムに bind 用に渡した綴りの E が消えた後、そのプログラムの終了時の unlink がどうなるかの実測 (`ENOENT` で失敗し、ソケットのファイルが残る。[findings](../findings/2026-11-24-cli-base-fd-and-vanished-link.md))
 - [ ] ライブラリに無い手法 (fork、bind での `/proc` を直接通す綴り・相対パス・広げた sockaddr) の名指し (CL-Q2 = a で後から足す。急がない)
-- [ ] コマンドを包んで起こす形 (`sockat run -- <コマンド>`) を置くか (持ち主の裁定待ち。[QUESTIONS](../QUESTIONS.md) の CL-Q3)
-- [ ] 片付けのサブコマンドを置くか (同じく CL-Q3)
+- [ ] コマンドを包んで起こす形 (`sockat run -- <コマンド>`) を置くか (今は置かない。要る利用者が出たら決める。DR-0018 の未決)
+- [ ] 片付けのサブコマンドを置くか (同じ)
 
 ## 概要
 
