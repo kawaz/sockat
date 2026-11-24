@@ -2,6 +2,7 @@
 
 | date | category | status | issue | title | blocked_by |
 |---|---|---|---|---|---|
+| 2026-11-25 | task | open | [model-reviews-and-rebuilds](./2026-11-25-model-reviews-and-rebuilds.md) | 3 つのモデルに出したレビューと文書の書き直しを読んで、どう直すかを決める |  |
 | 2026-11-24 | task | open | [measure-route-costs](./2026-11-24-measure-route-costs.md) | 経路ごとの費用を測り、届く範囲の表と技術説明に載せる |  |
 | 2026-11-24 | design | open | [trim-spec-to-what-is-used](./2026-11-24-trim-spec-to-what-is-used.md) | 仕様を、実際に使われている物に絞って整理し直す |  |
 | 2026-11-22 | design | open | [cli-and-route-selection](./2026-11-22-cli-and-route-selection.md) | 短い綴りを作る CLI と、手法を名指しして選ぶ口 (CLI と `_ex`) |  |
