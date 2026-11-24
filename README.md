@@ -29,12 +29,12 @@ Handy for trying sockat out before embedding it in your app.
 
 ```console
 $ sockat /very/long/…/app.sock
-/private/tmp/sockat-501/f21ddd85c65f/app.sock
+/private/tmp/sockat-501/f21ddd85c65f4a0b93d7e1c2a85b6f30/app.sock
 
 $ sockat --json /very/long/…/app.sock
 {
-  "path": "/private/tmp/sockat-501/f21ddd85c65f/app.sock",
-  "bytes": 45,
+  "path": "/private/tmp/sockat-501/f21ddd85c65f4a0b93d7e1c2a85b6f30/app.sock",
+  "bytes": 65,
   "limit": 103,
   …
 }

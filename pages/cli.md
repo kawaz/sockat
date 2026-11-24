@@ -30,17 +30,17 @@ Standard output is the path alone, on one line. The same path always gives the s
 
 ```console
 $ sockat /very/long/…/app.sock
-/private/tmp/sockat-501/f21ddd85c65f/app.sock
+/private/tmp/sockat-501/f21ddd85c65f4a0b93d7e1c2a85b6f30/app.sock
 
 $ sockat --json /very/long/…/app.sock
 {
-  "path": "/private/tmp/sockat-501/f21ddd85c65f/app.sock",
-  "bytes": 45,
+  "path": "/private/tmp/sockat-501/f21ddd85c65f4a0b93d7e1c2a85b6f30/app.sock",
+  "bytes": 65,
   "limit": 103,
   "original": "/very/long/…/app.sock",
   "original_bytes": 145,
   "route": "link-dir",
-  "link": "/private/tmp/sockat-501/f21ddd85c65f",
+  "link": "/private/tmp/sockat-501/f21ddd85c65f4a0b93d7e1c2a85b6f30",
   "target": "/very/long/…",
   "for": ["bind", "connect"],
   "warnings": []
@@ -54,7 +54,7 @@ sockat is not a shortener; it gives a path that fits the limit (`limit`). The pa
 ```console
 $ cd /very/long/…
 $ sockat ./app.sock
-/private/tmp/sockat-501/f21ddd85c65f/app.sock
+/private/tmp/sockat-501/f21ddd85c65f4a0b93d7e1c2a85b6f30/app.sock
 ```
 
 A relative path is printed as an absolute one. Another process using it from another directory still reaches the same socket.
@@ -63,7 +63,7 @@ A relative path is printed as an absolute one. Another process using it from ano
 
 ```console
 $ sockat /very/long/…/nnnn…nnnn.sock
-/private/tmp/sockat-501/7e6cc6be310a
+/private/tmp/sockat-501/7e6cc6be310a52d9c4f08b1e63a7d2c5
 sockat: warning: this path is for connect; not recommended for bind (unlinking this path removes only the symlink, not the socket file)
 ```
 

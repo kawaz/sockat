@@ -30,17 +30,17 @@ curl --unix-socket "$(sockat /very/long/…/app.sock)" http://localhost/
 
 ```console
 $ sockat /very/long/…/app.sock
-/private/tmp/sockat-501/f21ddd85c65f/app.sock
+/private/tmp/sockat-501/f21ddd85c65f4a0b93d7e1c2a85b6f30/app.sock
 
 $ sockat --json /very/long/…/app.sock
 {
-  "path": "/private/tmp/sockat-501/f21ddd85c65f/app.sock",
-  "bytes": 45,
+  "path": "/private/tmp/sockat-501/f21ddd85c65f4a0b93d7e1c2a85b6f30/app.sock",
+  "bytes": 65,
   "limit": 103,
   "original": "/very/long/…/app.sock",
   "original_bytes": 145,
   "route": "link-dir",
-  "link": "/private/tmp/sockat-501/f21ddd85c65f",
+  "link": "/private/tmp/sockat-501/f21ddd85c65f4a0b93d7e1c2a85b6f30",
   "target": "/very/long/…",
   "for": ["bind", "connect"],
   "warnings": []
@@ -54,7 +54,7 @@ sockat は短くする道具ではなく、上限 (`limit`) に収まるパス�
 ```console
 $ cd /very/long/…
 $ sockat ./app.sock
-/private/tmp/sockat-501/f21ddd85c65f/app.sock
+/private/tmp/sockat-501/f21ddd85c65f4a0b93d7e1c2a85b6f30/app.sock
 ```
 
 相対パスは、絶対パスにして出します。出たパスを、別のプロセスが別の場所から使っても、同じソケットを指します。
@@ -63,7 +63,7 @@ $ sockat ./app.sock
 
 ```console
 $ sockat /very/long/…/nnnn…nnnn.sock
-/private/tmp/sockat-501/7e6cc6be310a
+/private/tmp/sockat-501/7e6cc6be310a52d9c4f08b1e63a7d2c5
 sockat: warning: this path is for connect; not recommended for bind (unlinking this path removes only the symlink, not the socket file)
 ```
 
