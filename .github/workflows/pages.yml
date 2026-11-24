@@ -23,11 +23,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v5
       - name: Collect the page and its data
@@ -39,5 +36,14 @@ jobs:
       - uses: actions/upload-pages-artifact@v4
         with:
           path: ./_site
+
+  # 置いた artifact は job が終わってから見えるので、出すのは別の job にする。
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
