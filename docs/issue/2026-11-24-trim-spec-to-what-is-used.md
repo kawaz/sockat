@@ -106,7 +106,8 @@ sockat-rs の中で、利用者が呼ばない物の行数の目安: resolve 387
 - SPEC は connect 系について既に同じ事を言っている (「connect の綴りは相手に残らない」ので `usable_cross_uid` を見ない)
 - SPEC が、bind の綴りが生きている事に頼る物として挙げるのは 3 つ: `getsockname` の綴りで消す上のライブラリ、DGRAM の返信、運用の道具 (`ss`・`lsof` に出るアドレス)
 - 綴りの途中の symlink が消えると、その綴りでの unlink は `ENOENT` になり、ソケットのファイルが残る ([実測](../findings/2026-11-24-cli-base-fd-and-vanished-link.md))。閉じる時に綴りで unlink する標準ライブラリ (Go の `UnixListener.Close`) で symlink が要るのは、このため
-- 綴りがプロセスの外に出る口は、ライブラリでは resolve、他に CLI。CLI は、sockat を組み込めないプログラムに綴りを渡すための物なので、「受け取った側が辿れるか」はここには残る
+- CLI と resolve も、アプリが自分で使うパスを作る道具で、作ったパスを相手に伝える物ではない (kawaz 2026-11-25)。サーバーもクライアントも、それぞれが元の長いパスを `sockat resolve` に渡し、返ったパスで自分が bind・connect する
+- CLI に残るのは、相手の話ではなく寿命の話: パスを作った `sockat` のプロセスは先に終わるので、symlink は呼んだ側が使い終わるまで残っている必要があり、sockat の側からは捨てられない (DR-0018 の、使い回すハッシュの symlink と OS の掃除の警告はこのため)
 - Node.js と Bun の close も、listen に渡したパスの文字列で unlink する。綴りの途中の symlink が消えていると、ソケットのファイルが残る ([実測](../findings/2026-11-25-node-bun-unlink-on-close.md))。標準ライブラリの listener をそのまま返すなら、TypeScript は Go と同じ側になる
 
 統括が確かめた事 (`_ex` と resolve の違い): `_ex` にしか無いのは、綴りを作れない手法の診断 (適合試験・届く範囲の実測・CLI の `bind`・`connect` が使う)、bind した瞬間にファイルの番号を覚える `remove()`、`Options` を渡せる bind・connect の 3 つ。利用者が使っているのは無い。`connect_nonblocking` は利用者が 2 つとも使っていて、代わりが無い (Rust と Python で要る)。
