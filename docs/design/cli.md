@@ -52,7 +52,7 @@ sockat --help | --help-all | --version
 | オプション | 中身 |
 |---|---|
 | `--base-fd <N>` と `--base-pid <PID>` | 利用者が開いたディレクトリの fd の番号と、それを持つプロセスの pid。`/proc/<PID>/fd/<N>` を B の綴りにする。2 つは組で渡す。片方だけならエラー |
-| `--route <名前>[,<名前>…]` | 手法を名指しして、並べた順に試す。その環境で使えない手法はエラー。preset の名前も渡せる |
+| `--route <名前>[,<名前>…]` | 手法を名指しして、並べた順に試す。並べていない手法は試さない。その操作・その OS に無い手法は引数の誤り。並べた手法が全部使えなければ、手法ごとの理由つきのエラー。名前は「[`--route` に渡す名前](#--route-に渡す名前)」 |
 
 - 進んだオプションの名前・手法の名前は試す用で、約束しない
 
@@ -164,8 +164,10 @@ sockat connect [--route <名前>[,<名前>…]] [--base <ディレクトリ>] [-
 | `default` | その操作の既定の順 (preset)。`--route` を付けないのと同じ |
 
 - 名指しした手法が、その操作かその OS に無い時 (`bind` に `relative`、Linux に `at` 等) は、何も試さずに終了コード 2 のエラーにし、その操作とその OS で使える名前を並べる
-- 名指しした手法が、そのパスでは使えない時 (綴りが収まらない等) は、飛ばして次の名前に進む。全部使えなければ終了コード 1
+- 名指しした手法が、そのパスかその環境では使えない時 (綴りが収まらない、`/proc` を使えない、スレッドの cwd を使えない、置き場を作れない等) は、理由を付けて飛ばし、次の名前に進む。全部使えなければ、手法ごとの理由を出して終了コード 1 (1 つだけ名指しした時は、その手法が使えない理由のエラーになる)
+- 並べていない手法は試さない。短いパスでも、`standard` を並べていなければ並べた手法を試す。`default` は、その位置にその操作の既定の順を置く
 - `resolve` に渡せるのは、綴りを出せる `standard`・`link-dir`・`link-file` と `default` だけ
+- `--base-fd` と `--base-pid` は `resolve` だけが受ける
 - `link-dir` の置き場を `/proc` を通す綴りにするか実パスにするかは、名前では分けない。`--base` を指定すればその置き場を、`--base-fd` と `--base-pid` を指定すれば `/proc` を通す綴りを使う
 
 ### 出力
@@ -176,13 +178,15 @@ sockat connect [--route <名前>[,<名前>…]] [--base <ディレクトリ>] [-
 $ sockat bind /very/long/…/app.sock
 route: link-dir
 base: tmp
-kernel-path: /tmp/sockat-1000/1f3a/0/app.sock
-spelling: Linked (removable, until cleanup, usable cross uid, usable with private tmp)
-skipped: standard (too long)
-left: /tmp/sockat-1000/1f3a/0 -> /very/long/…
+kernel-path: /tmp/sockat-1000/FrGKAlDLgf/0/app.sock
+spelling: Linked (removable, until cleanup, not usable cross uid, not usable with private tmp)
+skipped: standard (spelling too long)
+left: /tmp/sockat-1000/FrGKAlDLgf/0 -> /very/long/…
 ```
 
-`--json` の時は、JSON のオブジェクトを 1 つ出す。項目の名前と値は、適合試験の CLI の出力 ([conformance.md](conformance.md)) と同じにし、CLI だけの項目を足す。
+上は macOS の例。Linux で `/proc` を使える時の既定の bind は `/proc` を通す綴りになり、`base` は `proc`、`kernel-path` は `/proc/<pid>/fd/<fd>/…` になる。値の無い項目は `-`。
+
+`--json` の時は、JSON のオブジェクトを 1 つ出す。`ok`・`error`・`route`・`base`・`spelling` は、適合試験の CLI の出力 ([conformance.md](conformance.md)) と同じ形。`skipped` は理由も持ち、CLI だけの項目を足す。
 
 ```json
 {
@@ -190,10 +194,10 @@ left: /tmp/sockat-1000/1f3a/0 -> /very/long/…
   "error": null,
   "route": "link-dir",
   "base": "tmp",
-  "spelling": { "kind": "Linked", "removable": true, "until": "Cleanup", "usable_cross_uid": true, "usable_with_private_tmp": true },
-  "skipped": [{ "name": "standard", "reason": "too long" }],
-  "kernel_path": "/tmp/sockat-1000/1f3a/0/app.sock",
-  "left": ["/tmp/sockat-1000/1f3a/0"]
+  "spelling": { "kind": "Linked", "removable": true, "until": "Cleanup", "usable_cross_uid": false, "usable_with_private_tmp": false },
+  "skipped": [{ "name": "standard", "reason": "spelling too long" }],
+  "kernel_path": "/tmp/sockat-1000/FrGKAlDLgf/0/app.sock",
+  "left": ["/tmp/sockat-1000/FrGKAlDLgf/0"]
 }
 ```
 
@@ -209,5 +213,5 @@ left: /tmp/sockat-1000/1f3a/0 -> /very/long/…
 | 終了コード | 場面 |
 |---|---|
 | 0 | bind / connect が通った |
-| 1 | 通らなかった (どの手法も使えない、bind / connect が失敗した)。`--json` の時は `ok` が `false` の JSON を標準出力に出す |
+| 1 | 通らなかった (どの手法も使えない、bind / connect が失敗した)。結果 (`error` を含む) は標準出力に出す。`bind` の後片付けに失敗した時も 1 で、標準エラーに原因と手で消す物を出す |
 | 2 | 引数の誤り (無い名前、その操作・その OS に無い手法) |
