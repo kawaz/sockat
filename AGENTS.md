@@ -24,7 +24,7 @@ sockat は、`sun_path` の上限を超えるパスでも Unix domain socket を
 | `docs/design/cli.md` | 短い綴りを作る CLI `sockat` の決まり (呼び方、オプション、出力、終了コード。実装は sockat-rs) |
 | `conformance/` | 適合試験の表と、それを流して突き合わせるスクリプト |
 | `tools/` | 利用の統計の取得 (`just stats`) |
-| `pages/` | 利用者向けの文書 (利用マニュアル `manual`、リファレンス `reference`、技術説明 `technical`、届く範囲の表 `reach/`、fork-cwd の手法、Q&A `faq`、言語ごとの注意 `langs`)。md は全部日本語 `<name>-ja.md` と英語 `<name>.md` の対 (`just push` が対の欠けを止める)。開発用の文書は docs/。md は GitHub の上で読めるのでサイトにしない。JS で動く物 (届く範囲の表を条件で絞り込む `pages/reach/index.html` と `data/`) だけ、`.github/workflows/pages.yml` が <https://kawaz.github.io/sockat/> に出す |
+| `pages/` | 利用者向けの文書 (利用マニュアル `manual`、リファレンス `reference`、技術説明 `technical`、届く範囲の表 `reach/`、fork-cwd の手法、Q&A `faq`、言語ごとの注意 `langs`)。md は全部日本語 `<name>-ja.md` と英語 `<name>.md` の対 (`just push` が対の欠けを止める)。開発用の文書は docs/。サイト (HTML のページ) は main に置かない。作る時は、最初の空のコミットから切ったブランチ `site` の workspace (`../site`) で作る |
 
 ## 守ること
 

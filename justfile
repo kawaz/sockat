@@ -77,7 +77,7 @@ conformance *ARGS:
 
 # ---------- 届く範囲の表 ----------
 
-# pages/reach/model.json から README (日英) と data/ (日英) を作り直す
+# pages/reach/model.json から README (日英) を作り直す
 reach:
     python3 -I pages/reach/gen.py
 
