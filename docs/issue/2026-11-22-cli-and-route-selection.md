@@ -24,11 +24,12 @@ CLI は sockat-rs 0.6.2 で公開した。決まった事と裁定の記録 (CL-
 
 残り:
 
-- [ ] `--route` と preset (手法を名指しする口)
-- [ ] 手法を試す `bind` / `connect` のサブコマンド
-- [ ] `--base-fd` / `--base-pid`
+- [x] `--route` と preset (手法を名指しする口) (sockat-rs 0.6.4)
+- [x] 手法を試す `bind` / `connect` のサブコマンド (sockat-rs 0.6.4)
+- [x] `--base-fd` / `--base-pid` (sockat-rs 0.6.4)
 - [x] CLI が `/proc/<pid>/fd/<fd>` を自分で開いてディレクトリを掴めるかの実測 (同じ uid なら開ける。[findings](../findings/2026-11-24-cli-base-fd-and-vanished-link.md))
 - [x] 長く動くプログラムに bind 用に渡した綴りの E が消えた後、そのプログラムの終了時の unlink がどうなるかの実測 (`ENOENT` で失敗し、ソケットのファイルが残る。[findings](../findings/2026-11-24-cli-base-fd-and-vanished-link.md))
+- [ ] ライブラリに無い手法 (fork、bind での `/proc` を直接通す綴り・相対パス・広げた sockaddr) の名指し (CL-Q2 = a で後から足す。急がない)
 - [ ] コマンドを包んで起こす形 (`sockat run -- <コマンド>`) を置くか (持ち主の裁定待ち。[QUESTIONS](../QUESTIONS.md) の CL-Q3)
 - [ ] 片付けのサブコマンドを置くか (同じく CL-Q3)
 
