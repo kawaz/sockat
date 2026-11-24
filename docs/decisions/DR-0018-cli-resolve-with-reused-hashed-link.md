@@ -88,6 +88,7 @@ D を作らず、B の直下に、ソケットのディレクトリを指す E �
 悪い面:
 
 - 長く動くプログラムに bind 用に渡した後で E が消されると、そのプログラムが終了時に短いパスで unlink しても `ENOENT` で失敗し、ソケットのファイルが残る。E が無い間は、その綴りへの connect も `ENOENT`。同じパスで `resolve` を呼び直すと同じ綴りで E が作り直され、connect も unlink も通る ([実測](../findings/2026-11-24-cli-base-fd-and-vanished-link.md)、Linux と macOS。E は手で消した)
+- Linux の systemd-tmpfiles (既定で `/tmp` の 10 日より古い物を消す) は、E 自身の時刻 (atime・mtime・ctime・btime) が全部古ければ E を消す。E を辿る connect と readlink は、mount が relatime か strictatime なら E の atime を新しくするので消えない。noatime の mount では辿っても消える。E を辿って bind しただけでは時刻が変わらず、listen 中のソケットがあっても消える。B は、中に E が残っている間は消えない ([実測](../findings/2026-11-24-tmpfiles-and-symlink-in-use.md)、systemd 257)
 - 綴りは `/tmp` を通るので、自分か相手が `/tmp` を隔離している (systemd の `PrivateTmp` 等) と辿れない。その時は置き場か、持ち主の fd と pid を指定する
 - E は使われなくなっても残る (macOS の `/tmp` は再起動まで)。数はディレクトリの数で頭打ち
 - ハッシュの 12 文字と B の名前の分、届くファイル名が縮む (uid 4 桁で Linux はおよそ 77 バイト、macOS はおよそ 66 バイト。超えると 6 に回る)

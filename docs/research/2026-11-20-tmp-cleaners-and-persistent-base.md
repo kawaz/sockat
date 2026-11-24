@@ -78,6 +78,6 @@
 ## 未確認
 
 - Docker での実験はしていない (debian:stable-slim に systemd-tmpfiles が無い)
-- symlink の age 掃除の実機の再現は無い
+- symlink の age 掃除の実機の再現は、後で採った ([findings](../findings/2026-11-24-tmpfiles-and-symlink-in-use.md)。systemd 257 で、時刻が全部古い symlink は消え、辿ると relatime・strictatime では残り、noatime では消える)
 - macOS の dirhelper が $TMPDIR の symlink・ソケット・ディレクトリをどう扱い、どの時刻を使うか
 - BSD・illumos は上流の既定を読んだだけで、実機では確かめていない

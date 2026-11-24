@@ -106,7 +106,7 @@ CLI は綴りを出して終わるので、D の flock を持つプロセスが�
 - 同じディレクトリにはいつも同じ E が使われ、同じ長いパスにはいつも同じ短いパスが返る。E はディレクトリの数で頭打ちになる
 - 出した綴りはそのまま使ってよく、片付けは要らない。`sweep` は B の直下の E に触らない (今の SPEC のまま)。OS の掃除で消えても、次の `resolve` が作り直す
 - ディレクトリを指す綴りなので、bind にも connect にも sendto にも同じ綴りを渡せる。用途を選ぶ必要があるのは、ファイル名が長くてこの綴りに収まらず、ソケットのファイルを指す E (link-file) に回る時だけ (connect はどの OS でも使え、bind は macOS と NetBSD だけ)
-- 長く動くプログラムに bind 用に渡した後で E が消されると、そのプログラムが終了時に短いパスで unlink しても `ENOENT` で失敗し、ソケットのファイルが残る。E が無い間は connect も届かない。同じパスで `resolve` を呼び直すと直る ([実測](../findings/2026-11-24-cli-base-fd-and-vanished-link.md))。OS の掃除が、使われている E を消すかは確かめていない
+- 長く動くプログラムに bind 用に渡した後で E が消されると、そのプログラムが終了時に短いパスで unlink しても `ENOENT` で失敗し、ソケットのファイルが残る。E が無い間は connect も届かない。同じパスで `resolve` を呼び直すと直る ([実測](../findings/2026-11-24-cli-base-fd-and-vanished-link.md))。Linux の systemd-tmpfiles は、10 日のあいだ誰も辿らなかった E を消す (bind しただけでは辿ったことにならない。noatime の mount では辿っても消える。[実測](../findings/2026-11-24-tmpfiles-and-symlink-in-use.md))。案: `resolve` が既にある E を使う時に、E の時刻を新しくする (`utimensat` の `AT_SYMLINK_NOFOLLOW`。実測で、noatime でも掃除を避けられた)。採るかは未定
 
 ## 未決
 
