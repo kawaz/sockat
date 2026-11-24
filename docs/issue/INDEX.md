@@ -3,6 +3,7 @@
 | date | category | status | issue | title | blocked_by |
 |---|---|---|---|---|---|
 | 2026-11-24 | task | open | [measure-route-costs](./2026-11-24-measure-route-costs.md) | 経路ごとの費用を測り、届く範囲の表と技術説明に載せる |  |
+| 2026-11-24 | design | open | [trim-spec-to-what-is-used](./2026-11-24-trim-spec-to-what-is-used.md) | 仕様を、実際に使われている物に絞って整理し直す |  |
 | 2026-11-22 | design | open | [cli-and-route-selection](./2026-11-22-cli-and-route-selection.md) | 短い綴りを作る CLI と、手法を名指しして選ぶ口 (CLI と `_ex`) |  |
 | 2026-11-22 | task | open | [user-docs-in-three-layers](./2026-11-22-user-docs-in-three-layers.md) | 利用者向けの文書を 3 段に組み直す (README → 使う上で知ること → 仕組み) |  |
 | 2026-11-21 | idea | open | [connect-persistent-hashed-e](./2026-11-21-connect-persistent-hashed-e.md) | 接続先のハッシュの名前の E をプロセスをまたいで使い回す案 |  |
