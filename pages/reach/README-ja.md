@@ -4,7 +4,7 @@
 
 sockat で長いパスに届くか、どの経路で届くか、届かなければなぜかを、条件の組み合わせごとに並べた表。[DR-0017](../../docs/decisions/DR-0017-resolve-through-persistent-base.md) の設計 (置き場 B を使い回し resolve の綴りを先に、fork なし) と [SPEC](../../docs/SPEC-ja.md) に対して作る。数字は綴りの長さからの見積もり。
 
-- 選んで絞り込むページ: [index.html](index.html?lang=ja) (JS の無い環境ではこの README を読む)
+- 選んで絞り込むページ: <https://kawaz.github.io/sockat/?lang=ja> (JS の無い環境ではこの README を読む)
 - 正本: [model.json](model.json)。この README (日本語版と英語版) と `data/` は [gen.py](gen.py) が生成する (`just reach`)。手で直さない。ずれは `just reach-check` が拾う
 - fork-cwd の手法と、それなら届く場面: [fork-cwd](../fork-cwd-ja.md)
 

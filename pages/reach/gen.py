@@ -101,8 +101,8 @@ TEXT = {
         "en": "Whether sockat reaches a long path, by which route, and if not, why, for each combination of conditions. Built for the design of [DR-0017](../../docs/decisions/DR-0017-resolve-through-persistent-base.md) (Japanese; base B reused, resolve's spellings first, no fork) and the [SPEC](../../docs/SPEC.md). The numbers are estimates from the lengths of the spellings.",
     },
     "md.page": {
-        "ja": "- 選んで絞り込むページ: [index.html](index.html?lang=ja) (JS の無い環境ではこの README を読む)",
-        "en": "- Page that filters by the conditions you choose: [index.html](index.html?lang=en) (without JS, read this README)",
+        "ja": "- 選んで絞り込むページ: <https://kawaz.github.io/sockat/?lang=ja> (JS の無い環境ではこの README を読む)",
+        "en": "- Page that filters by the conditions you choose: <https://kawaz.github.io/sockat/?lang=en> (without JS, read this README)",
     },
     "md.source": {
         "ja": "- 正本: [model.json](model.json)。この README (日本語版と英語版) と `data/` は [gen.py](gen.py) が生成する (`just reach`)。手で直さない。ずれは `just reach-check` が拾う",

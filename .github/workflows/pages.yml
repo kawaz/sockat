@@ -1,0 +1,43 @@
+name: Pages
+
+# 届く範囲の表を条件で絞り込むページ (pages/reach/index.html) を
+# GitHub Pages (https://kawaz.github.io/sockat/) に出す。
+# pages/ の md は GitHub のリポの上で読めるので、サイトには出さない。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pages/reach/index.html"
+      - "pages/reach/data/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Collect the page and its data
+        run: |
+          mkdir -p _site/data
+          cp pages/reach/index.html _site/
+          cp pages/reach/data/*.json _site/data/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: ./_site
+      - id: deployment
+        uses: actions/deploy-pages@v4
