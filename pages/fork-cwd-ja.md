@@ -5,7 +5,7 @@
 sockat はこの手法を使わない (kawaz 裁定 2026-11-20)。fork の副作用 (fd の複製、`SIGCHLD`、`waitpid(-1)`、`pthread_atfork`、connect では相手に見える pid) は呼び出したライブラリでなくプロセス全体に及び、それを望まない利用者の方が多いため。この文書は、sockat が届かない場面で利用者が自分のアプリで fork を使う時のために、手法と副作用と、それで届く場面を書く。
 
 - 届く範囲の全体: [reach](reach/README-ja.md) (表の「fork-cwd なら」の列が、この文書の節へのリンク)
-- 判断の記録: [DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md) (fork をしない判断、bind の綴りに乱数の名前を挟む理由)、[issue](../docs/issue/2026-11-20-resolve-and-persistent-base.md) の「最終手段と fork」
+- 判断の記録: [DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md) (fork をしない判断、bind の綴りに乱数の名前を挟む理由)、[issue](../docs/issue/archive/2026-11-20-resolve-and-persistent-base.md) の「最終手段と fork」
 
 ## 手法
 

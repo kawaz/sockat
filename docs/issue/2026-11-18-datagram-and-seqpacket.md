@@ -1,10 +1,9 @@
 ---
 title: "SOCK_DGRAM と SOCK_SEQPACKET も長いパスで使えるようにする"
-status: blocked
+status: open
 category: task
 created: 2026-11-18
 origin: "自リポ TODO"
-blocked_by: resolve-and-persistent-base
 ---
 
 # SOCK_DGRAM と SOCK_SEQPACKET も長いパスで使えるようにする
@@ -12,20 +11,22 @@ blocked_by: resolve-and-persistent-base
 ## 概要
 
 - SOCK_DGRAM と SOCK_SEQPACKET も同じ `sun_path` の上限に当たる
-- 今の対象は SOCK_STREAM だけ。作る (kawaz 承認 2026-11-18)
-- 経路を組み直す resolve の案 ([2026-11-20-resolve-and-persistent-base](2026-11-20-resolve-and-persistent-base.md)) の上に作るので、その案が決まってから着手する
+- 作る (kawaz 承認 2026-11-18)。resolve と消さない置き場 ([DR-0017](../decisions/DR-0017-resolve-through-persistent-base.md)) の上に作った
 - 調査: [docs/research/2026-11-19-datagram-and-seqpacket.md](../research/2026-11-19-datagram-and-seqpacket.md)
 
 | 型 | 考えること |
 |---|---|
 | SOCK_DGRAM | 宛先を毎回 `sendto` で渡すので、bind だけでなく送るたびに長いパスの問題がある。経路の当て方 (connect して宛先を固定する等) を考える |
-| SOCK_SEQPACKET | stream とほぼ同じ形 (Rust の std には型が無い) |
+| SOCK_SEQPACKET | stream とほぼ同じ形 (Rust の標準ライブラリには型が無い) |
 
 ## 受け入れ条件
 
-- [ ] 型ごとの経路の当て方と API の形を SPEC に書く (SOCK_DGRAM の宛先つきの送信は、送るたびに経路を当てるか、connect して宛先を固定してもらうかを比べて決める)
-- [ ] Rust / Python / Go で実装する (Rust は std に SOCK_SEQPACKET の型が無いので返す型も決める)
-- [ ] 需要を調べる (systemd の NOTIFY_SOCKET、syslog の /dev/log 等で長いパスに当たる報告)
+- [x] DGRAM の bind・unbound・connect と各 `_ex` の経路と API の形を SPEC に書く ([SPEC の「関数」](../SPEC-ja.md#関数)。connect は stream の connect と同じ順)
+- [x] DGRAM の bind・unbound・connect と各 `_ex` を Rust / Python / Go で実装する (Rust は `datagram::`、Python は `sockat.datagram` と `sockat.ex.datagram`、Go は SPEC の Go の形の `ListenUnixgram`・`DialUnixgram` と各 `Ex`)
+- [x] 需要を調べる ([docs/research/2026-11-19-datagram-and-seqpacket.md](../research/2026-11-19-datagram-and-seqpacket.md))
+- [x] SEQPACKET の API の形を決める: 専用の関数を置かず、resolve の綴りを使う (kawaz 2026-11-22。下の「SEQPACKET を resolve で使う形」。SPEC の「公開する操作」と DR-0017 に書いた)
+- [ ] `datagram::send_to` / `send_to_ex` を作るか (SPEC の関数の表に載っているが、どの言語にも無い。各言語のリファレンスは、SPEC で未確定なので無いと書いている)。持ち主の裁定待ち ([QUESTIONS](../QUESTIONS.md) の DG-Q1)
+- [ ] 長いパスに bind した DGRAM の送り手への返信が届かない場面 (`cleanup` の後、procB で別の uid) を `Spelling` でどう表すか ([SPEC の「未確定」](../SPEC-ja.md#未確定))。持ち主の裁定待ち ([QUESTIONS](../QUESTIONS.md) の DG-Q2)
 
 ## SEQPACKET を resolve で使う形 (2026-11-22、各言語のマニュアルのページを書く中で確かめた)
 

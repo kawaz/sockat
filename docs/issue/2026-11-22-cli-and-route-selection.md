@@ -8,9 +8,33 @@ origin: "自リポ TODO"
 
 # 短い綴りを作る CLI と、手法を名指しして選ぶ口 (CLI と `_ex`)
 
+## 今の状態
+
+CLI は sockat-rs 0.6.2 で公開した。決まった事と裁定の記録 (CL-Q1 = b、CL-Q2 = a 等) は [DR-0018 の「裁定」](../decisions/DR-0018-cli-resolve-with-reused-hashed-link.md#裁定)、呼び方とオプションの決まりは [docs/design/cli.md](../design/cli.md)。
+
+済んだ物 (`sockat --help-all` の 0.6.2 の出力で確かめた):
+
+- [x] `resolve` サブコマンド (`sockat <パス>` はその省略形)
+- [x] `sweep` サブコマンド
+- [x] `completion` サブコマンド
+- [x] `--json`
+- [x] `--for`
+- [x] `--base`
+- [x] 公開: Homebrew (`kawaz/tap/sockat`)、crates.io (sockat-cli)、GitHub Release の実行ファイル
+
+残り:
+
+- [ ] `--route` と preset (手法を名指しする口)
+- [ ] 手法を試す `bind` / `connect` のサブコマンド
+- [ ] `--base-fd` / `--base-pid`
+- [x] CLI が `/proc/<pid>/fd/<fd>` を自分で開いてディレクトリを掴めるかの実測 (同じ uid なら開ける。[findings](../findings/2026-11-24-cli-base-fd-and-vanished-link.md))
+- [x] 長く動くプログラムに bind 用に渡した綴りの E が消えた後、そのプログラムの終了時の unlink がどうなるかの実測 (`ENOENT` で失敗し、ソケットのファイルが残る。[findings](../findings/2026-11-24-cli-base-fd-and-vanished-link.md))
+- [ ] コマンドを包んで起こす形 (`sockat run -- <コマンド>`) を置くか (持ち主の裁定待ち。[QUESTIONS](../QUESTIONS.md) の CL-Q3)
+- [ ] 片付けのサブコマンドを置くか (同じく CL-Q3)
+
 ## 概要
 
-kawaz の案 (2026-11-22)。CLI は作る。残りは検討中で、裁定はまだ無い。
+kawaz の案 (2026-11-22)。下の 4 つが元の案。ライブラリの `_ex` に手法を名指しする口を足さないことは「方向」の節、決まった事は DR-0018 にある。
 
 - 短い綴りを作って出す CLI を作る。sockat を組み込めないプログラム (他人の作ったコマンド) に、長いパスの代わりに渡す
 - CLI は引数で条件と手法を選べる。手法を指定して作れなければエラーにする
@@ -82,7 +106,7 @@ CLI は綴りを出して終わるので、D の flock を持つプロセスが�
 - 同じディレクトリにはいつも同じ E が使われ、同じ長いパスにはいつも同じ短いパスが返る。E はディレクトリの数で頭打ちになる
 - 出した綴りはそのまま使ってよく、片付けは要らない。`sweep` は B の直下の E に触らない (今の SPEC のまま)。OS の掃除で消えても、次の `resolve` が作り直す
 - ディレクトリを指す綴りなので、bind にも connect にも sendto にも同じ綴りを渡せる。用途を選ぶ必要があるのは、ファイル名が長くてこの綴りに収まらず、ソケットのファイルを指す E (link-file) に回る時だけ (connect はどの OS でも使え、bind は macOS と NetBSD だけ)
-- 未確認: 長く動くプログラムに bind 用に渡した後で E が OS の掃除で消されると、そのプログラムが終了時に短いパスで unlink して失敗し、ソケットのファイルが残りうる
+- 長く動くプログラムに bind 用に渡した後で E が消されると、そのプログラムが終了時に短いパスで unlink しても `ENOENT` で失敗し、ソケットのファイルが残る。E が無い間は connect も届かない。同じパスで `resolve` を呼び直すと直る ([実測](../findings/2026-11-24-cli-base-fd-and-vanished-link.md))。OS の掃除が、使われている E を消すかは確かめていない
 
 ## 未決
 
@@ -102,5 +126,5 @@ CLI は綴りを出して終わるので、D の flock を持つプロセスが�
 
 - 用途の値: 短い綴りの作り方は「その場所にソケットを作る (bind)」と「既にあるソケットに届く (connect)」の 2 種類。sendto は connect と同じ綴り、返信を受ける DGRAM の送り手の bind は bind と同じ綴り
 - CLI は Rust で作る (kawaz 2026-11-22。他の言語では作れない経路がある)。置き場所は sockat-rs。CLI の依存をライブラリの利用者に足さないよう、crate の分け方は sockat-rs で決める
-- ここまでの決定と統括の案は [DR-0018](../decisions/DR-0018-cli-resolve-with-reused-hashed-link.md) (提案) にまとめた
+- ここまでの決定と統括の案は [DR-0018](../decisions/DR-0018-cli-resolve-with-reused-hashed-link.md) にまとめた
 - 片付けの口 (利用者が今すぐ消したい時の `cleanup` に当たるサブコマンド)

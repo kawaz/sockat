@@ -129,7 +129,7 @@ The sections follow the order of the table in [the SPEC's Route names](SPEC.md#r
   - When a bind fails, the E is not removed, including one made in that call (another concurrent default bind may be reusing it; [How a failing route is treated](#how-a-failing-route-is-treated))
 - Used when: 2 (procB) and 3 (real path) of the bind order. The spelling `resolve_for_bind` chooses first. Trying it with procB and with the real path is one element in `skipped` (with the last reason)
 - Unusable when: the spelling does not fit in a sockaddr, B / D / E cannot be created; for procB, `/proc` is not usable or `usable_cross_uid` is given
-- File name reached: sockaddr length − (B's spelling + D + E + 3 separators). About 70 for procB on Linux ([the SPEC's Open questions](SPEC.md#open-questions))
+- File name reached: sockaddr length − (B's spelling + D + E + 3 separators). About 70 for procB on Linux ([the reach table](../pages/reach/README.md))
 - Spelling properties: `Linked` (`removable` is true)
 
 ### link-file

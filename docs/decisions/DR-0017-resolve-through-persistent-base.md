@@ -24,7 +24,7 @@
 | bind | 息が長く、大量には作らない | 速さ以外 (綴りの寿命、残るもの、安全) |
 | connect | CLI や制御の問い合わせで、必要な時に都度行う | 手数・速さ・IO の回数・負荷。同じパスへの綴りを作り直さず再利用できること |
 
-- 利用者 2 者 (sockat-rs 0.4.1 を使う llm-gateway・hyoui) の回答 ([issue](../issue/2026-11-20-resolve-and-persistent-base.md) の「利用者の回答」)
+- 利用者 2 者 (sockat-rs 0.4.1 を使う llm-gateway・hyoui) の回答 ([issue](../issue/archive/2026-11-20-resolve-and-persistent-base.md) の「利用者の回答」)
   - 使うのは STREAM の `bind`・`connect`・`connect_nonblocking` だけで、fork をやめても困らない
   - connect する側は短命で数が多く、書ける置き場が無いことがある。書き込みもスレッドも要らない経路を先に、を保ってほしい
   - 気になる点: 既定の `bind` が消さない物を作ると片付けの手がかりが無い、exec をまたぐと残る、並行する試験での競合と残骸、状態がアプリの置き場の外に増える、`connect_nonblocking` が待たないこと
@@ -294,7 +294,7 @@ pub enum Spelling {
 
 ### 関数と引数 (RS-Q3、kawaz 裁定 2026-11-20: F1)
 
-- 型ごとのモジュールに 標準ライブラリの形で置く (stream は crate 直下、`datagram::`、`seqpacket::`)。操作ごとに `_ex(…, Options)`。resolve は用途ごとに 2 つ
+- 型ごとのモジュールに標準ライブラリの形で置く (stream は crate 直下、`datagram::`)。操作ごとに `_ex(…, Options)`。resolve は用途ごとに 2 つ
 - any 系 (`bind_any` 等) は作らない。`_ex` を既定の操作ごとに 1 つずつ置く
 - 名前は各言語の慣習で決める。Python は `_ex` を子モジュール `sockat.ex` に置く (標準ライブラリの `socket.connect_ex` と紛れるため。kawaz 裁定 2026-11-19)
 - 既定の操作は path だけを取る。プロセス全体の既定を変える関数は、隠れた状態になるので作らない
@@ -326,9 +326,6 @@ sockat::datagram::send_to(&UnixDatagram, buf, path) -> io::Result<usize>
 sockat::datagram::bind_ex(path, Options) -> Result<Bound<UnixDatagram>, ExError>
 sockat::datagram::connect_ex(&UnixDatagram, path, Options) -> Result<Report, ExError>
 sockat::datagram::send_to_ex(&UnixDatagram, buf, path, Options) -> Result<(usize, Report), ExError>
-
-// seqpacket (返す型は未決)
-sockat::seqpacket::bind(path) / connect(path) / connect_nonblocking(path) と各 _ex
 
 // resolve (std に自分で渡す人向け)
 sockat::resolve_for_bind(path, Options) -> Result<ForBind, ExError>       // path / spelling / cleanup() / socket_file() / 診断 (remove は持たない)
@@ -396,7 +393,7 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 
 - この上に作る。DGRAM の API は 標準ライブラリの `UnixDatagram` の形に合わせ、パスを取る関数と、それと組で使う `unbound` だけを写す (`datagram::bind(path)`、`unbound()`、`connect(&sock, path)`、`send_to(&sock, buf, path)`)。`pair` は写さない
 - Go の DGRAM の connect は `DialUnixgram(path)` (作成と connect を 1 回で。Go の標準ライブラリの形)。bind したソケットを長いパスへ connect したい人は、resolve で綴りを作って標準ライブラリに渡す
-- SEQPACKET は `seqpacket::` に stream と同じ操作を置く。返す型は未決
+- SEQPACKET に専用の関数は置かない。利用者が自分で作った SEQPACKET のソケットに resolve の綴りを渡す (bind する側は `resolve_for_bind`、connect する側は `resolve_for_connect`)。各言語のマニュアルでそう案内すれば足りる (kawaz 2026-11-22)
 - 細部は「未決」
 
 理由:
@@ -511,23 +508,22 @@ pub struct Report { pub route: &'static str, pub skipped: Vec<Skipped> }
 - SPEC を書き直す (公開する操作、経路の名前と試す順番、B・D・E、置き場、綴りの性質、どこから届かなくなるか、長いパスで標準ライブラリと違う点、試験の観点)。各言語の実装は経路と API を作り直す
 - fork の経路 (fork-cwd・fork-cwd-sockdir・fork-cwd-direct)、bind の proc・symlink-file・symlink-dir、connect の thread-cwd・at・proc・proc-held・symlink-file、`-sockdir` の経路、呼び出しごとのディレクトリ、最終手段、`losses` は無くなる
 - 説明 (SPEC・利用者向けの文書) に書くこと: 状態がアプリの置き場の外に増えること、片付けた後の綴りは使わないこと、`PrivateTmp` の相手、systemd v242 より古い環境と macOS の `$TMPDIR` で生きている D が消されうること
-- 経路ごとの費用 (syscall の数、時間、置き場への書き込み) をベンチマークで測り、届く範囲の表と経路の説明に数字で載せる
+- 経路ごとの費用 (syscall の数、時間、置き場への書き込み) をベンチマークで測り、届く範囲の表と経路の説明に数字で載せる ([issue](../issue/2026-11-24-measure-route-costs.md))
 - 試験の観点: 綴りを unlink / stat しても無関係なファイルに当たらない、B の途中の確認で外れた置き場を使わない、`Options.base` が外れたらエラー、並行する多数の bind / connect で B・D の作成が競合しない、`sweep()` が生きている他のプロセスの D を消さない、`cleanup` の後に E が残らない、既定の connect の後に B の直下に何も残らず待ちも入らない、`remove` が置き換えたファイルを消さない、thread-cwd・at でプロセスの cwd が変わらず呼び出しの後に E が残らない、link-file が辿らない OS で `skipped` に入り何も残らない、占拠された既定の名前の B で何も作らず次の置き場へ進む、同じディレクトリへの既定の bind で link-dir の E が 1 つ
 
 ## 未決
 
-- 届く長さ: procB の綴りは `/proc/<pid>/fd/<fd>/` + D + `/E/` でおよそ 35 バイト食い、Linux で届くファイル名はおよそ 70。thread-cwd (96) との間は thread-cwd に回す
 - `send_to` は resolve の綴りに送るので relative (送った後に取り消せない) を使わない。resolve で済まない長さの `send_to` をどうするか (thread-cwd で送る、`ENAMETOOLONG` にする)
 - 長いパスに bind した DGRAM の送り手への返信は、綴りが生きている間は届く (procB は同じ uid、`/tmp` の B の実パスは別の uid も)。届かない場面 (`cleanup` の後、procB で別の uid) を `Spelling` でどう表すか
-- Rust の SEQPACKET の返す型
 
 ## 関連
 
 - [docs/SPEC-ja.md](../SPEC-ja.md)
-- [resolve と置き場 B の issue](../issue/2026-11-20-resolve-and-persistent-base.md) (合意と裁定の記録、利用者の回答)、[DGRAM / SEQPACKET の issue](../issue/2026-11-18-datagram-and-seqpacket.md)
+- [resolve と置き場 B の issue](../issue/archive/2026-11-20-resolve-and-persistent-base.md) (合意と裁定の記録、利用者の回答)、[DGRAM / SEQPACKET の issue](../issue/2026-11-18-datagram-and-seqpacket.md)
 - [OS の一時ディレクトリの掃除の調査](../research/2026-11-20-tmp-cleaners-and-persistent-base.md)、[DGRAM / SEQPACKET の調査](../research/2026-11-19-datagram-and-seqpacket.md)
 - [ファイルを指す symlink を通した bind の実測](../findings/2026-11-19-bind-through-file-symlink.md)、[閉じたソケットのファイルの inode 番号の使い回し](../findings/2026-11-19-inode-reuse-after-close.md)
 - [届く範囲の表](../../pages/reach/README-ja.md)、[fork-cwd](../../pages/fork-cwd-ja.md)
 - 裁定: kawaz (2026-11-21: AS-Q1 = a (死んだ D を自動では消さない)、RV-Q1 = a (占拠された B で次の置き場へ進む)、RV-Q2 = a (既定の bind の link-dir の E を使い回す)。2026-11-19: connect の順、thread-cwd・at、`remove` の約束の範囲、`CwdRelative`、link-file の責務外。2026-11-20: RS-Q1 = S1、RS-Q2 = fork をしない、RS-Q3 = F1、RS-Q4 = a、B と D。2026-11-21: B の作り方)。統括 (2026-11-21: B をプロセスごとに 1 つ、`usable_cross_uid` を満たせない時は thread-cwd / at、既定の connect は D を作らない、thread-cwd・at は D を基準にする、D と E の mode。同日の SPEC の書き直しで: `resolve_for_bind` の link-file は実測した OS だけ、`skipped` は名前ごとに 1 件、`base` を持つのは B を通る綴りだけ、`Options.base` は B そのもので複数の B を持ちうる、`Options.base` のエラーの種類、link-dir の E は realpath、D の作り方と `sweep()` の見分け方、`resolve_for_connect` の返す物、既定の connect の link-file は実パスの `B/E`、thread-cwd-direct の届く長さ、DGRAM の connect の順。診断の `base` の値 `given` (`Options.base` の B、綴りの形によらない)、link-dir・link-file で bind に失敗した時は E を消してからエラーを返す、`ForBind` は `remove` を持たず bind の後に `SocketFile` を受け取る口を持つ、置き場の realpath と `usable_with_private_tmp`、connect 系は `usable_cross_uid` を見ない、B・D・E の名前と乱数、既にある B の mode と `usable_cross_uid` の B 自身の x、空・相対パスの `$TMPDIR` / `$XDG_RUNTIME_DIR`、`ForConnect` は `base` を持たない、`sweep()` の対象と `sweep_base`、既定の connect が作った B をプロセスの B にする、D を作った後の `lstat` の確かめ、置き場 4 の B はディレクトリごと・収まらないと分かれば B を作らない。sockat-go の問いへの答えで: Go の DGRAM は `DialUnixgram`、Go の消す口は `*SocketFile` の `Remove()` / `Cleanup()`、listener を閉じた時の扱い (既定の bind は標準ライブラリと同じ、`_ex` は消さない)、`skipped` は呼び出しの順の行に並ぶ経路だけ、`/proc` を使えるかの確かめ、D と B の作り方 (0700 → 確かめ → 0711、umask で開けなければ消して次へ)、procB の `usable_with_private_tmp` はいつも true、`usable_cross_uid` で thread-cwd・at に進む時の D の置き場、`sweep` の対象外の B が残ること、`Options.base` の相対パスと名前で終わらないパスは引数の誤り、`remove()` が失敗した時も `cleanup`、abstract の `Spelling`、「/tmp を通る」の定義、`sweep` が触らない物、「他人が書けない」は group も含む。同日の決定で: `remove` と `ForBind` の `socket_file()` は bind の後に元のパスの最後の要素の symlink を辿った先の実パスと `(st_dev, st_ino)` を覚え、辿った先がソケットでなければ覚えられない扱い、`sweep` / `sweep_base` は B の直下の D の形の名前のディレクトリだけを対象にする、E の片付けが失敗しても呼び出しの成否も元のエラーも変えずに黙る)
+- 裁定: kawaz (2026-11-22: SEQPACKET の専用の API は置かなくてよい。resolve の綴りを使う案内で足りる)
 - [DR-0003](DR-0003-single-connect-when-standard-never-blocks.md)、[DR-0004](DR-0004-standard-length-per-language.md)、[DR-0006](DR-0006-nul-is-invalid-at-any-length.md)
 - 相対パスの扱い (bind 系と resolve は絶対パスにしてから扱う、`ForConnect` の `spelling`): [DR-0019](DR-0019-absolutize-relative-path-on-bind.md)

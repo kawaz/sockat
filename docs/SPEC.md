@@ -47,12 +47,13 @@ OSes are grouped as follows.
 ## Scope
 
 - bind (and listen) / connect / `send_to` of pathname Unix domain sockets
-- socket types stream, DGRAM and SEQPACKET (details of DGRAM and SEQPACKET are in "[Open questions](#open-questions)")
+- socket types stream, DGRAM and SEQPACKET (details of DGRAM are in "[Open questions](#open-questions)"; SEQPACKET is used with the spelling of [resolve](#resolve))
 - Unix-like OSes. Windows is not supported
 
 ## Operations
 
-- They are placed in a module per type, in the standard library's form (stream at the crate root, `datagram::`, `seqpacket::`)
+- They are placed in a module per type, in the standard library's form (stream at the crate root, `datagram::`)
+- No dedicated functions are required for SEQPACKET. The user hands resolve's spelling to a SEQPACKET socket they created themselves (`resolve_for_bind` for the side that binds, `resolve_for_connect` for the side that connects)
 - The default operations take only a path. For those who need cleanup and diagnostics, one `_ex(…, Options)` is provided for each default operation
 - For those who hand the spelling to the standard library themselves, there are two resolves, one per use ([resolve](#resolve))
 - `sweep()` removes the dead D in the bases, and `sweep_base(path)` removes the dead D in the B of `Options.base` ([`sweep`](#sweep))
@@ -78,7 +79,6 @@ Shown with the Rust names.
 | DGRAM | `datagram::bind_ex(path, Options)` | `Bound<UnixDatagram>` |
 | DGRAM | `datagram::connect_ex(&sock, path, Options)` | `Report` |
 | DGRAM | `datagram::send_to_ex(&sock, buf, path, Options)` | the number of bytes sent and `Report` (its routes are in "[Open questions](#open-questions)") |
-| SEQPACKET | `seqpacket::bind(path)`, `connect(path)`, `connect_nonblocking(path)` and each `_ex` | open |
 | resolve | `resolve_for_bind(path, Options)` | `ForBind` |
 | resolve | `resolve_for_connect(path, Options)` | `ForConnect` |
 | base | `sweep()` | nothing |
@@ -513,10 +513,8 @@ Patterns that, when using sockat, remove an unrelated file or fail to remove the
 
 ## Open questions
 
-- Reach: a procB spelling takes about 35 bytes for `/proc/<pid>/fd/<fd>/` + D + `/E/`, and the file name reached on Linux is about 70. Between that and thread-cwd, thread-cwd is used
 - `send_to` sends to resolve's spelling, so it does not use relative (a send cannot be taken back). What to do with a `send_to` at a length resolve cannot handle (send with thread-cwd, or `ENAMETOOLONG`)
 - A reply to a DGRAM sender bound to a long path reaches while the spelling lives (procB for the same uid, the real path of B in `/tmp` for another uid too). How `Spelling` expresses the cases where it does not reach (after `cleanup`, procB with another uid)
-- The return type of Rust's SEQPACKET
 - Android and the Apple OSes other than macOS are not checked at all
 - The peer credentials on NetBSD, OpenBSD and illumos are not checked
 - That a non-blocking connect does not return `EINPROGRESS` is confirmed only on Linux and macOS

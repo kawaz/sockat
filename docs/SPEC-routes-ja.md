@@ -129,7 +129,7 @@ D の作り方:
   - bind して失敗しても、その呼び出しで作った物を含めて E は消さない (並行する他の既定の bind が使い回しうる。[経路の失敗の扱い](#経路の失敗の扱い))
 - 使う時: bind の順の 2 (procB) と 3 (実パス)。`resolve_for_bind` が先に選ぶ綴り。procB と実パスで試しても `skipped` には 1 件 (理由は最後の物)
 - 使えない時: 綴りが sockaddr に入らない、B・D・E を作れない、procB では `/proc` を使えないか `usable_cross_uid`
-- 届くファイル名: sockaddr に入る長さ − (B の綴り + D + E + 区切り 3)。procB の Linux はおよそ 70 ([SPEC の未確定](SPEC-ja.md#未確定))
+- 届くファイル名: sockaddr に入る長さ − (B の綴り + D + E + 区切り 3)。procB の Linux はおよそ 70 ([届く範囲の表](../pages/reach/README-ja.md))
 - 綴りの性質: `Linked` (`removable` は true)
 
 ### link-file

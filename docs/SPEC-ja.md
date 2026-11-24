@@ -47,12 +47,13 @@ OS は次の括りで呼ぶ。
 ## 対象
 
 - pathname 型の Unix domain socket の bind (と listen) / connect / `send_to`
-- ソケットの型は stream・DGRAM・SEQPACKET (DGRAM と SEQPACKET の細部は「[未確定](#未確定)」)
+- ソケットの型は stream・DGRAM・SEQPACKET (DGRAM の細部は「[未確定](#未確定)」。SEQPACKET は [resolve](#resolve) の綴りで使う)
 - Unix 系の OS。Windows は対象外
 
 ## 公開する操作
 
-- 型ごとのモジュールに 標準ライブラリの形で置く (stream は crate 直下、`datagram::`、`seqpacket::`)
+- 型ごとのモジュールに標準ライブラリの形で置く (stream は crate 直下、`datagram::`)
+- SEQPACKET に専用の関数は求めない。利用者が自分で作った SEQPACKET のソケットに resolve の綴りを渡す (bind する側は `resolve_for_bind`、connect する側は `resolve_for_connect`)
 - 既定の操作は path だけを取る。後始末と診断が要る人のために、既定の操作ごとに `_ex(…, Options)` を 1 つずつ置く
 - 綴りを自分で標準ライブラリに渡す人のために、resolve を用途ごとに 2 つ置く ([resolve](#resolve))
 - 置き場の死んだ D を消す `sweep()` と、`Options.base` の B の中の死んだ D を消す `sweep_base(path)` を置く ([`sweep`](#sweep))
@@ -78,7 +79,6 @@ Rust の名前で示す。
 | DGRAM | `datagram::bind_ex(path, Options)` | `Bound<UnixDatagram>` |
 | DGRAM | `datagram::connect_ex(&sock, path, Options)` | `Report` |
 | DGRAM | `datagram::send_to_ex(&sock, buf, path, Options)` | 送ったバイト数と `Report` (経路は「[未確定](#未確定)」) |
-| SEQPACKET | `seqpacket::bind(path)`・`connect(path)`・`connect_nonblocking(path)` と各 `_ex` | 未確定 |
 | resolve | `resolve_for_bind(path, Options)` | `ForBind` |
 | resolve | `resolve_for_connect(path, Options)` | `ForConnect` |
 | 置き場 | `sweep()` | 無し |
@@ -513,10 +513,8 @@ sockat を使う時に、無関係なファイルを消したり、ファイル�
 
 ## 未確定
 
-- 届く長さ: procB の綴りは `/proc/<pid>/fd/<fd>/` + D + `/E/` でおよそ 35 バイト食い、Linux で届くファイル名はおよそ 70。thread-cwd との間は thread-cwd に回す
 - `send_to` は resolve の綴りに送るので relative (送った後に取り消せない) を使わない。resolve で済まない長さの `send_to` をどうするか (thread-cwd で送る、`ENAMETOOLONG` にする)
 - 長いパスに bind した DGRAM の送り手への返信は、綴りが生きている間は届く (procB は同じ uid、`/tmp` の B の実パスは別の uid も)。届かない場面 (`cleanup` の後、procB で別の uid) を `Spelling` でどう表すか
-- Rust の SEQPACKET の返す型
 - Android と macOS 以外の Apple の OS は全体が未確認
 - NetBSD・OpenBSD・illumos は peer の資格情報が未確認
 - ブロックしない connect が `EINPROGRESS` を返さないことは Linux と macOS でだけ確認済み

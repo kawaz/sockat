@@ -5,7 +5,7 @@
 sockat does not use this technique (kawaz's ruling, 2026-11-20). The side effects of fork (fd copies, `SIGCHLD`, `waitpid(-1)`, `pthread_atfork`, the pid the peer sees on connect) reach the whole process rather than the library that was called, and most users do not want them. This document is for users who fork in their own application where sockat does not reach: the technique, its side effects, and where it reaches.
 
 - Where sockat reaches: [reach](reach/README.md) (the "With fork-cwd" column links to the sections of this document)
-- Decisions: [DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md) (not forking, why a bind spelling contains a random name), "the last resort and fork" in the [issue](../docs/issue/2026-11-20-resolve-and-persistent-base.md) (all Japanese)
+- Decisions: [DR-0017](../docs/decisions/DR-0017-resolve-through-persistent-base.md) (not forking, why a bind spelling contains a random name), "the last resort and fork" in the [issue](../docs/issue/archive/2026-11-20-resolve-and-persistent-base.md) (all Japanese)
 
 ## Technique
 

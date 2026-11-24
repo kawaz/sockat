@@ -12,13 +12,13 @@ kawaz が iOS で何かする機会ができた時に、実機で確かめて決
 
 ## 分かっていること (推測を含む、どれも未確認)
 
-| 手段 | iOS で |
+| 経路 | iOS で |
 |---|---|
 | thread-cwd (`pthread_fchdir_np`) | 非公開 API。App Store の審査で弾かれる危険がある (外部の指摘) |
-| proc | `/proc` が無い |
-| fork | サンドボックスで禁止 |
-| symlink-dir (`<置き場>/sockat.XXXXXXXXXX/<ファイル名>`) | 手段が要らず、綴りは絶対パス。サンドボックスで他のアプリから見えず作り直されないので、失うのは `respelled` だけ。既定の経路にできる見込み |
-| 広げた sockaddr の bind | 253 バイトまで届くが、返るアドレスが途中で切れて読む側 (CPython、Go の `net.FileConn` 等) を壊す。失うものとして `truncated-address` (仮) を足し、`_ex` の最終手段にする案 |
+| link-dir の procB | `/proc` が無い |
+| fork-cwd | サンドボックスで禁止。sockat は fork の経路を作らない ([DR-0017](../decisions/DR-0017-resolve-through-persistent-base.md) の「fork をしない」) |
+| link-dir の実パス (`B/D/E/<ファイル名>`) | 手段が要らず、綴りは絶対パス。サンドボックスで他のアプリから見えず作り直されない。bind の順で thread-cwd より先に試す |
+| widened (広げた sockaddr) | 253 バイトまで届くが、返るアドレスが途中で切れて読む側 (CPython、Go の `net.FileConn` 等) を壊す。DR-0017 で bind には使わない (案 S) と決め、最終手段も置かないので、iOS でも bind の経路にならない |
 
 ## 確かめること
 

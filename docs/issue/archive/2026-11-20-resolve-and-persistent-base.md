@@ -1,14 +1,15 @@
 ---
 title: パスを短い綴りに解決する resolve と、消さない置き場 B で経路を組み直す
-status: open
+status: resolved
 category: design
 created: 2026-11-20
 origin: kawaz との議論
+close_reason: implemented
 ---
 
 # resolve と消さない置き場 B で経路を組み直す
 
-kawaz との議論 (2026-11-19〜20) で方向が出たものの記録。決まった事項は [DR-0017](../decisions/DR-0017-resolve-through-persistent-base.md) にまとめた。SOCK_DGRAM / SOCK_SEQPACKET ([2026-11-18-datagram-and-seqpacket](2026-11-18-datagram-and-seqpacket.md)) もこの上に作る。
+kawaz との議論 (2026-11-19〜20) で方向が出たものの記録。決まった事項は [DR-0017](../../decisions/DR-0017-resolve-through-persistent-base.md) にまとめた。SOCK_DGRAM / SOCK_SEQPACKET ([2026-11-18-datagram-and-seqpacket](../2026-11-18-datagram-and-seqpacket.md)) もこの上に作る。
 
 ## 操作ごとに重視すること (kawaz 2026-11-20)
 
@@ -22,7 +23,7 @@ kawaz との議論 (2026-11-19〜20) で方向が出たものの記録。決ま�
 
 ## SPEC の記号との対応
 
-この issue の記号は [SPEC](../SPEC-ja.md) の同じ字と別物がある。
+この issue の記号は [SPEC](../../SPEC-ja.md) の同じ字と別物がある。
 
 | この issue | 中身 | SPEC との違い |
 |---|---|---|
@@ -35,7 +36,7 @@ kawaz との議論 (2026-11-19〜20) で方向が出たものの記録。決ま�
 
 - 長いパスを、元のパスと同じ所を指し続ける短い綴りに言い換える。綴りが生きている間は、`getsockname` の綴りで消す上のライブラリ、DGRAM の返信、運用の道具が元のパスと同じに働く
 - 綴りはただのパスなので、ソケットの型 (stream / DGRAM / SEQPACKET) と操作 (bind / connect / `send_to`) を問わず、利用者が std に渡して使える
-- fork はしない (kawaz 裁定 2026-11-20。fork の手法の説明と、それで届く場面は [pages/fork-cwd-ja.md](../../pages/fork-cwd-ja.md))。普段はスレッドも使わない
+- fork はしない (kawaz 裁定 2026-11-20。fork の手法の説明と、それで届く場面は [pages/fork-cwd-ja.md](../../../pages/fork-cwd-ja.md))。普段はスレッドも使わない
 
 ## 方向 (kawaz と合意)
 
@@ -74,7 +75,7 @@ kawaz との議論 (2026-11-19〜20) で方向が出たものの記録。決ま�
 - resolve のたびに B の中を一覧しない (resolve の手数を増やさない)
 - 他の節の `d`・`s` (と綴り `B/D/d/<ファイル名>`・`B/D/s`) は E のこと (`B/D/E/<ファイル名>`・`B/D/E`)
 - 既定の bind と connect の違い: bind の綴りはカーネルがソケットの寿命の間覚えるので、綴りが辿れ続けることが正しく動く条件 (`getsockname` の綴りで消す、DGRAM の返信)。connect の綴りは相手に残らず、残すのは速さのためのキャッシュでしかない。だから bind は既定でも残し、connect は既定では残さず、再利用したい人が resolve を選ぶ
-- 調査は [research](../research/2026-11-20-tmp-cleaners-and-persistent-base.md)。systemd v242 より古い環境 (RHEL 8 の v239 等) では生きている D も 10 日で消されうる (綴りが辿れなくなるだけで危険はない。説明に書く)
+- 調査は [research](../../research/2026-11-20-tmp-cleaners-and-persistent-base.md)。systemd v242 より古い環境 (RHEL 8 の v239 等) では生きている D も 10 日で消されうる (綴りが辿れなくなるだけで危険はない。説明に書く)
 
 ### 実体の置き場と綴りの形
 
@@ -111,7 +112,7 @@ B の実体をどこに作るかと、B をどう綴るかは別の軸。
 | その綴りで unlink | 元のパスの実体が消える |
 | macOS の `$TMPDIR` (`/var/folders/.../T/`) の権限 | `drwx------` (別の uid は辿れない) |
 | 0700 の親の中の 0711 のディレクトリに別の uid が cd | できない。親も 0711 にするとできる |
-| bind が最後の要素の symlink を辿るか (`B/D/s` で bind できるか) | 辿るのは macOS と NetBSD だけ (Linux・FreeBSD・OpenBSD・illumos は辿らない。[findings](../findings/2026-11-19-bind-through-file-symlink.md)) |
+| bind が最後の要素の symlink を辿るか (`B/D/s` で bind できるか) | 辿るのは macOS と NetBSD だけ (Linux・FreeBSD・OpenBSD・illumos は辿らない。[findings](../../findings/2026-11-19-bind-through-file-symlink.md)) |
 
 ## 綴りごとの性質
 
@@ -187,7 +188,7 @@ pub enum Spelling {
 - fork の実装を全部なくす (`fork-cwd`・`fork-cwd-sockdir`・`fork-cwd-direct`)。fork の副作用 (fd の複製、`SIGCHLD`、`waitpid(-1)`、`pthread_atfork`、connect では相手に見える pid) はプロセス全体に及び、してほしくない利用者の方が多い
 - 最終手段も無くなる: bind の symlink-dir は `/tmp` の B として既定の順に入り、connect の fork-cwd-direct は作らない。引数から最終手段が消え、`forked` も無くなる
 - 3 言語で届く所がそろう (Python・Go はもともと fork の経路を作らない)
-- fork をやめて届かなくなる場面と、fork の手法の説明は [pages/fork-cwd-ja.md](../../pages/fork-cwd-ja.md)。sockat で届かない場面の全体は [届く範囲の表](../../pages/reach/README-ja.md) (選んで絞り込むページは [pages/reach/index.html](../../pages/reach/index.html?lang=ja))
+- fork をやめて届かなくなる場面と、fork の手法の説明は [pages/fork-cwd-ja.md](../../../pages/fork-cwd-ja.md)。sockat で届かない場面の全体は [届く範囲の表](../../../pages/reach/README-ja.md) (選んで絞り込むページは [pages/reach/index.html](../../../pages/reach/index.html?lang=ja))
 
 ### 引数
 
@@ -280,3 +281,7 @@ hyoui の統括 (sockat-rs 0.4.1 を使用):
 - `send_to` は resolve の綴りに送るので relative の経路 (送った後に取り消せない) を使わない。resolve で済まない長さの `send_to` をどうするか (thread-cwd で送る、`ENAMETOOLONG` にする)
 - 長いパスに bind した DGRAM の送り手への返信は、綴りが生きている間は届く (procB は同じ uid、`/tmp` の B の実パスは別の uid も)。届かない場面 (`cleanup` の後、procB で別の uid) を綴りの性質 (S1) でどう表すか
 - `ForBind` の `remove()` の同一性: resolve の時点では bind していないので、ソケットのファイルの `(st_dev, st_ino)` を覚えられない。形は未決 (案: bind した後に呼んで `SocketFile` を受け取る口)
+
+## 閉じた理由
+
+合意した事は [DR-0017](../../decisions/DR-0017-resolve-through-persistent-base.md) にまとめ、4 言語で実装・公開した (sockat-rs 0.6.2・sockat-py 0.4.3・sockat-go v0.5.2・@kawaz/sockat 0.2.0)。残りは移した: DGRAM の `send_to` と返信の表し方は [DGRAM の issue](../2026-11-18-datagram-and-seqpacket.md)、経路ごとの費用の測定は [測定の issue](../2026-11-24-measure-route-costs.md)。
