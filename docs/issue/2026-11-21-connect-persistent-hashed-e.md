@@ -10,7 +10,7 @@ origin: 自リポ TODO
 
 検討中。方針は決まっていない。
 
-- 名前の作り方 (指す先のバイト列の SHA-256 の 16 進小文字の先頭 12 文字) と置き換え方 (指す先が違えば乱数の名前で作って rename で置き換える) は、CLI の既定の `resolve` が採った ([DR-0018](../decisions/DR-0018-cli-resolve-with-reused-hashed-link.md))。実装は sockat-rs の `cli/`
+- 名前をハッシュにして使い回す形 (指す先のバイト列の SHA-256 の 16 進小文字の先頭 32 文字。指す先が違えば置き換えずにエラー) は、CLI の既定の `resolve` が採った ([DR-0018](../decisions/DR-0018-cli-resolve-with-reused-hashed-link.md))。実装は sockat-rs の `cli/`
 - ライブラリの connect と `resolve_for_connect` には入れていない
 - 残っているのは、ライブラリに入れるか
 

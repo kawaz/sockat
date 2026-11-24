@@ -11,12 +11,12 @@
 
 ```console
 $ sockat /very/long/…/app.sock
-/tmp/sockat-1000/3f9c2a7b1e04/app.sock
+/tmp/sockat-1000/3f9c2a7b1e04d85a6c0f17b2e9a4d361/app.sock
 
 $ curl --unix-socket "$(sockat /very/long/…/app.sock)" http://localhost/
 ```
 
-- 綴りは置き場の実パスで出す。macOS では `/private/tmp/sockat-501/3f9c2a7b1e04/app.sock` の形になる (`/tmp` より長く見えても、出す綴りはいつも sockaddr に入る長さに収まっている)
+- 綴りは置き場の実パスで出す。macOS では `/private/tmp/sockat-501/3f9c2a7b1e04d85a6c0f17b2e9a4d361/app.sock` の形になる (`/tmp` より長く見えても、出す綴りはいつも sockaddr に入る長さに収まっている)
 
 ## 呼び方
 
@@ -64,13 +64,13 @@ sockat --help | --help-all | --version
 
 ```json
 {
-  "path": "/tmp/sockat-1000/3f9c2a7b1e04/app.sock",
-  "bytes": 38,
+  "path": "/tmp/sockat-1000/3f9c2a7b1e04d85a6c0f17b2e9a4d361/app.sock",
+  "bytes": 58,
   "limit": 107,
   "original": "/very/long/…/app.sock",
   "original_bytes": 214,
   "route": "link-dir",
-  "link": "/tmp/sockat-1000/3f9c2a7b1e04",
+  "link": "/tmp/sockat-1000/3f9c2a7b1e04d85a6c0f17b2e9a4d361",
   "target": "/very/long/…",
   "for": ["bind", "connect"]
 }
@@ -104,6 +104,8 @@ sockat --help | --help-all | --version
 - 候補を出した時の `--json` の `route` は `standard` で、`link` と `target` は無い
 - 相対の綴りは出さない。候補も E も作れない時 (とても深い cwd 等) はエラー。相対パスでソケットのディレクトリが無い時は、短くても終了コード 1 (`ENOENT`)。上限に収まる絶対パスは、何も確かめずにそのまま出す
 - `--base` を渡された時も、その B の直下に同じ作り方の E を置く
+- E の名前と同じ名前の物が既にあり、指す先が違う時 (symlink でない時も) は、置き換えずに終了コード 1 のエラーにし、その名前のパスと「消してからやり直す」を出す (前に出した綴りが、黙って別の所を指すようにしない)
+- `--for bind` を指定した時は、綴りを出した上で、標準エラーに警告を 1 行出す (`--json` の時は `warnings` に入れる): 置き場を自動で選んだ時 (`/tmp` 等は OS の掃除の対象)、長く動くプログラムに渡した綴りは、誰も辿らない日が続くと消されうる。消えた時は同じパスで `sockat` を呼び直せば戻る ([実測](../findings/2026-11-24-tmpfiles-and-symlink-in-use.md))。`--base` か `--base-fd` で置き場を指定した時は、この警告を出さない (置き場を選んだ人が寿命を知っている)
 - 名前で終わらないパス (`dir/`・`dir/.`・`dir/..`・`..`)、空のパス、NUL を含むパスは、長さによらず引数の誤り (終了コード 2)。ライブラリと同じ
 - `--json` で、出す綴りが UTF-8 でない時は終了コード 1 のエラーにし、`--json` 無しを勧める
 - 出す綴りは、いつも sockaddr に入る長さ以下 (出す前に確かめる)。元のパスが収まっていれば、そのまま出す。短さは競わない
@@ -127,7 +129,7 @@ sockat --help | --help-all | --version
 
 ```console
 $ sockat /very/long/…/nnnnnnnn…nnnn.sock
-/tmp/sockat-1000/9c41d7e2a0b3
+/tmp/sockat-1000/9c41d7e2a0b36f58d1c7a04e2b93f5a8
 sockat: warning: this path is for connect; not recommended for bind (bind does not follow the symlink on this OS)
 ```
 
