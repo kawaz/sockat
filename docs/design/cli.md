@@ -143,4 +143,71 @@ macOS と NetBSD の警告は、理由の所が「unlinking this path removes on
 
 ## 手法を試すサブコマンド (`--help-all`)
 
-`bind <パス>` と `connect <パス>` は、`--route` で名指しした手法 (無ければ既定の順) で実際に bind / connect し、結果 (カーネルが覚えた綴り、綴りの性質、通った手法、飛ばした手法と理由、置き場に残った物) を表示する。出力の形は、主な客向けの `resolve` を出した後に決める。
+```text
+sockat bind [--route <名前>[,<名前>…]] [--base <ディレクトリ>] [--json] [--keep] <パス>
+sockat connect [--route <名前>[,<名前>…]] [--base <ディレクトリ>] [--json] <パス>
+```
+
+`bind <パス>` と `connect <パス>` は、実際に bind / connect して、どの手法で通ったかと結果を表示する。手法の動きを試す・確かめるための物で、出力の項目も手法の名前も約束しない。
+
+- `--route` が無ければ、ライブラリの既定と同じ順で試す (`bind` は [bind の順](../SPEC-ja.md#bind-の順)、`connect` は [connect の順](../SPEC-ja.md#connect-の順))
+- `--base` はライブラリの `Options.base` と同じ
+- `bind` は stream のソケットを bind して listen し、結果を表示した後、作ったソケットのファイルと置き場に作った物を消して終わる (ライブラリの `remove()` と `cleanup()`)。`--keep` を付けると消さずに終わる (置き場に残る物を自分で見たい時)
+- `connect` は、そのパスで listen しているソケットに stream で connect し、結果を表示して閉じる。相手が居なければ失敗として表示する (`ECONNREFUSED`・`ENOENT`)
+- 相対パスの扱いはライブラリと同じ (`bind` は絶対パスにしてから、`connect` は相対のまま)
+
+### `--route` に渡す名前
+
+| 名前 | 中身 |
+|---|---|
+| 経路の名前 | SPEC の経路の名前 (`standard`・`link-dir`・`link-file`・`thread-cwd`・`at`・`proc-direct`・`relative`・`widened`・`at-direct`・`thread-cwd-direct`)。並べた順に試す |
+| `default` | その操作の既定の順 (preset)。`--route` を付けないのと同じ |
+
+- 名指しした手法が、その操作かその OS に無い時 (`bind` に `relative`、Linux に `at` 等) は、何も試さずに終了コード 2 のエラーにし、その操作とその OS で使える名前を並べる
+- 名指しした手法が、そのパスでは使えない時 (綴りが収まらない等) は、飛ばして次の名前に進む。全部使えなければ終了コード 1
+- `resolve` に渡せるのは、綴りを出せる `standard`・`link-dir`・`link-file` と `default` だけ
+- `link-dir` の置き場を `/proc` を通す綴りにするか実パスにするかは、名前では分けない。`--base` を指定すればその置き場を、`--base-fd` と `--base-pid` を指定すれば `/proc` を通す綴りを使う
+
+### 出力
+
+標準出力に、項目を 1 行ずつ `名前: 値` で出す。
+
+```console
+$ sockat bind /very/long/…/app.sock
+route: link-dir
+base: tmp
+kernel-path: /tmp/sockat-1000/1f3a/0/app.sock
+spelling: Linked (removable, until cleanup, usable cross uid, usable with private tmp)
+skipped: standard (too long)
+left: /tmp/sockat-1000/1f3a/0 -> /very/long/…
+```
+
+`--json` の時は、JSON のオブジェクトを 1 つ出す。項目の名前と値は、適合試験の CLI の出力 ([conformance.md](conformance.md)) と同じにし、CLI だけの項目を足す。
+
+```json
+{
+  "ok": true,
+  "error": null,
+  "route": "link-dir",
+  "base": "tmp",
+  "spelling": { "kind": "Linked", "removable": true, "until": "Cleanup", "usable_cross_uid": true, "usable_with_private_tmp": true },
+  "skipped": [{ "name": "standard", "reason": "too long" }],
+  "kernel_path": "/tmp/sockat-1000/1f3a/0/app.sock",
+  "left": ["/tmp/sockat-1000/1f3a/0"]
+}
+```
+
+| 項目 | 中身 |
+|---|---|
+| `ok`・`error`・`route`・`base`・`spelling` | 適合試験の CLI と同じ |
+| `skipped` | 飛ばした手法と理由の並び (試した順)。理由の文は約束しない |
+| `kernel_path` | `bind` は `getsockname`、`connect` は `getpeername` が返したパス。取れなければ `null` |
+| `left` | 置き場に作って、表示の時点で残っている物のパスの並び。`--keep` が無ければ、表示の後に消す |
+
+### 終了コード
+
+| 終了コード | 場面 |
+|---|---|
+| 0 | bind / connect が通った |
+| 1 | 通らなかった (どの手法も使えない、bind / connect が失敗した)。`--json` の時は `ok` が `false` の JSON を標準出力に出す |
+| 2 | 引数の誤り (無い名前、その操作・その OS に無い手法) |
