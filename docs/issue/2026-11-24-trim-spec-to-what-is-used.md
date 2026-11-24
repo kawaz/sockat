@@ -110,6 +110,15 @@ sockat-rs の中で、利用者が呼ばない物の行数の目安: resolve 387
 - CLI に残るのは、相手の話ではなく寿命の話: パスを作った `sockat` のプロセスは先に終わるので、symlink は呼んだ側が使い終わるまで残っている必要があり、sockat の側からは捨てられない (DR-0018 の、使い回すハッシュの symlink と OS の掃除の警告はこのため)
 - Node.js と Bun の close も、listen に渡したパスの文字列で unlink する。綴りの途中の symlink が消えていると、ソケットのファイルが残る ([実測](../findings/2026-11-25-node-bun-unlink-on-close.md))。標準ライブラリの listener をそのまま返すなら、TypeScript は Go と同じ側になる
 
+`/proc` を使えるなら proc 一択でよい (kawaz 2026-11-25。同じく、考えの向き)。統括が確かめた事:
+
+- connect は、Linux で `/proc` を使える時、既に標準ライブラリの次に `proc-direct` を試す
+- bind を `/proc/self/fd/<ディレクトリの fd>/<ファイル名>` で直接通すのは、Linux で通る。fd を閉じた後も listener は接続を受け続ける ([実測](../findings/2026-11-25-bind-through-proc-self-fd.md))
+- SPEC が bind に `proc-direct` を使わない理由 (綴りが後で無関係なファイルに当たる) は実際に起きる: fd を閉じた後の、bind した文字列での unlink は `ENOENT`。fd の番号が使い回されると、別のディレクトリの同じ名前のファイルが消える (同じ実測)。これが効くのは、カーネルの覚えたパスを後で使う物 (閉じる時に渡したパスで unlink する Go・Node.js・Bun、DGRAM の返信) だけ
+- `getsockname`・`getpeername`・`/proc/net/unix`・`ss -xl` には `/proc/self/fd/3/s.sock` と出る
+- 付けられるファイル名は、fd が 3 の時に 91 バイトまで (全体で 108 バイト)
+- `/proc` が無い所 (macOS、`/proc` を mount していない環境) と、CLI (プロセスが先に終わる) では使えない
+
 統括が確かめた事 (`_ex` と resolve の違い): `_ex` にしか無いのは、綴りを作れない手法の診断 (適合試験・届く範囲の実測・CLI の `bind`・`connect` が使う)、bind した瞬間にファイルの番号を覚える `remove()`、`Options` を渡せる bind・connect の 3 つ。利用者が使っているのは無い。`connect_nonblocking` は利用者が 2 つとも使っていて、代わりが無い (Rust と Python で要る)。
 
 ## API の形で気になっている所
