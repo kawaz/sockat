@@ -119,6 +119,13 @@ sockat-rs の中で、利用者が呼ばない物の行数の目安: resolve 387
 - 付けられるファイル名は、fd が 3 の時に 91 バイトまで (全体で 108 バイト)
 - `/proc` が無い所 (macOS、`/proc` を mount していない環境) と、CLI (プロセスが先に終わる) では使えない
 
+bind は `/proc/self/fd/<n>/<乱数の名前>/<ファイル名>` の形にする案 (kawaz 2026-11-25): n はソケットのディレクトリでなく、一時ディレクトリを作って開いた fd。その中に、ソケットのディレクトリを指す乱数の名前の symlink を作る。connect は `/proc/self/fd/<n>/<ファイル名>` のままでよい。統括が Linux のコンテナ (`python:3-slim`) で試した事:
+
+- この形で bind・listen は通る
+- fd を閉じて番号が別のディレクトリに使い回されても、bind した文字列での unlink は `ENOENT` で、別のディレクトリの同じ名前のファイルは消えない (乱数の名前がそこに無いため)
+- symlink が中にあるまま、一時ディレクトリを rmdir する事はできない (`ENOTEMPTY`)。symlink を消してから rmdir すると、fd を開いたままでも bind した文字列は辿れなくなる (`ENOENT`)。消したディレクトリの中に、fd 越しに symlink を作り直す事もできない (`ENOENT`)
+- つまり、bind した文字列を後で辿れる必要がある間 (閉じる時に渡したパスで unlink する Go・Node.js・Bun の listener が生きている間) は、一時ディレクトリと symlink をファイルシステムに残す必要がある。後で辿る物が無い Rust・Python は、bind の直後に両方を消せる
+
 統括が確かめた事 (`_ex` と resolve の違い): `_ex` にしか無いのは、綴りを作れない手法の診断 (適合試験・届く範囲の実測・CLI の `bind`・`connect` が使う)、bind した瞬間にファイルの番号を覚える `remove()`、`Options` を渡せる bind・connect の 3 つ。利用者が使っているのは無い。`connect_nonblocking` は利用者が 2 つとも使っていて、代わりが無い (Rust と Python で要る)。
 
 ## API の形で気になっている所
